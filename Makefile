@@ -36,9 +36,10 @@ RT_ENV = env -i HOME="$$HOME" USER="$$USER" LOGNAME="$$LOGNAME" SHELL="$$SHELL" 
 # INSTALL_DIR: an empty one, so text the owner saved on this machine is not what the tests read as a plugin's own words.
 # TERM: the tmux tests need it. A Mac without node skips the .test.mjs files, as tmux tests skip without tmux.
 test:
-	cd tests && mods="$$(find . -name 'test_*.py' -printf '%P\n' | sed 's|\.py$$||; s|/|.|g' | sort)" && none="$$(mktemp -d)" && \
+	cd tests && mods="$$( "$(PYTHON)" ../tools/test_modules.py )" && test -n "$$mods" && none="$$(mktemp -d)" && \
 	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$mods && \
-	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$(printf '%s\n' $$mods | sort -r)
+	  { reverse=""; for mod in $$mods; do reverse="$$mod $$reverse"; done; \
+	    $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$reverse; }
 	@command -v node >/dev/null || { echo "make test: no node, plugin .test.mjs files skipped"; exit 0; }; \
 	for t in mypeople/runtime/plugins/*/*.test.mjs; do node --test "$$t" || exit 1; done
 

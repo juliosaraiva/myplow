@@ -18,17 +18,24 @@ They put their own directory on `sys.path` and import siblings by filename
 against `INSTALL_DIR/bin`. `mp` is the file `INSTALL_DIR/bin/mp` on `PATH`.
 HTML, JavaScript, and fonts are read from the directory of `todo-server.py`.
 
-`materialize()` refreshes six code trees: `bin/`, `lib/`, `plugins/`, `verify/`,
-`config/`, and `roles/`. It also copies `mp-boss-doctrine.md` to the install
-root, writes `VERSION` and `run/manifest.json`, and creates empty `todos/`,
-`run/`, `status/`, and `logs/` without replacing a board, roster, or log that
-is already there.
+`materialize()` installs the six code trees `bin/`, `lib/`, `plugins/`,
+`verify/`, `config/`, and `roles/`. It also copies `mp-boss-doctrine.md`,
+writes `VERSION` and `run/manifest.json`, and creates the writable state
+directories `todos/`, `run/`, `status/`, and `logs/` without replacing
+existing board, roster, or log data.
 
-Daemons still import siblings from `bin/` (`import mpcommon`, `import boardstore`).
-Those files are loaders. They execute the implementation under `lib/` into the
-loader's own module, so a monkeypatch of `mpcommon.tmux_send_message` still
-lands on the function the daemons call. An existing install keeps working: the
-paths `supervise.sh` launches did not move.
+Installed Python entrypoints stay under `bin/`. A stable launcher resolves
+the active generation once, then loads its entrypoint and sibling libraries
+from that immutable generation. Source loaders still execute their parts into
+one module. An already-running Python launcher keeps its generation while
+another installer activates a new or previous build. The loose `lib/` tree is
+preserved for pre-generation code.
+
+An interrupted installer leaves `run/runtime-install.pending` until a retry
+completes. The generation pointer selects complete launcher code, and the
+pending marker reports when root `VERSION` and `run/manifest.json` may still
+reflect an earlier activation. Use the generation-aware installer to retry or
+materialize a previous runtime with the deliberate downgrade override.
 
 ## Top level
 
