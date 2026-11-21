@@ -17,7 +17,10 @@ def do_revive(argv):
         print("unknown agent %s" % aid, file=sys.stderr)
         return 1
     if not rr.get("retired"):
-        print("ERROR: %s is not retired" % aid, file=sys.stderr)
+        print(
+            "ERROR: %s is not retired (a live agent changes model with `mp model %s <model>`)" % (aid, aid),
+            file=sys.stderr,
+        )
         return 1
     sid = rr.get("session_id", "")
     if not sid:

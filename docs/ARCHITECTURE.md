@@ -76,7 +76,7 @@ cap) lives in `mpcommon.JSONHandler` and `BoundedThreadingHTTPServer`.
 | `lib/mpcommon/` | Shared helpers, one file per section: config, version, pages, session, json IO, agents, recorders, tmux, HTTP client, websocket, proxy, HTTP server (`JSONHandler`). |
 | `lib/board/` | The board server: watchdog, store, ping, ownership, proof, then `http_read.py` and `http_write.py` (the Handler mixins) and `http.py` (the class the server mounts). Also the exporter, memory dump, and migrator. |
 | `lib/queue/` | Queue state and reaper, the HUD handler, `main`, the worker client, roster prune. |
-| `lib/agent/` | `mp` verb groups: support, spawn, messaging, revive, fleet, status, board, cron, tcc, commands. |
+| `lib/agent/` | `mp` verb groups: support, spawn, messaging, revive, fleet, model, status, board, cron, tcc, commands. |
 | `lib/boardstore.py` | SQLite board. Same load/save shape as the old JSON file. |
 | `lib/authcheck.py` | Whether this node's AI login can actually answer. |
 | `lib/mpplugins.py` | Which plugins exist, whether each is on, and the owner's extra text. |
@@ -89,7 +89,7 @@ Loaders, shell, and pages. The loader's `__file__` is what the pages use, so
 `access.html`, `textbox.js`, and `fonts/` stay beside `todo-server.py`.
 `mpcommon.render_page` injects the version badge and the nav.
 
-`mp` registers, in order: status, spawn, send, peek, kill, answer, revive,
+`mp` registers, in order: status, spawn, send, peek, kill, answer, revive, model,
 ensure-boss, reconcile, stop-recorders, board, card, comment, proof, owner,
 cron, tcc, pair, access, plugins.
 

@@ -1,8 +1,8 @@
-"""mp - MyPlow CLI. verbs: status spawn send peek kill answer revive cron.
+"""mp - MyPlow CLI. verbs: status spawn send peek kill answer revive model cron.
 Implements the §4 agent_id<->tmux mapping and the §5 spawn contracts.
 
 Each verb is a do_* function, in the order main() registers them: status,
-spawn, send, peek, kill, answer, revive, ensure-boss, reconcile,
+spawn, send, peek, kill, answer, revive, model, ensure-boss, reconcile,
 stop-recorders, board, card, comment, proof, owner, cron, tcc, pair, access,
 plugins. Role resolution is delegated to mprole; this file does the tmux and
 roster work.

@@ -33,6 +33,11 @@ def do_ensure_boss(argv):
         return 0
     roster = load_roster()
     rr = roster.get(aid)
+    # mp model respawns the Boss in its own window. Until the new process answers, this
+    # looks like a missing or not-yet-launched Boss; retiring it here resumes the old model.
+    if rr and float(rr.get("model_switch_until") or 0) > time.time():
+        print("model switch in progress for %s; leaving it alone" % aid)
+        return 0
     # Intent gate FIRST: a kill tombstone carries the intent but not is_master, and must stay dead
     # quietly rather than fall through to the not-a-Boss error the supervisor would log every 15s.
     if rr is not None and rr.get("retired"):
@@ -197,6 +202,10 @@ def do_reconcile(argv):
             continue
         _, sess, tab = C.parse_agent_id(aid)
         if not sess or not tab:
+            continue
+        # mp model is replacing the process in this window. A missing window during that
+        # gap is the switch, not a crash, and reviving it would put the old model back.
+        if float(rr.get("model_switch_until") or 0) > now:
             continue
 
         # --- birth-zombie path (window present, backend never bootstrapped) ---

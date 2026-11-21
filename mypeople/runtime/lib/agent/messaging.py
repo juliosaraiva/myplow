@@ -69,7 +69,7 @@ def do_send(argv):
         msg + (C.card_note(card, reply_to) if card else ""),
         float(os.environ.get("MP_SEND_READY_WAIT", "10")),
     )
-    ok = why == "sent"
+    ok = why in ("sent", "held")
     if not ok and route_token:
         C.cancel_notification_route(aid, route_token)
     print(why)
