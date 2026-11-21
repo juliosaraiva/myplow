@@ -9,7 +9,8 @@ proven without loading anything:
   says "no server running", rc 1, in 0.03 s, with the server alive. That read as no pane, no window, no
   session; and `tmux new-session` on it deleted the socket and started a second server, stranding the fleet.
 
-The stalled server here is a private one frozen with SIGSTOP. The waiting clients sleep; nothing burns CPU.
+The stalled server here is a private one frozen with SIGSTOP. The integration resumes the private server on a bounded timer. Refusal is tested separately so
+coverage does not depend on the host kernel's listener backlog.
 """
 import json
 import os
@@ -20,6 +21,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -57,7 +59,6 @@ class StalledTmuxTests(unittest.TestCase):
         self.addCleanup(self.thaw)
         self.sock = self.tmux("display", "-p", "#{socket_path}").stdout.strip()
         self.inode = os.stat(self.sock).st_ino
-        self.held = []
         patch = mock.patch.dict(os.environ, {"TMUX_TMPDIR": self.dir})
         patch.start()
         self.addCleanup(patch.stop)
@@ -75,44 +76,66 @@ class StalledTmuxTests(unittest.TestCase):
             os.kill(self.pid, signal.SIGCONT)
         except OSError:
             pass
-        for p in self.held:
-            p.kill()
-            p.wait()
-        self.held = []
 
     def stall(self):
-        """Freeze the server and queue clients until the next one is refused."""
         os.kill(self.pid, signal.SIGSTOP)
-        for i in range(400):
-            self.held.append(subprocess.Popen(["tmux", "list-panes"], env=self.env, stdout=subprocess.DEVNULL,
-                                              stderr=subprocess.DEVNULL))
-            if i % 16 == 15:
-                time.sleep(0.2)
-                if any(p.poll() not in (None, 0) for p in self.held):
-                    return
-        self.fail("the backlog never filled")
+
+    def run_during_stall(self, operation):
+        """Start the thaw timer at the first real tmux call and bound each child."""
+        run = subprocess.run
+        resumed = threading.Event()
+
+        def resume():
+            resumed.set()
+            self.thaw()
+
+        timer = threading.Timer(0.5, resume)
+
+        def bounded_run(argv, *args, **kwargs):
+            if argv[0] == "tmux":
+                self.assertEqual(self.dir, kwargs["env"]["TMUX_TMPDIR"])
+                if timer.ident is None:
+                    timer.start()
+                kwargs.setdefault("timeout", 10)
+            return run(argv, *args, **kwargs)
+
+        self.stall()
+        try:
+            with mock.patch.object(subprocess, "run", side_effect=bounded_run):
+                result = operation()
+            self.assertIsNotNone(timer.ident, "operation never reached the private tmux server")
+            self.assertTrue(resumed.is_set(), "operation completed before the stalled server thawed")
+            return result
+        finally:
+            timer.cancel()
+            if timer.ident is not None:
+                timer.join()
+            self.thaw()
 
     def test_a_refused_client_is_what_a_stall_looks_like(self):
-        self.stall()
-        r = subprocess.run(["tmux", "list-panes", "-t", "mc-main:eng-1"], env=self.env, capture_output=True, text=True)
-        self.assertEqual(1, r.returncode)
-        self.assertIn("no server running", r.stderr)
-        self.assertFalse(self.C.tmux_server_gone(), "the server is alive, only stalled")
+        refused = subprocess.CompletedProcess(["tmux"], 1, "", "no server running")
+        ready = subprocess.CompletedProcess(["tmux"], 0, "mc-main:eng-1", "")
+        with mock.patch.object(self.C.subprocess, "run", side_effect=[refused, ready]) as run, \
+             mock.patch.object(self.C, "tmux_server_gone", return_value=False) as gone:
+            self.assertEqual({"mc-main:eng-1"}, self.C.tmux_windows())
+        self.assertEqual(2, run.call_count)
+        gone.assert_called_once()
 
     def test_a_stalled_server_reads_as_unknown_never_as_no_windows(self):
         self.stall()
-        self.assertIsNone(self.C.tmux_windows(wait=0.3))
+        watchdog = threading.Timer(2, self.thaw)
+        watchdog.start()
+        try:
+            self.assertIsNone(self.C.tmux_windows(wait=0.3))
+            self.assertFalse(self.C.tmux_server_gone(), "the server is alive, only stalled")
+        finally:
+            watchdog.cancel()
+            watchdog.join()
+            self.thaw()
+        self.assertEqual({"mc-main:eng-1"}, self.C.tmux_windows())
 
     def test_a_send_rides_out_the_stall_and_pastes_once(self):
-        self.stall()
-        result = []
-        import threading
-        sender = threading.Thread(target=lambda: result.append(self.C.tmux_send_message("mc-main:eng-1", "hello")))
-        sender.start()
-        time.sleep(1.5)
-        self.thaw()
-        sender.join(30)
-        self.assertEqual([True], result)
+        self.assertTrue(self.run_during_stall(lambda: self.C.tmux_send_message("mc-main:eng-1", "hello")))
         self.assertTrue(wait_for(lambda: Path(self.log).read_bytes().endswith(b"\r")))
         self.assertEqual(1, Path(self.log).read_bytes().count(b"hello"))
 
@@ -125,13 +148,20 @@ class StalledTmuxTests(unittest.TestCase):
 
     def test_spawning_on_a_stalled_server_never_starts_a_second_one(self):
         mp = sandbox.load(self.tmp, "mp")
-        self.stall()
-        with mock.patch.object(mp.C, "TMUX_STALL_WAIT", 0.3):
-            r = mp.start_tmux_session(["-d", "-s", "mc-other", "-n", "x", "sleep 300"], dict(self.env))
-        self.assertNotEqual(0, r.returncode)
+        args = ["-d", "-s", "mc-other", "-n", "x", "sleep 300"]
+        refused = subprocess.CompletedProcess(["tmux"], 1, "", "no server running")
+        with mock.patch.object(mp.C.subprocess, "run", return_value=refused) as run, \
+             mock.patch.object(mp.C, "TMUX_STALL_WAIT", 0), \
+             mock.patch.object(mp.C, "tmux_server_gone", return_value=False):
+            self.assertNotEqual(0, mp.start_tmux_session(args, dict(self.env)).returncode)
+        self.assertEqual(["tmux", "-N", "new-session", *args], run.call_args.args[0])
+        run.assert_called_once()
+
+        r = self.run_during_stall(lambda: mp.start_tmux_session(args, dict(self.env)))
+        self.assertEqual(0, r.returncode, r.stderr)
         self.assertEqual(self.inode, os.stat(self.sock).st_ino, "the socket was taken from the live server")
-        self.thaw()
         self.assertEqual(str(self.pid), self.tmux("display", "-p", "#{pid}").stdout.strip())
+        self.assertEqual({"mc-main", "mc-other"}, set(self.tmux("list-sessions", "-F", "#{session_name}").stdout.splitlines()))
 
     def test_a_viewer_can_never_start_a_second_server(self):
         script = (BIN / "ttyd-attach.sh").read_text()
@@ -360,6 +390,16 @@ class SpawnOnAStalledServerTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.mp = sandbox.load(tmp.name, "mp", DEFAULT_BACKEND="claude")
         self.mp.ROLE_DIR = str(ROOT / "mypeople" / "runtime" / "roles")
+        # Spawn subprocesses are mocked. Supply an inert executable for the
+        # real backend availability guard without relying on host installs.
+        stub_dir = Path(tmp.name) / "test-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "claude"
+        stub.write_text("#!/bin/sh\nexit 99\n")
+        stub.chmod(0o700)
+        path = mock.patch.dict(os.environ, {"PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}"})
+        path.start()
+        self.addCleanup(path.stop)
         trust = mock.patch.object(self.mp, "pretrust")  # it edits ~/.claude.json
         trust.start()
         self.addCleanup(trust.stop)

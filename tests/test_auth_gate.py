@@ -183,7 +183,8 @@ class VerdictTests(unittest.TestCase):
     def test_probe_runs_without_the_callers_agent_id(self):
         """Run from an agent's shell, the probe's Stop hook used to ping the Boss 'finished: PONG'."""
         envs = []
-        with mock.patch.dict(os.environ, {"AGENT_ID": "node/main:eng-7"}):
+        with mock.patch.dict(os.environ, {"AGENT_ID": "node/main:eng-7"}), \
+             mock.patch.object(A.shutil, "which", return_value="/test/bin/claude"):
             A.claude_probe(runner=lambda *a, **k: envs.append(k["env"]) or completed("PONG"))
         self.assertNotIn("AGENT_ID", envs[0])
         self.assertIn("PATH", envs[0])
@@ -192,7 +193,8 @@ class VerdictTests(unittest.TestCase):
         """Every 15 min the probe started the operator's 1Password MCP, and under MyPlow each one
         is a macOS 'would like to access data from other apps' prompt (card 70a20b5dcf)."""
         argvs = []
-        A.claude_probe(runner=lambda argv, **k: argvs.append(argv) or completed("PONG"))
+        with mock.patch.object(A.shutil, "which", return_value="/test/bin/claude"):
+            A.claude_probe(runner=lambda argv, **k: argvs.append(argv) or completed("PONG"))
         argv = argvs[0]
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(json.loads(argv[argv.index("--mcp-config") + 1]), {"mcpServers": {}})
