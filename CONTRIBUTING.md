@@ -15,15 +15,16 @@ make test
 That runs every `tests/test_*.py` in one process, then again in the reverse
 order. The double pass is the point: a module that only passes when it runs
 first is a failure. Plugin `*.test.mjs` files run after that when `node` is
-on `PATH`.
+on `PATH`. GitHub Actions runs the same `make test`, and `ruff check` before it.
 
-Ten failures are already known on a Linux machine without the `claude` CLI:
-
-- 5 need `claude` on `PATH`
-- 5 are the stalled-tmux server tests in `tests/test_overload.py`
-
-Anything else failing is a new failure. `voz/tests/` is the optional Mac voice
-tool and is not part of `make test`.
+The cases that used to need a `claude` binary, and the stalled-tmux cases in
+`tests/test_overload.py`, are written so they run without those. On a full
+`make test` in this environment, five failures are already present on `main`
+and are not from a layout change: `test_install_from_git_drops_the_history`,
+the three tests in `test_make_released_guard.py`, and one subtest of
+`test_prefix_w_lists_the_windows_from_every_session`. They pass when those
+modules run alone. `voz/tests/` is the optional Mac voice tool and is not
+part of `make test`.
 
 ## Lint
 

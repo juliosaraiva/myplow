@@ -42,6 +42,7 @@ the long modules are the module boundaries.
 | `install.sh` | Native installer. Documented as `./install.sh`; it stays at the repo root. |
 | `Makefile` | `image`, `test`, `lint`, `live`, `app`, `cloud`. |
 | `pyproject.toml` | Package metadata, the `mypeople` script entry, and the ruff config. |
+| `.github/workflows/ci.yml` | Compiles the package, runs `ruff check`, then `make test`. |
 
 ## What starts what
 
@@ -154,8 +155,8 @@ above match that tree. Keeping them is what makes an upstream merge a normal
 edit instead of a rename conflict on every daemon.
 
 Fork-only today: `voz/`, this document, `CONTRIBUTING.md`, `tests/README.md`,
-and the ruff config. The board/queue reliability work is on
-`cursor/board-reliability-200a` and is not rearranged here.
+and the ruff config. The board and queue reliability fixes are already on
+`main` and are not rearranged here.
 
 Do not reformat `mypeople/runtime/` or `tests/` to land a style change. See
 CONTRIBUTING.
