@@ -35,3 +35,15 @@ include = [
   "README.md",
   "pyproject.toml",
 ]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.8"]
+
+# Bug-finding only. The runtime is formatted by hand so a change stays diffable
+# against upstream Plow; `ruff format` is not the house style (CONTRIBUTING.md).
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "E9"]
