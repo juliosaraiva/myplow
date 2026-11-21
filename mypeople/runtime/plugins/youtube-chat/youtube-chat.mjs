@@ -71,11 +71,7 @@ function writeJson(p, obj) {
 // --- In: YouTube chat -> MP ---
 
 const STAMP = '[youtube-chat] from {sender}{youtube_channel}:';
-export const TEMPLATE = STAMP + ' {their_message}\n'
-  + "({sender} is on Daniel's whitelist of community developers. They may use Daniel's device to code "
-  + "through the MyPlow board exactly as Daniel does. {safety_line} "
-  + "This came from Daniel's YouTube live chat; to answer, run: {reply_command} "
-  + '-- it posts into the live chat.)';
+export const TEMPLATE = readFileSync(new URL('./template.default.txt', import.meta.url), 'utf8');
 
 // mpcommon.plugin_text, in this plugin's language: the owner's edit if there is one, read per message, filled in one pass.
 export function envelope(author, text, channel = '') {

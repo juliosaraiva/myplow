@@ -398,8 +398,14 @@ class Switch(unittest.TestCase):
             script = next(p for p in conf.parent.iterdir() if p.suffix in (".py", ".mjs") and p.stem == conf.parent.name)
             src = script.read_text()
             with self.subTest(script=script.name):
-                self.assertTrue("{sender}" in src and "{their_message}" in src and "{trust_stamp}" not in src, "real words, not one name for them")
-                self.assertLess(src.index("{sender}"), src.index("{their_message}"))
+                asset = conf.parent / "template.default.txt"
+                words = src
+                if asset.is_file():
+                    self.assertIn(asset.name, src)
+                    words = asset.read_text(encoding="utf-8")
+                self.assertTrue("{sender}" in words and "{their_message}" in words and "{trust_stamp}" not in words,
+                                "real words, not one name for them")
+                self.assertLess(words.index("{sender}"), words.index("{their_message}"))
                 self.assertRegex(src, r"print\(TEMPLATE\)|console\.log\(TEMPLATE\)")
                 self.assertTrue("plugin_text(" in src or "template.txt" in src)
 

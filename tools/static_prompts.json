@@ -1,0 +1,78 @@
+{
+  "myplow-auth-probe": {
+    "path": "mypeople/runtime/bin/authcheck.py",
+    "sha256": "102e45d009b88ee9f6cde6e8a37040ad2e1559f386145f8b65357dbf786c850f",
+    "symbol": "PROBE_PROMPT"
+  },
+  "myplow-boss-doctrine": {
+    "path": "mypeople/runtime/mp-boss-doctrine.md",
+    "sha256": "04b0a8236956b8db6fa25cda87eaad652e9a94388a1ec379d40e3d41daae18a1"
+  },
+  "myplow-discord-agent": {
+    "path": "mypeople/runtime/plugins/discord-agent/agent/CLAUDE.md",
+    "sha256": "4d57d2c28e7f9cee9119058b2b6893597d1983c18c8178f3e19f485ac8493c28"
+  },
+  "myplow-discord-chat": {
+    "path": "mypeople/runtime/plugins/discord-chat/discord-chat.py",
+    "sha256": "2449ad4e50a6b108e0e84794d3337f57b1c80ba75dfea09e57668e1aeaf3c28d",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-github-prs": {
+    "path": "mypeople/runtime/plugins/github-prs/github-prs.py",
+    "sha256": "a380e404a04c74c1861eb158234f664915234fdde89f9c9cd1d1137e7dbc37c1",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-instagram-comments": {
+    "path": "mypeople/runtime/plugins/instagram-comments/agent/CLAUDE.md",
+    "sha256": "6b50e40c376bd5a4ffc91162fa8f197ace4c817a5784f2f112ce6e073de7deb9"
+  },
+  "myplow-plow-chat": {
+    "path": "mypeople/runtime/plugins/plow-chat/plow-chat.py",
+    "sha256": "80d62cc4a31ea7bc38567975314d749817f8afc72250d1ccf1a9698200d3624b",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-role-boss": {
+    "path": "mypeople/runtime/roles/personalities/boss/6.9.0.md",
+    "sha256": "04b0a8236956b8db6fa25cda87eaad652e9a94388a1ec379d40e3d41daae18a1"
+  },
+  "myplow-role-creator": {
+    "path": "mypeople/runtime/roles/personalities/creator/1.3.0.md",
+    "sha256": "04ab46996b8455956d95e00d436048f4353ce71398bad1238510c31b2d7f1699"
+  },
+  "myplow-role-engineer": {
+    "path": "mypeople/runtime/roles/personalities/engineer/1.11.0.md",
+    "sha256": "af8dff9c1485b6344ae948f5d3a4a9a9b0ae43b315134ae0de4661ffb2848134"
+  },
+  "myplow-role-tester": {
+    "path": "mypeople/runtime/roles/personalities/tester/6.0.0.md",
+    "sha256": "603ca48eee579c0ee13d5cb6f7137f0b34078b597ee8460f1be14369dfa2754f"
+  },
+  "myplow-role-watchdog": {
+    "path": "mypeople/runtime/roles/personalities/watchdog/1.2.0.md",
+    "sha256": "d40ea4b089e22896ccd6bd48ec61592469bda3415646319e519bcf8de020e575"
+  },
+  "myplow-swarm": {
+    "path": "mypeople/runtime/plugins/swarm/swarm.py",
+    "sha256": "57dc3703b7b86523e37eecc36444e88d9ab157f914017b0000ef7c3d3e7aeeb5",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-voice": {
+    "path": "mypeople/runtime/plugins/voice/voice.py",
+    "sha256": "59a849ed4a91c1e4869cb7469999a567c7c6c89d8ee759984ed907ad9847a4f1",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-voice-call": {
+    "path": "mypeople/runtime/plugins/voice-call/voice-call.py",
+    "sha256": "40cbcc85805fb63a42365739a6140720d7355665b3d51470224d6a5eebcb79f2",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-web-chat": {
+    "path": "mypeople/runtime/plugins/web-chat/web-chat.py",
+    "sha256": "3637173a1cf3db53aaec7966afb11be2e5f43f1f186f08ef027834424c328ea8",
+    "symbol": "TEMPLATE"
+  },
+  "myplow-youtube-chat": {
+    "path": "mypeople/runtime/plugins/youtube-chat/template.default.txt",
+    "sha256": "aa43619e742c2ca642d7b2a3d4fd6bc53b478a145bb105f98d9f89c8939ad8b4"
+  }
+}
