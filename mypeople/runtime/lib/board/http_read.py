@@ -2,6 +2,13 @@ class _BoardRead:
     def _identity(self):
         return C.caller_identity(self.headers)
 
+    def _supervisor_challenge(self):
+        return self._send(
+            401,
+            {"error": "owner_credential_required"},
+            extra={"WWW-Authenticate": 'Basic realm="MyPlow owner"', "Cache-Control": "no-store"},
+        )
+
     def _serve_page(self, path):
         try:
             with open(path, encoding="utf-8") as f:
@@ -12,6 +19,8 @@ class _BoardRead:
 
     def do_HEAD(self):
         p = self.path.split("?", 1)[0]
+        if p in ("/", "/todos") and supervisor_enabled() and not supervisor_owner_authorized(self):
+            return self._supervisor_challenge()
         if p in ("/", "/todos", "/terminal-graph", "/plugins", "/access"):
             return self._send(200, raw=b"", ctype="text/html; charset=utf-8", extra=self._page_extra())
         if p == "/dashboard" or p.startswith("/dashboard/") or p in ("/agents", "/clients", "/roster"):
@@ -23,6 +32,11 @@ class _BoardRead:
     # ---- GET ----
     def do_GET(self):
         p = self.path.split("?", 1)[0]
+        if p == "/todo/supervisor/events":
+            _, ident = self._identity()
+            if not supervisor_journal_authorized(self, ident):
+                return self._send(403, {"error": "supervisor_unavailable"})
+            return self._send(200, {"events": supervisor_events()})
         if p == "/health":
             build = "0"
             try:
@@ -45,6 +59,8 @@ class _BoardRead:
             with open(fp, "rb") as f:
                 return self._send(200, raw=f.read(), ctype=ctype, extra={"Cache-Control": "public, max-age=86400"})
         if p in ("/", "/todos"):
+            if supervisor_enabled() and not supervisor_owner_authorized(self):
+                return self._supervisor_challenge()
             return self._serve_page(TODOS_HTML)
         if p == "/terminal-graph":
             return self._serve_page(TERMINAL_GRAPH_HTML if os.path.exists(TERMINAL_GRAPH_HTML) else TODOS_HTML)
