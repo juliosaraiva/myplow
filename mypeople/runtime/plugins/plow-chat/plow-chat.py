@@ -725,7 +725,6 @@ def inbox_connect():
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
-    return db
 
 
 def _preflight_state_dir(create=False):
