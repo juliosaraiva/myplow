@@ -526,7 +526,7 @@ class Switch(unittest.TestCase):
         calls = [
             (f.parent.name, m.group(1))
             for f in PLUGINS.glob("*/*.py")
-            for m in re.finditer(r'MP_BIN, "send".{0,400}?timeout=(\w+)', f.read_text(), re.S)
+            for m in re.finditer(r'MP_BIN,\s*"send".{0,800}?timeout=(\w+)', f.read_text(), re.S)
         ]
         self.assertGreaterEqual(len(calls), 9)
         for name, timeout in calls:

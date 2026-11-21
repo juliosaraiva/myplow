@@ -18,25 +18,27 @@ They put their own directory on `sys.path` and import siblings by filename
 against `INSTALL_DIR/bin`. `mp` is the file `INSTALL_DIR/bin/mp` on `PATH`.
 HTML, JavaScript, and fonts are read from the directory of `todo-server.py`.
 
-`materialize()` refreshes five code trees: `bin/`, `plugins/`, `verify/`,
-`config/`, and `roles/`. A file added under one of those is shipped. A file moved
-out of them is not, unless the copy list changes too. It also copies
-`mp-boss-doctrine.md` to the install root, writes `VERSION` and
-`run/manifest.json`, and creates empty `todos/`, `run/`, `status/`, and `logs/`
-without replacing a board, roster, or log that is already there.
+`materialize()` refreshes six code trees: `bin/`, `lib/`, `plugins/`, `verify/`,
+`config/`, and `roles/`. It also copies `mp-boss-doctrine.md` to the install
+root, writes `VERSION` and `run/manifest.json`, and creates empty `todos/`,
+`run/`, `status/`, and `logs/` without replacing a board, roster, or log that
+is already there.
 
-Because of that, the source path **is** the installed path. This fork does not
-relocate those trees. A shim in the old place would still have to ship, and every
-upstream edit to the moved file would conflict with the move. The sections inside
-the long modules are the module boundaries.
+Daemons still import siblings from `bin/` (`import mpcommon`, `import boardstore`).
+Those files are loaders. They execute the implementation under `lib/` into the
+loader's own module, so a monkeypatch of `mpcommon.tmux_send_message` still
+lands on the function the daemons call. An existing install keeps working: the
+paths `supervise.sh` launches did not move.
 
 ## Top level
 
 | Path | Responsibility |
 | --- | --- |
-| `mypeople/` | The installable package. `mypeople.cli:main` is the `mypeople` command. `firstrun.py` materializes the runtime, checks login, and writes `queue.env`. |
-| `mypeople/runtime/` | The payload that is copied onto a machine. See below. |
-| `tests/` | The Python suite. Flat on purpose: `make test` loads every `test_*.py` as a top-level module, twice, in opposite orders. Index: [tests/README.md](../tests/README.md). |
+| `mypeople/cli.py`, `mypeople/firstrun.py` | Entrypoints. They load `mypeople/host/cli/` and `mypeople/host/firstrun/`. |
+| `mypeople/host/` | The `mypeople` command and the installer, one file per step. |
+| `mypeople/runtime/bin/` | What an install launches: loaders, shell, and the HTML/JS pages. |
+| `mypeople/runtime/lib/` | The implementation those loaders execute. |
+| `tests/` | `board/`, `fleet/`, `auth/`, `plugins/`, `host/`. `make test` loads every `test_*.py` twice, in opposite orders. Index: [tests/README.md](../tests/README.md). |
 | `docs/` | Product and contributor docs, plus the static site under `docs/site/`. |
 | `desktop/` | The Tauri app. `desktop/scripts/bundle-runtime.sh` copies this runtime into the app bundle. |
 | `cloud/` | The Plow cloud-agent image and the in-place updater (`update.py`, `publish.sh`). Separate from the self-host image. |
@@ -67,55 +69,33 @@ mp                           agent CLI; verbs are the list under runtime/bin bel
 the board and the HUD. Shared HTTP plumbing (body limits, sessions, the thread
 cap) lives in `mpcommon.JSONHandler` and `BoundedThreadingHTTPServer`.
 
+## `runtime/lib/`
+
+| Path | Role |
+| --- | --- |
+| `lib/mpcommon/` | Shared helpers, one file per section: config, version, pages, session, json IO, agents, recorders, tmux, HTTP client, websocket, proxy, HTTP server (`JSONHandler`). |
+| `lib/board/` | The board server: watchdog, store, ping, ownership, proof, then `http_read.py` and `http_write.py` (the Handler mixins) and `http.py` (the class the server mounts). Also the exporter, memory dump, and migrator. |
+| `lib/queue/` | Queue state and reaper, the HUD handler, `main`, the worker client, roster prune. |
+| `lib/agent/` | `mp` verb groups: support, spawn, messaging, revive, fleet, status, board, cron, tcc, commands. |
+| `lib/boardstore.py` | SQLite board. Same load/save shape as the old JSON file. |
+| `lib/authcheck.py` | Whether this node's AI login can actually answer. |
+| `lib/mpplugins.py` | Which plugins exist, whether each is on, and the owner's extra text. |
+| `lib/mprole.py` | Resolve a `--role` and materialize that agent's bundle. |
+
 ## `runtime/bin/`
 
-One directory, four kinds of file. They stay together because imports, `PATH`,
-and the pages all resolve next to the daemon.
-
-### Libraries (imported, not launched)
-
-| File | Role |
-| --- | --- |
-| `mpcommon.py` | Config, version, pages' shared chrome, sessions, JSON IO, notification routes, tmux delivery, HTTP and websocket clients, the shared HTTP server. |
-| `boardstore.py` | SQLite board. Same load/save shape as the old JSON file. |
-| `authcheck.py` | Whether this node's AI login can actually answer. Loaded by `firstrun` and by the queue client. |
-| `mpplugins.py` | Which plugins exist, whether each is on, and the owner's extra text. |
-| `mprole.py` | Resolve a `--role` and materialize that agent's bundle. `mp` calls it; it does not spawn. |
-
-`mpcommon.py` is sectioned with banners (`config`, `version`, `page rendering`,
-`session cookie`, `json io`, `agent ids`, `recorders`, `tmux delivery`, `HTTP`,
-`websocket`, `proxy`, `HTTP server`). Read the banner, not the whole file.
-
-### Daemons and the agent CLI
-
-| File | Role |
-| --- | --- |
-| `todo-server.py` | Board HTTP API and the board, graph, plugins, and access pages. |
-| `queue-server.py` | Queue, roster, reaper, HUD. |
-| `queue-client.py` | Heartbeat and task relay for a worker node. |
-| `board-exporter.py` | Read-only git export of the board. |
-| `board-restore` | Put an exported snapshot back. The live server reloads when this writes. |
-| `mp` | Agent CLI. Verbs registered in `main()`, in that order: status, spawn, send, peek, kill, answer, revive, ensure-boss, reconcile, stop-recorders, board, card, comment, proof, owner, cron, tcc, pair, access, plugins. |
-| `supervise.sh` | Starts the daemons and the plugins. |
-| `boss-supervisor.sh` | Keeps a Boss running after login. |
-| `ttyd-attach.sh` | Attaches a browser terminal. |
-
-`todo-server.py` is sectioned the same way: watchdog jobs, board store,
-board-to-Boss ping, card ownership, proof classification, HTTP.
-
-### One-shot tools
-
-| File | Role |
-| --- | --- |
-| `memory-dump.py` | Board corpus for the memory skill. Reads the board; does not write it. |
-| `migrate_board.py` | JSON board to SQLite and back. |
-| `roster-prune.py` | Shrink `roster.json` without dropping a kill tombstone. |
-
-### Pages
-
+Loaders, shell, and pages. The loader's `__file__` is what the pages use, so
 `todos.html`, `dashboard.html`, `terminal-graph.html`, `plugins.html`,
-`access.html`, `textbox.js`, and `fonts/` are served by the daemon beside them.
-`mpcommon.render_page` injects the version badge and the nav into those pages.
+`access.html`, `textbox.js`, and `fonts/` stay beside `todo-server.py`.
+`mpcommon.render_page` injects the version badge and the nav.
+
+`mp` registers, in order: status, spawn, send, peek, kill, answer, revive,
+ensure-boss, reconcile, stop-recorders, board, card, comment, proof, owner,
+cron, tcc, pair, access, plugins.
+
+`supervise.sh` still starts `bin/queue-server.py`, `bin/todo-server.py`,
+`bin/queue-client.py`, `bin/board-exporter.py`, ttyd, and `boss-supervisor.sh`.
+`board-restore` stays here; the live server reloads when it writes.
 
 ## `runtime/` besides `bin/`
 
@@ -153,13 +133,11 @@ Ports, from `queue.env` / the process environment: `HUD_PORT` (9900),
 
 ## Upstream Plow
 
-This repository is a fork of Plow (`delattre1/mypeople`). The runtime paths
-above match that tree. Keeping them is what makes an upstream merge a normal
-edit instead of a rename conflict on every daemon.
+This repository is a fork of Plow (`delattre1/mypeople`). The installed
+entrypoint names match that tree. The source layout does not: long modules
+were split into `runtime/lib/` and `mypeople/host/`, and the tests are grouped.
+An upstream edit to `mpcommon.py` or `todo-server.py` will not apply cleanly.
+Port it onto the part that now holds that code, and leave the bin loader in
+place so installs keep launching the same paths.
 
-Fork-only today: `voz/`, this document, `CONTRIBUTING.md`, `tests/README.md`,
-and the ruff config. The board and queue reliability fixes are already on
-`main` and are not rearranged here.
-
-Do not reformat `mypeople/runtime/` or `tests/` to land a style change. See
-CONTRIBUTING.
+`voz/` was already fork-only. Ruff format is the house style. See CONTRIBUTING.
