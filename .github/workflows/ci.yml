@@ -20,5 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Compile Python
         run: python -m compileall -q mypeople tests
+      - name: Lint
+        run: pip install ruff && ruff check .
       - name: Run full test suite
         run: make test

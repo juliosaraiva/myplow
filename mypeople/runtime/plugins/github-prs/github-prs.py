@@ -35,6 +35,7 @@ without being sent, so turning this on never replays a PR's history at anyone.
                                (default: reviews from the last 30 days; 0 = no limit)
     github-prs.py catchup-dry  list them without sending anything
 """
+
 import calendar
 import json
 import os
@@ -48,8 +49,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bin"))
 from mpcommon import SEND_TIMEOUT, plugin_text  # noqa: E402
 
-INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME")
-               or Path.home() / ".local/share/mypeople")
+INSTALL = Path(
+    os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME") or Path.home() / ".local/share/mypeople"
+)
 STATE = Path(os.environ.get("GITHUB_PRS_STATE_DIR") or INSTALL / "state" / "github-prs") / "state.json"
 # PRs watched on request, {"owner/repo#N": {"url", "agent"}}. Its own file: `watch` writes it while the
 # daemon runs, and the daemon rewrites state.json every poll.
@@ -57,10 +59,10 @@ WATCH = STATE.parent / "watch.json"
 PR_URL = re.compile(r"^https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)/?$")
 MP_BIN = os.environ.get("MP_BIN") or str(INSTALL / "bin" / "mp")
 INTERVAL = int(os.environ.get("GITHUB_PRS_INTERVAL") or 60)
-FULL_SWEEP_SECS = 30 * 60   # updatedAt does not move for every event (a body-less approve), so recheck all
-SEARCH_LIMIT = 100          # gh search's ceiling; hitting it is logged, never silent
+FULL_SWEEP_SECS = 30 * 60  # updatedAt does not move for every event (a body-less approve), so recheck all
+SEARCH_LIMIT = 100  # gh search's ceiling; hitting it is logged, never silent
 SNIPPET = 400
-ISSUE_LIMIT = 50            # newest first: only a burst of more new issues than this between polls is missed
+ISSUE_LIMIT = 50  # newest first: only a burst of more new issues than this between polls is missed
 # Catch-up reaches back this far by default; --days overrides it, 0 means no limit.
 CATCHUP_MAX_AGE_DAYS = int(os.environ.get("GITHUB_PRS_CATCHUP_DAYS") or 30)
 GH_TIMEOUT = 60
@@ -108,12 +110,21 @@ def login():
 
 def open_prs(author):
     """[(repo, number, updatedAt, url)] for every open PR `author` wrote, in any repo gh can read."""
-    prs = gh("search", "prs", "--author", author, "--state", "open", "--limit", str(SEARCH_LIMIT),
-             "--json", "repository,number,updatedAt,url")
+    prs = gh(
+        "search",
+        "prs",
+        "--author",
+        author,
+        "--state",
+        "open",
+        "--limit",
+        str(SEARCH_LIMIT),
+        "--json",
+        "repository,number,updatedAt,url",
+    )
     if len(prs) >= SEARCH_LIMIT:
         log("WARNING: %d PRs is gh search's ceiling; some PRs may be invisible" % len(prs))
-    return [(p["repository"]["nameWithOwner"], p["number"], p.get("updatedAt") or "", p["url"])
-            for p in prs]
+    return [(p["repository"]["nameWithOwner"], p["number"], p.get("updatedAt") or "", p["url"]) for p in prs]
 
 
 def pr_now(repo, n):
@@ -128,7 +139,7 @@ def watched_prs(author, watch):
         repo, n = key.rsplit("#", 1)
         try:
             p = pr_now(repo, int(n))
-        except RuntimeError as e:   # unreadable is not closed: keep watching, events are fetched again later
+        except RuntimeError as e:  # unreadable is not closed: keep watching, events are fetched again later
             log("watched %s unreadable: %s" % (key, e))
             prs.append((repo, int(n), "", watch[key]["url"]))
             continue
@@ -149,26 +160,45 @@ def issue_queries():
 
 def search_issues(query):
     """The newest issues matching one search query (a list of qualifiers), open or already closed."""
-    return gh("search", "issues", *query, "--sort", "created", "--order", "desc",
-              "--limit", str(ISSUE_LIMIT), "--json", "repository,number,url,author,title,body")
+    return gh(
+        "search",
+        "issues",
+        *query,
+        "--sort",
+        "created",
+        "--order",
+        "desc",
+        "--limit",
+        str(ISSUE_LIMIT),
+        "--json",
+        "repository,number,url,author,title,body",
+    )
 
 
 def pr_events(repo, n):
     """Comments, inline review comments and reviews on one PR, each with a stable key."""
     out = []
-    for kind, path in (("comment", "repos/%s/issues/%d/comments" % (repo, n)),
-                       ("review_comment", "repos/%s/pulls/%d/comments" % (repo, n)),
-                       ("review", "repos/%s/pulls/%d/reviews" % (repo, n))):
+    for kind, path in (
+        ("comment", "repos/%s/issues/%d/comments" % (repo, n)),
+        ("review_comment", "repos/%s/pulls/%d/comments" % (repo, n)),
+        ("review", "repos/%s/pulls/%d/reviews" % (repo, n)),
+    ):
         try:
             items = gh("api", "--paginate", path + "?per_page=100") or []
         except RuntimeError as e:
             log("skip %s %s#%d: %s" % (kind, repo, n, e))
             continue
         for it in items:
-            out.append({"key": "%s:%s" % (kind, it["id"]), "kind": kind,
-                        "user": (it.get("user") or {}).get("login", "?"),
-                        "body": it.get("body") or "", "state": it.get("state") or "",
-                        "url": it.get("html_url") or ""})
+            out.append(
+                {
+                    "key": "%s:%s" % (kind, it["id"]),
+                    "kind": kind,
+                    "user": (it.get("user") or {}).get("login", "?"),
+                    "body": it.get("body") or "",
+                    "state": it.get("state") or "",
+                    "url": it.get("html_url") or "",
+                }
+            )
     return out
 
 
@@ -200,11 +230,19 @@ def fresh_issues(query, issues, state):
     """Issues not announced before, recording all as seen. A query's first poll is silent."""
     seen = set(state.setdefault("seen", []))
     known = state.setdefault("issue_queries", [])
-    events = [{"key": "issue:%s#%d" % (i["repository"]["nameWithOwner"], i["number"]), "kind": "issue",
-               "repo": i["repository"]["nameWithOwner"], "n": i["number"],
-               "user": (i.get("author") or {}).get("login", "?"),
-               "body": "%s — %s" % (i.get("title") or "", i.get("body") or ""), "state": "", "url": i["url"]}
-              for i in issues]
+    events = [
+        {
+            "key": "issue:%s#%d" % (i["repository"]["nameWithOwner"], i["number"]),
+            "kind": "issue",
+            "repo": i["repository"]["nameWithOwner"],
+            "n": i["number"],
+            "user": (i.get("author") or {}).get("login", "?"),
+            "body": "%s — %s" % (i.get("title") or "", i.get("body") or ""),
+            "state": "",
+            "url": i["url"],
+        }
+        for i in issues
+    ]
     state["seen"] = sorted(seen | {e["key"] for e in events})
     if " ".join(query) not in known:
         known.append(" ".join(query))
@@ -258,10 +296,11 @@ TEMPLATE = STAMP + ": {their_message}{link}{no_owner_note}"
 def format_event(repo, n, event, owned, orphan=False):
     body = " ".join(HTML_COMMENT.sub("", event["body"]).split())
     if len(body) > SNIPPET:
-        body = body[:SNIPPET - 1] + "…"
+        body = body[: SNIPPET - 1] + "…"
     verdict = event["state"].lower().replace("_", " ") if event["kind"] == "review" else ""
-    what = {"review": "review", "review_comment": "inline review comment",
-            "merged": "merged", "closed": "closed"}.get(event["kind"], "comment")
+    what = {"review": "review", "review_comment": "inline review comment", "merged": "merged", "closed": "closed"}.get(
+        event["kind"], "comment"
+    )
     noun = "issue" if event["kind"] == "issue" else "PR"
     tail = ""
     if orphan:
@@ -270,16 +309,29 @@ def format_event(repo, n, event, owned, orphan=False):
         # work, he does not do it (the owner, 10-21), so it goes to an agent.
         tail = " — no card on the board links this %s, so nobody owns it: give it to an agent." % noun
     said = "" if event["kind"] in ("merged", "closed") else (body or "(no text)") + " "
-    return plugin_text("github-prs", TEMPLATE, {
-        "event": "new issue" if noun == "issue" else "PR " + what, "repo": repo, "number": n, "yours": " (your PR)" if owned and noun != "issue" else "",
-        "sender": event["user"], "verdict": " — %s" % verdict if verdict else "", "their_message": said, "link": event["url"], "no_owner_note": tail})
+    return plugin_text(
+        "github-prs",
+        TEMPLATE,
+        {
+            "event": "new issue" if noun == "issue" else "PR " + what,
+            "repo": repo,
+            "number": n,
+            "yours": " (your PR)" if owned and noun != "issue" else "",
+            "sender": event["user"],
+            "verdict": " — %s" % verdict if verdict else "",
+            "their_message": said,
+            "link": event["url"],
+            "no_owner_note": tail,
+        },
+    )
 
 
 # ---------------------------------------------------------------- the fleet
 def fetch_board():
     port = cfg("TODO_PORT", "9933")
-    req = urllib.request.Request("http://127.0.0.1:%s/todo/board" % port,
-                                 headers={"X-Queue-Secret": cfg("QUEUE_SECRET")})
+    req = urllib.request.Request(
+        "http://127.0.0.1:%s/todo/board" % port, headers={"X-Queue-Secret": cfg("QUEUE_SECRET")}
+    )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
 
@@ -289,8 +341,9 @@ def boss_id():
 
 
 def deliver(agent, text):
-    r = subprocess.run([sys.executable, MP_BIN, "send", agent, text], capture_output=True, text=True,
-                       timeout=SEND_TIMEOUT)
+    r = subprocess.run(
+        [sys.executable, MP_BIN, "send", agent, text], capture_output=True, text=True, timeout=SEND_TIMEOUT
+    )
     return r.returncode == 0
 
 
@@ -333,7 +386,7 @@ def watch_pr(url, agent):
     p = pr_now(m.group(1), int(m.group(2)))
     if p.get("state") != "OPEN":
         raise SystemExit("%s is %s, nothing to watch" % (url, (p.get("state") or "unknown").lower()))
-    canon = PR_URL.match(p["url"])   # GitHub's own spelling, so the key matches what the poll sees
+    canon = PR_URL.match(p["url"])  # GitHub's own spelling, so the key matches what the poll sees
     key = "%s#%s" % (canon.group(1), canon.group(2))
     watch = load_watch()
     watch[key] = {"url": p["url"], "agent": agent}
@@ -386,12 +439,25 @@ def poll(author, state):
             except RuntimeError as e:
                 log("skip outcome %s: %s" % (key, e))
                 continue
-            if outcome["state"] == "OPEN":   # missing from one search is not closed
+            if outcome["state"] == "OPEN":  # missing from one search is not closed
                 continue
             kind = "merged" if outcome["state"] == "MERGED" else "closed"
             url = "https://github.com/%s/pull/%s" % (repo, n)
-            outbox.append((repo, int(n), url, {"key": "%s:%s" % (kind, key), "kind": kind, "user": outcome["by"] or "?",
-                                               "body": "", "state": "", "url": url}))
+            outbox.append(
+                (
+                    repo,
+                    int(n),
+                    url,
+                    {
+                        "key": "%s:%s" % (kind, key),
+                        "kind": kind,
+                        "user": outcome["by"] or "?",
+                        "body": "",
+                        "state": "",
+                        "url": url,
+                    },
+                )
+            )
         del updated[key]
     # A watched PR that is no longer tracked was merged or closed (announced above, or before it was
     # ever polled): the watch has done its job. Re-read the file so a `watch` made meanwhile is kept.
@@ -418,8 +484,9 @@ def poll(author, state):
         except Exception as e:  # routing degrades to the Boss; the event is never dropped
             log("board unreadable (%s); sending to the Boss" % e)
     for repo, n, url, e in outbox:
-        agent, owned = route(board, url, watch.get("%s#%d" % (repo, n), {}).get("agent", ""),
-                             e["body"] if e["kind"] == "issue" else "")
+        agent, owned = route(
+            board, url, watch.get("%s#%d" % (repo, n), {}).get("agent", ""), e["body"] if e["kind"] == "issue" else ""
+        )
         text = format_event(repo, n, e, owned, orphan=not owned)
         if not deliver(agent, text) and agent != boss_id():
             log("%s unreachable; sending to the Boss" % agent)
@@ -451,19 +518,22 @@ def unanswered(author, repo, n):
     except RuntimeError as e:
         log("catch-up: %s#%d unreadable: %s" % (repo, n, e))
         return None
-    theirs = [r for r in revs
-              if (r.get("user") or {}).get("login") != author and r.get("submitted_at")]
+    theirs = [r for r in revs if (r.get("user") or {}).get("login") != author and r.get("submitted_at")]
     if not theirs:
         return None
     last = max(theirs, key=lambda r: r["submitted_at"])
-    ours = [c.get("created_at") or "" for c in cms
-            if (c.get("user") or {}).get("login") == author]
+    ours = [c.get("created_at") or "" for c in cms if (c.get("user") or {}).get("login") == author]
     if any(t > last["submitted_at"] for t in ours):
         return None
-    return {"key": "review:%s" % last["id"], "kind": "review",
-            "user": (last.get("user") or {}).get("login", "?"), "body": last.get("body") or "",
-            "state": last.get("state") or "", "url": last.get("html_url") or "",
-            "age_days": age_days(last["submitted_at"])}
+    return {
+        "key": "review:%s" % last["id"],
+        "kind": "review",
+        "user": (last.get("user") or {}).get("login", "?"),
+        "body": last.get("body") or "",
+        "state": last.get("state") or "",
+        "url": last.get("html_url") or "",
+        "age_days": age_days(last["submitted_at"]),
+    }
 
 
 def catchup(author, state, send=True, max_age_days=CATCHUP_MAX_AGE_DAYS):
@@ -486,17 +556,17 @@ def catchup(author, state, send=True, max_age_days=CATCHUP_MAX_AGE_DAYS):
         # A months-old review on a forgotten PR is not news, and mixing it in makes the whole
         # sweep read as noise. Reach further back only when asked.
         if max_age_days and (event.get("age_days") or 0) > max_age_days:
-            log("catch-up: skipping %s#%d, its review is %d days old (limit %d)"
-                % (repo, n, event["age_days"], max_age_days))
+            log(
+                "catch-up: skipping %s#%d, its review is %d days old (limit %d)"
+                % (repo, n, event["age_days"], max_age_days)
+            )
             continue
         found.append((repo, n, event))
         if not send:
             continue
         agent, owned = route(board, url, watch.get("%s#%d" % (repo, n), {}).get("agent", ""))
-        tag = "[catch-up%s] " % ("" if event.get("age_days") is None
-                                 else ", %dd old" % event["age_days"])
-        if not deliver(agent, tag + format_event(repo, n, event, owned, orphan=not owned)) \
-                and agent != boss_id():
+        tag = "[catch-up%s] " % ("" if event.get("age_days") is None else ", %dd old" % event["age_days"])
+        if not deliver(agent, tag + format_event(repo, n, event, owned, orphan=not owned)) and agent != boss_id():
             agent = boss_id()
             deliver(agent, tag + format_event(repo, n, event, False, orphan=True))
         seen.add(event["key"])
@@ -510,7 +580,7 @@ def catchup(author, state, send=True, max_age_days=CATCHUP_MAX_AGE_DAYS):
 def main(argv):
     # No default: a bare run started a second, unsupervised serve beside supervise.sh's (discord-chat, Mac 2, 10-30).
     cmd = argv[1] if len(argv) > 1 else ""
-    if cmd == "message":   # the board's Plugins page shows this
+    if cmd == "message":  # the board's Plugins page shows this
         print(TEMPLATE)
         return 0
     if cmd == "watch" and len(argv) > 2:
@@ -532,7 +602,10 @@ def main(argv):
         watch = load_watch()
         prs = watched_prs(author, watch)
         print("watching %d open PRs: by %s, plus %d on request" % (len(prs), author, len(watch)))
-        print("new issues announced for: %s" % ("; ".join(" ".join(q) for q in issue_queries()) or "nothing (GITHUB_ISSUES unset)"))
+        print(
+            "new issues announced for: %s"
+            % ("; ".join(" ".join(q) for q in issue_queries()) or "nothing (GITHUB_ISSUES unset)")
+        )
         for repo, n, _, url in prs:
             agent, owned = route(board, url, watch.get("%s#%d" % (repo, n), {}).get("agent", ""))
             print("  %s#%d -> %s%s" % (repo, n, agent, "" if owned else "  (no card links it)"))
@@ -543,12 +616,21 @@ def main(argv):
         if "--days" in argv:
             days = int(argv[argv.index("--days") + 1])
         found = catchup(author, state, send=(cmd == "catchup"), max_age_days=days)
-        print("%d open PR(s) with an unanswered review%s"
-              % (len(found), "" if cmd == "catchup" else " (dry run, nothing sent)"))
+        print(
+            "%d open PR(s) with an unanswered review%s"
+            % (len(found), "" if cmd == "catchup" else " (dry run, nothing sent)")
+        )
         for repo, n, event in found:
-            print("  %s#%d %s by %s%s" % (repo, n, (event["state"] or "").lower(), event["user"],
-                                          "" if event.get("age_days") is None
-                                          else "  (%dd old)" % event["age_days"]))
+            print(
+                "  %s#%d %s by %s%s"
+                % (
+                    repo,
+                    n,
+                    (event["state"] or "").lower(),
+                    event["user"],
+                    "" if event.get("age_days") is None else "  (%dd old)" % event["age_days"],
+                )
+            )
         return 0
     if cmd == "once":
         poll(author, state)

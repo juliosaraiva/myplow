@@ -15,6 +15,7 @@ Rig control (the test harness only):
   POST /rig/pin {"image"}   POST /rig/inbound {"body"}   GET /rig/messages   GET /rig/beacons
 The login is read per request and never logged or echoed anywhere else.
 """
+
 import itertools
 import json
 import os
@@ -38,10 +39,17 @@ def now():
 
 def add(direction, body):
     with LOCK:
-        m = {"uid": f"msg_{next(SEQ):04d}", "direction": direction, "body": body, "created_at": now(),
-             "chat_uid": CHAT, "attachments": [],
-             "sender": {"display_name": "Daniel (rig)", "provider_key": "+10000000000"}
-             if direction == "inbound" else {"type": "agent"}}
+        m = {
+            "uid": f"msg_{next(SEQ):04d}",
+            "direction": direction,
+            "body": body,
+            "created_at": now(),
+            "chat_uid": CHAT,
+            "attachments": [],
+            "sender": {"display_name": "Daniel (rig)", "provider_key": "+10000000000"}
+            if direction == "inbound"
+            else {"type": "agent"},
+        }
         MESSAGES.append(m)
         return m
 
@@ -94,7 +102,9 @@ class H(BaseHTTPRequestHandler):
                 BANK["lease"] = BANK["lease"] or "rig-lease"
                 return self.send(200, {"lease_id": BANK["lease"], "account": "rig", "token": f.read().strip()})
         if p == "/claude-bank/heartbeat":
-            return self.send(200 if b.get("lease_id") == BANK["lease"] else 410, {"ok": b.get("lease_id") == BANK["lease"]})
+            return self.send(
+                200 if b.get("lease_id") == BANK["lease"] else 410, {"ok": b.get("lease_id") == BANK["lease"]}
+            )
         if p == "/claude-bank/return":
             if b.get("lease_id") == BANK["lease"]:
                 BANK["lease"] = None

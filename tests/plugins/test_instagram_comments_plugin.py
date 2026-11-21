@@ -1,0 +1,154 @@
+"""The Instagram comments plugin: only signed pushes count, each comment is delivered once, our
+own comments never, and a comment survives its agent not being up yet.
+
+Instagram, docker and the clock are stubbed, so nothing leaves the box.
+"""
+
+import hashlib
+import hmac
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest import mock
+import sandbox
+
+ROOT = Path(__file__).resolve().parents[2]
+PLUGIN = ROOT / "mypeople" / "runtime" / "plugins" / "instagram-comments" / "instagram-comments.py"
+ENV = {
+    "INSTAGRAM_APP_SECRET": "appsecret",
+    "INSTAGRAM_VERIFY_TOKEN": "vt",
+    "INSTAGRAM_USER_ID": "1784",
+    "HOST_ID": "node",
+    "MYPEOPLE_CONFIG_PATH": "/nonexistent",
+}
+
+
+def load(state_dir):
+    return sandbox.load_file(PLUGIN, "ig_%d" % id(state_dir), dict(ENV, INSTAGRAM_COMMENTS_STATE_DIR=state_dir))
+
+
+def push(*comments):
+    return {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "1784",
+                "changes": [
+                    {
+                        "field": "comments",
+                        "value": {
+                            "id": cid,
+                            "text": text,
+                            "from": {"id": uid, "username": user},
+                            "media": {"id": "m1"},
+                        },
+                    }
+                    for cid, text, uid, user in comments
+                ],
+            }
+        ],
+    }
+
+
+class InstagramCommentsTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.m = load(self.tmp.name)
+        p = mock.patch.dict(os.environ, ENV)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_only_an_explicit_serve_starts_the_server(self):
+        """It served on any word but status; a bare discord-chat.py ran a second serve beside supervise.sh's
+        (Mac 2, 10-30). No plugin defaults to serve."""
+        self.m.ThreadingHTTPServer = mock.Mock(side_effect=AssertionError("it served"))
+        for argv in ([], ["sevre"]):
+            with self.assertRaises(SystemExit):
+                self.m.main(["instagram-comments.py"] + argv)
+
+    def test_only_meta_signed_bodies_pass(self):
+        body = b'{"object":"instagram"}'
+        good = "sha256=" + hmac.new(b"appsecret", body, hashlib.sha256).hexdigest()
+        self.assertTrue(self.m.signature_ok(body, good))
+        self.assertFalse(self.m.signature_ok(body + b" ", good))
+        self.assertFalse(self.m.signature_ok(body, None))
+
+    def test_own_comments_skipped_and_a_retried_push_spools_once(self):
+        payload = push(("c1", "how  do I\njoin?", "999", "fan"), ("c2", "thanks!", "1784", "danedelattre"))
+        self.assertEqual(["c1"], [c["id"] for c in self.m.spool_add(self.m.comments_in(payload, "1784"))])
+        self.assertEqual([], self.m.spool_add(self.m.comments_in(payload, "1784")))
+        c = self.m.spool_pending()[0]
+        self.assertEqual(
+            "[IG REPLY] comment_id=c1 user=fan permalink=https://ig/p/1: how do I join?",
+            self.m.format_comment(c, "https://ig/p/1"),
+        )
+
+    def test_unreachable_fleet_keeps_the_comment_until_it_lands(self):
+        self.m.spool_add(self.m.comments_in(push(("c1", "hi", "999", "fan")), "1784"))
+        calls = []
+
+        def once(timeout=None):  # stop the loop after one pass
+            raise StopIteration
+
+        with (
+            mock.patch.object(self.m, "permalink", return_value=""),
+            mock.patch.object(self.m.WAKE, "wait", side_effect=once),
+        ):
+            with mock.patch.object(self.m, "deliver", side_effect=OSError("asleep")):
+                with self.assertRaises(StopIteration):
+                    self.m.forward_loop()
+            self.assertEqual(["c1"], [c["id"] for c in self.m.spool_pending()])
+            with mock.patch.object(self.m, "deliver", side_effect=lambda t: calls.append(t) or True):
+                with self.assertRaises(StopIteration):
+                    self.m.forward_loop()
+        self.assertEqual([], self.m.spool_pending())
+        self.assertEqual(["[IG REPLY] comment_id=c1 user=fan permalink=media:m1: hi"], calls)
+
+    def test_a_failed_docker_exec_does_not_count_the_rule_as_told(self):
+        import mpcommon as C
+
+        tmp = tempfile.TemporaryDirectory()  # never the real install: make live runs this on the owner's Mac
+        self.addCleanup(tmp.cleanup)
+        cfg = mock.patch.dict(C.CFG, {"INSTALL_DIR": tmp.name})
+        cfg.start()
+        self.addCleanup(cfg.stop)
+        rule = Path(tmp.name) / "state" / "instagram-comments"
+        rule.mkdir(parents=True)
+        (rule / "wrap.txt").write_text("Only English.")
+        pasted, fail = [], [True]
+
+        def docker(*a, stdin=None, check=True):
+            if "paste-buffer" in a and fail[0]:
+                raise RuntimeError("docker exec failed")
+            if "load-buffer" in a:
+                pasted.append(stdin)
+            return "x"
+
+        with (
+            mock.patch.object(self.m, "ensure_agent", return_value=True),
+            mock.patch.object(self.m, "docker", docker),
+            mock.patch.object(self.m.time, "sleep"),
+            mock.patch.object(C, "cli_session", lambda p, run: "111"),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.m.deliver("[IG REPLY] one")
+            fail[0], pasted[:] = False, []
+            self.assertTrue(self.m.deliver("[IG REPLY] two"))
+        self.assertIn("Only English.", pasted[0])
+        self.assertEqual("[IG REPLY] two", pasted[1])
+
+    def test_a_cold_agent_gets_nothing_typed_into_it(self):
+        # The session is still starting: the comment must stay spooled, not vanish into a pane
+        # that is not taking input yet.
+        with (
+            mock.patch.object(self.m, "ensure_agent", return_value=False),
+            mock.patch.object(self.m, "docker") as docker,
+        ):
+            self.assertFalse(self.m.deliver("[IG REPLY] comment_id=c1 user=fan permalink=x: hi"))
+        docker.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

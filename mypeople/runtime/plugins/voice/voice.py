@@ -29,6 +29,7 @@ is never sent twice. The one filter: the speaker sits near the mic, so the Boss'
 comes back in the captions. What arrives while `say` plays (and TAIL_S after) is skipped, and a
 later thought whose word pairs are mostly pairs `say` spoke in the last minute is dropped.
 """
+
 import difflib
 import http.client
 import json
@@ -44,30 +45,32 @@ from pathlib import Path
 INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME") or Path(__file__).resolve().parents[2])
 STATE_DIR = Path(os.environ.get("VOICE_STATE_DIR") or INSTALL / "state" / "voice")
 CONFIG = STATE_DIR / "config.json"
-SAID = STATE_DIR / "said.txt"   # the last lines `say` spoke, for the echo filter
-OFF = STATE_DIR / "off"   # exists: the owner turned the mic off, so no thought reaches the Boss
-SPEAKING = STATE_DIR / "speaking"   # "<start> <end>" of the last `say`; no end yet while it plays
+SAID = STATE_DIR / "said.txt"  # the last lines `say` spoke, for the echo filter
+OFF = STATE_DIR / "off"  # exists: the owner turned the mic off, so no thought reaches the Boss
+SPEAKING = STATE_DIR / "speaking"  # "<start> <end>" of the last `say`; no end yet while it plays
 HOST_ID = os.environ.get("HOST_ID") or os.uname().nodename.split(".")[0]
 BOSS_AGENT = os.environ.get("BOSS_AGENT") or f"{HOST_ID}/main:Boss"
 MP_BIN = os.environ.get("MP_BIN") or str(INSTALL / "bin" / "mp")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bin"))
 from mpcommon import SEND_TIMEOUT, plugin_text  # noqa: E402
 
-RUN = f"{sys.executable} {Path(__file__).resolve()}"   # the Boss answers with the python that runs the bridge
-SILENCE_MS = 1500   # a finished sentence ('.', '?', '!') ships after this pause
-LONG_PAUSE_MS = 2000   # an unfinished one waits for a longer pause: 11-01 a 1.5 s pause mid-sentence (even mid-word:
-                       # "me" ... "lhor") shipped half a thought, and Daniel got cut-up lines all day. 3.5 s until 11-04, when he asked for 2 s
-HARD_MS = 30000     # a thought that never pauses still ships
-CUT_PAUSE_S = 0.4   # at the cap, a gap in the words this long is a place to cut; shorter is just the model's pace
-CUT_MIN_WORDS = 4   # never leave a stub of a line at the cap
+RUN = f"{sys.executable} {Path(__file__).resolve()}"  # the Boss answers with the python that runs the bridge
+SILENCE_MS = 1500  # a finished sentence ('.', '?', '!') ships after this pause
+LONG_PAUSE_MS = 2000  # an unfinished one waits for a longer pause: 11-01 a 1.5 s pause mid-sentence (even mid-word:
+# "me" ... "lhor") shipped half a thought, and Daniel got cut-up lines all day. 3.5 s until 11-04, when he asked for 2 s
+HARD_MS = 30000  # a thought that never pauses still ships
+CUT_PAUSE_S = 0.4  # at the cap, a gap in the words this long is a place to cut; shorter is just the model's pace
+CUT_MIN_WORDS = 4  # never leave a stub of a line at the cap
 SENTENCE_END = re.compile(r"[.?!…][\"')\]]*\s*$")
-ECHO_S = 60         # how long a spoken reply can come back through the mic
-TAIL_S = 2.5        # the captions lag the speaker: its echo keeps arriving this long after it stops. Used only to
-                    # hold a line until the echo is complete so it can be stripped; the mic is never muted (11-01)
+ECHO_S = 60  # how long a spoken reply can come back through the mic
+TAIL_S = 2.5  # the captions lag the speaker: its echo keeps arriving this long after it stops. Used only to
+# hold a line until the echo is complete so it can be stripped; the mic is never muted (11-01)
 MAX_CHARS = 2000
-SWITCH_WORDS = 10   # a longer thought that mentions the mic is them talking about it, not flipping it
-OWNER_RULE = ("When the owner addresses you, it is a task: carry it to the end unless they say otherwise. Never treat it as "
-              "just conversation. Absolute rule.")
+SWITCH_WORDS = 10  # a longer thought that mentions the mic is them talking about it, not flipping it
+OWNER_RULE = (
+    "When the owner addresses you, it is a task: carry it to the end unless they say otherwise. Never treat it as "
+    "just conversation. Absolute rule."
+)
 
 
 def log(msg: str):
@@ -80,9 +83,10 @@ def config() -> dict:
 
 def send_to_agent(message: str, agent: str = BOSS_AGENT) -> bool:
     try:
-        r = subprocess.run([sys.executable, MP_BIN, "send", agent, message],
-                           capture_output=True, text=True, timeout=SEND_TIMEOUT)
-    except (OSError, subprocess.TimeoutExpired) as e:   # 10-31: one hung send silenced the old bridge
+        r = subprocess.run(
+            [sys.executable, MP_BIN, "send", agent, message], capture_output=True, text=True, timeout=SEND_TIMEOUT
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:  # 10-31: one hung send silenced the old bridge
         log(f"ERROR mp send: {e}")
         return False
     if r.returncode != 0:
@@ -92,18 +96,32 @@ def send_to_agent(message: str, agent: str = BOSS_AGENT) -> bool:
 
 
 STAMP = "[voice] from {sender}:"
-TEMPLATE = (STAMP + " {their_message}\n"
-            "(This is the owner's live mic, transcribed as they speak. Most of it is them talking to their "
-            "stream, the room or other agents, not to you. {when_to_answer} {safety_line} To answer out loud, run: {reply_command} "
-            "— it plays on the speaker next to them. Short spoken sentences in the language they used, no markdown.)")
+TEMPLATE = (
+    STAMP + " {their_message}\n"
+    "(This is the owner's live mic, transcribed as they speak. Most of it is them talking to their "
+    "stream, the room or other agents, not to you. {when_to_answer} {safety_line} To answer out loud, run: {reply_command} "
+    "— it plays on the speaker next to them. Short spoken sentences in the language they used, no markdown.)"
+)
 
 
 def envelope(who: str, text: str, cue: str = "") -> str:
-    when = (f"They address you by saying {cue} (or close to it: the transcript garbles names); a line "
-            f"without that is them talking to someone else, so do nothing." if cue else
-            "Answer only when they are talking to you, and otherwise do nothing.")
-    return plugin_text("voice", TEMPLATE, {"sender": who, "their_message": text, "when_to_answer": when,
-                                           "safety_line": OWNER_RULE, "reply_command": f'{RUN} say "your reply"'})
+    when = (
+        f"They address you by saying {cue} (or close to it: the transcript garbles names); a line "
+        f"without that is them talking to someone else, so do nothing."
+        if cue
+        else "Answer only when they are talking to you, and otherwise do nothing."
+    )
+    return plugin_text(
+        "voice",
+        TEMPLATE,
+        {
+            "sender": who,
+            "their_message": text,
+            "when_to_answer": when,
+            "safety_line": OWNER_RULE,
+            "reply_command": f'{RUN} say "your reply"',
+        },
+    )
 
 
 def _pairs(s: str) -> list:
@@ -121,7 +139,7 @@ def is_echo(line: str) -> bool:
     except OSError:
         return False
     p = _pairs(line)
-    return len(p) >= 2 and sum(x in said for x in p) >= 0.4 * len(p)   # garbled echoes kept ~48%; his own lines ~6%
+    return len(p) >= 2 and sum(x in said for x in p) >= 0.4 * len(p)  # garbled echoes kept ~48%; his own lines ~6%
 
 
 def strip_echo(line: str) -> str:
@@ -144,9 +162,11 @@ def strip_echo(line: str) -> str:
     ref = " ".join(re.sub(r"\W", "", w.lower()) for w in said.split())
     covered = set()
     for b in difflib.SequenceMatcher(None, joined, ref, autojunk=False).get_matching_blocks():
-        if b.size >= 6:   # a run of the speaker's text, not a short word ('vou', 'pra') that happens to match
+        if b.size >= 6:  # a run of the speaker's text, not a short word ('vou', 'pra') that happens to match
             covered.update(range(b.a, b.a + b.size))
-    keep = [w for w, n, (a, z) in zip(words, norm, spans) if not n or sum(i in covered for i in range(a, z)) < .5 * (z - a)]
+    keep = [
+        w for w, n, (a, z) in zip(words, norm, spans) if not n or sum(i in covered for i in range(a, z)) < 0.5 * (z - a)
+    ]
     return " ".join(keep)
 
 
@@ -158,7 +178,7 @@ def speaking(now: float) -> bool:
         start, end = float(start), (float(end) if end.strip() else now)
     except (OSError, ValueError):
         return False
-    return start <= now <= end + TAIL_S and now - start < 90   # a `say` that died never mutes for long
+    return start <= now <= end + TAIL_S and now - start < 90  # a `say` that died never mutes for long
 
 
 def refind(sent: str, t: str) -> int:
@@ -193,9 +213,9 @@ def trim_repeat(line: str, last: str) -> str:
     if last and len(line) > 40:
         if (last in line and len(last) >= 0.7 * len(line)) or (line in last and len(line) >= 0.7 * len(last)):
             return ""
-        tail = last[-max(24, int(len(last) * 0.6)):]
+        tail = last[-max(24, int(len(last) * 0.6)) :]
         if len(tail) >= 24 and line.startswith(tail):
-            return line[len(tail):].lstrip()
+            return line[len(tail) :].lstrip()
     return line
 
 
@@ -203,17 +223,17 @@ class Thoughts:
     """Turns a growing caption buffer into finished thoughts, each one handed out once."""
 
     def __init__(self):
-        self.text = None    # buffer as last seen; None until the first event, whose backlog is skipped
-        self.cut = 0        # text[:cut] is sent (or was backlog)
-        self.sent = ""      # that sent prefix, to re-find after a rewrite
-        self.held = ""      # the owner's words from before the speaker began, still to send
-        self.ready = ""     # a finished thought to send at once (the speaker began talking)
+        self.text = None  # buffer as last seen; None until the first event, whose backlog is skipped
+        self.cut = 0  # text[:cut] is sent (or was backlog)
+        self.sent = ""  # that sent prefix, to re-find after a rewrite
+        self.held = ""  # the owner's words from before the speaker began, still to send
+        self.ready = ""  # a finished thought to send at once (the speaker began talking)
         self.before_speaker = False
-        self.overlap = False     # the line being built heard the speaker too: strip its words before sending
+        self.overlap = False  # the line being built heard the speaker too: strip its words before sending
         self.was_overlap = False  # that flag for the line due() just returned
         self.in_speaker = False
         self.changed = self.began = None
-        self.marks = []     # (when, buffer length) at each caption change since the line began: where his pauses are
+        self.marks = []  # (when, buffer length) at each caption change since the line began: where his pauses are
 
     def update(self, t: str, now: float, muted: bool = False):
         if self.text is None:
@@ -221,9 +241,9 @@ class Thoughts:
             return
         if t == self.text:
             return
-        if muted and not self.in_speaker:   # the speaker starts: what he said before it is a finished thought
+        if muted and not self.in_speaker:  # the speaker starts: what he said before it is a finished thought
             # 11-01: held words used to wait and ship glued to the speaker's echo and were dropped with it.
-            pend = (self.held + " " + self.text[self.cut:]).strip()
+            pend = (self.held + " " + self.text[self.cut :]).strip()
             if re.search(r"\w", pend):
                 self.ready = (self.ready + " " + pend).strip()
             self.held = ""
@@ -231,19 +251,21 @@ class Thoughts:
             self.changed = self.began = None
             self.marks = []
         self.in_speaker = muted
-        if muted:   # 11-01 (Daniel): the mic stays open while the speaker plays; its words are stripped at send
+        if muted:  # 11-01 (Daniel): the mic stays open while the speaker plays; its words are stripped at send
             self.overlap = True
-        if not t.startswith(self.text[:self.cut]):
+        if not t.startswith(self.text[: self.cut]):
             self.cut = min(refind(self.sent, t), len(t))
-            self.sent = t[:self.cut]
-            self.marks = []   # the buffer moved: lengths no longer point at the same words
-        self.marks.append((now, len(self.text)))   # the pause, if any, ended here: the words before it end at this length
+            self.sent = t[: self.cut]
+            self.marks = []  # the buffer moved: lengths no longer point at the same words
+        self.marks.append(
+            (now, len(self.text))
+        )  # the pause, if any, ended here: the words before it end at this length
         self.text, self.changed = t, now
-        if self.began is None and t[self.cut:].strip():
+        if self.began is None and t[self.cut :].strip():
             self.began = now
 
     def due(self, now: float):
-        self.before_speaker = bool(self.ready)   # said before the speaker began: it cannot be the speaker's echo
+        self.before_speaker = bool(self.ready)  # said before the speaker began: it cannot be the speaker's echo
         self.was_overlap = False
         if self.ready:
             r, self.ready = self.ready.lstrip(",.;:?!… "), ""
@@ -252,21 +274,21 @@ class Thoughts:
             return None
         start = self.cut
         while 0 < start < len(self.text) and self.text[start - 1].isalnum() and self.text[start].isalnum():
-            start -= 1   # the model finished a word we already sent half of ("me" -> "melhor"): send the whole word
+            start -= 1  # the model finished a word we already sent half of ("me" -> "melhor"): send the whole word
         pending = (self.held + " " + self.text[start:]).strip()
-        pending = pending.lstrip(",.;:?!… ")   # punctuation the model added to sent text is not a new thought
+        pending = pending.lstrip(",.;:?!… ")  # punctuation the model added to sent text is not a new thought
         if not re.search(r"\w", pending):
-            self.cut, self.sent = len(self.text), self.text   # only punctuation changed: nothing to send
+            self.cut, self.sent = len(self.text), self.text  # only punctuation changed: nothing to send
             if not self.held:
                 self.changed = self.began = None
             return None
         quiet = (now - self.changed) * 1000
         wait = SILENCE_MS if SENTENCE_END.search(pending) else LONG_PAUSE_MS
         if self.in_speaker:
-            wait = max(wait, TAIL_S * 1000)   # let the speaker's echo finish arriving, so all of it gets stripped
+            wait = max(wait, TAIL_S * 1000)  # let the speaker's echo finish arriving, so all of it gets stripped
         if quiet < wait and (now - self.began) * 1000 < HARD_MS:
             return None
-        split = self.longest_pause(start) if quiet < wait else None   # at the cap he's mid-speech: cut where he breathed
+        split = self.longest_pause(start) if quiet < wait else None  # at the cap he's mid-speech: cut where he breathed
         self.was_overlap, self.overlap = self.overlap, False
         if split:
             line = (self.held + " " + self.text[start:split]).strip().lstrip(",.;:?!… ")
@@ -291,7 +313,7 @@ class Thoughts:
 
 def deliver(line: str, who: str, last: list, cue: str = "", before_speaker: bool = False, overlap: bool = False):
     line = trim_repeat(" ".join(line.split()), last[0])[-MAX_CHARS:].strip()
-    if overlap:   # heard while the speaker played: keep his words, drop the speaker's
+    if overlap:  # heard while the speaker played: keep his words, drop the speaker's
         kept = strip_echo(line)
         if len(re.findall(r"\w+", kept)) < 2:
             log(f"echo stripped: {line[:80]!r}")
@@ -299,11 +321,11 @@ def deliver(line: str, who: str, last: list, cue: str = "", before_speaker: bool
         line = kept
     if not line:
         return
-    if not (before_speaker or overlap) and is_echo(line):   # 11-01: his words often repeat the reply that follows them
+    if not (before_speaker or overlap) and is_echo(line):  # 11-01: his words often repeat the reply that follows them
         log(f"echo dropped: {line[:80]!r}")
         return
     last[0] = line
-    if OFF.exists():   # paused: the transcription is kept in the log and goes to nobody
+    if OFF.exists():  # paused: the transcription is kept in the log and goes to nobody
         log(f"paused, not sent: {line!r}")
         return
     if send_to_agent(envelope(who, line, cue)):
@@ -330,7 +352,9 @@ def flip(off: bool, cfg: dict):
     OFF.touch() if off else OFF.unlink(missing_ok=True)
     log(f"mic {'off' if off else 'on'}")
     who = cfg.get("from") or "the owner (live mic)"
-    send_to_agent(f"[voice] {who} turned the mic {'off: no lines reach you until it is back on' if off else 'back on'}. Nothing to do.")
+    send_to_agent(
+        f"[voice] {who} turned the mic {'off: no lines reach you until it is back on' if off else 'back on'}. Nothing to do."
+    )
     said = (cfg.get("switch") or {}).get("off_said" if off else "on_said")
     if said:
         say(said)
@@ -344,7 +368,9 @@ def heard_switch(line: str, cfg: dict) -> bool:
     for off, key in ((True, "off"), (False, "on")):
         if sw.get(key) and re.search(sw[key], line, re.I):
             if OFF.exists() != off:
-                threading.Thread(target=flip, args=(off, cfg), daemon=True).start()   # the speaker must not hold up the next thought
+                threading.Thread(
+                    target=flip, args=(off, cfg), daemon=True
+                ).start()  # the speaker must not hold up the next thought
             return True
     return False
 
@@ -357,10 +383,10 @@ def serve():
     def shipper():
         while True:
             time.sleep(0.05)
-            try:   # nothing that goes wrong with one thought may stop the next ones
+            try:  # nothing that goes wrong with one thought may stop the next ones
                 with lock:
                     now = time.time()
-                    thoughts.in_speaker = speaking(now)   # also between caption events
+                    thoughts.in_speaker = speaking(now)  # also between caption events
                     line = thoughts.due(now)
                     before, overlap = thoughts.before_speaker, thoughts.was_overlap
                 if line and not heard_switch(line, cfg):
@@ -379,7 +405,7 @@ def serve():
         except Exception as e:  # noqa: BLE001 - the caption server restarts; so do we
             log(f"captions dropped ({type(e).__name__}: {e}); retry in 3 s")
         with lock:
-            thoughts.__init__()   # a new connection replays the buffer: skip it as backlog
+            thoughts.__init__()  # a new connection replays the buffer: skip it as backlog
         time.sleep(3)
 
 
@@ -387,11 +413,11 @@ def say(text: str) -> int:
     text = " ".join(text.split())
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     kept = SAID.read_text().splitlines()[-2:] if SAID.exists() else []
-    SAID.write_text("\n".join(kept + [text]) + "\n")   # before speaking: its echo arrives mid-playback
+    SAID.write_text("\n".join(kept + [text]) + "\n")  # before speaking: its echo arrives mid-playback
     start = time.time()
     SPEAKING.write_text(f"{start} ")
     try:
-        return subprocess.run(config()["say"] + [text]).returncode   # returns once playback ends
+        return subprocess.run(config()["say"] + [text]).returncode  # returns once playback ends
     finally:
         SPEAKING.write_text(f"{start} {time.time()}")
 
@@ -405,11 +431,19 @@ def main(argv):
         off = {"off": True, "on": False, "toggle": not OFF.exists()}[argv[0]]
         flip(off, config())
         print("off" if off else "on")
-    elif argv[:1] == ["message"]:   # the board's Plugins page shows this
+    elif argv[:1] == ["message"]:  # the board's Plugins page shows this
         print(TEMPLATE)
     elif argv[:1] == ["status"]:
-        print(json.dumps({"config": json.loads(CONFIG.read_text()) if CONFIG.exists() else None, "off": OFF.exists(),
-                          "said": SAID.read_text().splitlines() if SAID.exists() else []}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "config": json.loads(CONFIG.read_text()) if CONFIG.exists() else None,
+                    "off": OFF.exists(),
+                    "said": SAID.read_text().splitlines() if SAID.exists() else [],
+                },
+                indent=2,
+            )
+        )
     else:
         print(__doc__, file=sys.stderr)
         return 1

@@ -31,10 +31,7 @@ async def run(device: str | int | None, host: str) -> None:
     ):
         raise ValueError("Use apenas o servidor local em 127.0.0.1 ou localhost.")
     info = sd.query_devices(device, "input")
-    if any(
-        word in info["name"].lower()
-        for word in ("blackhole", "loopback", "virtual", "aggregate")
-    ):
+    if any(word in info["name"].lower() for word in ("blackhole", "loopback", "virtual", "aggregate")):
         raise ValueError("Escolha um microfone físico.")
     sd.check_input_settings(device=device, channels=1, dtype="int16", samplerate=16000)
     loop = asyncio.get_running_loop()
@@ -44,9 +41,7 @@ async def run(device: str | int | None, host: str) -> None:
         if queue.full() or failed:
             while not queue.empty():
                 queue.get_nowait()
-            queue.put_nowait(
-                RuntimeError("O áudio atrasou; reconectando sem enviar fala antiga.")
-            )
+            queue.put_nowait(RuntimeError("O áudio atrasou; reconectando sem enviar fala antiga."))
         else:
             queue.put_nowait(data)
 
@@ -109,9 +104,7 @@ if __name__ == "__main__":
         help="List output devices instead of microphones.",
     )
     args = parser.parse_args()
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if args.device is None and not args.capture:
         for index, item in enumerate(sd.query_devices()):
             if item["max_output_channels" if args.outputs else "max_input_channels"]:

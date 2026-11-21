@@ -26,6 +26,7 @@ ones routed nowhere.
 
     AGENT_KEY_SHA256=<64 hex> RELAY_DATA=~/web-chat RELAY_PORT=8000 python3 relay.py
 """
+
 import hashlib
 import hmac
 import json
@@ -43,9 +44,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 DATA = Path(os.environ.get("RELAY_DATA") or Path.home() / "web-chat")
-PAGE = Path(__file__).with_name("page.html")          # the chat, at /chat
-LANDING = Path(__file__).with_name("landing.html")    # the landing page around it, at / (the chat alone when absent)
-VERSIONS = ("c",)                                     # /?v=c is landing-c.html, the take Daniel picked (10-28)
+PAGE = Path(__file__).with_name("page.html")  # the chat, at /chat
+LANDING = Path(__file__).with_name("landing.html")  # the landing page around it, at / (the chat alone when absent)
+VERSIONS = ("c",)  # /?v=c is landing-c.html, the take Daniel picked (10-28)
 PORT = int(os.environ.get("RELAY_PORT") or 8000)
 SLUG = re.compile(r"[a-z0-9-]{1,40}")
 TAPBACKS = ("❤️", "👍", "👎", "😂", "‼️", "❓")  # iMessage's six
@@ -75,10 +76,16 @@ class Store:
             # Routing: the key that has the visitor (null = the owner), and handover items in the inbox (kind).
             # routed_seq: the holder sees this visitor's messages from that seq on (the past is in /agent/thread).
             # tapback: the visitor's own tapback on a message; tapbacks: when each was made (after_seq), for the agent.
-            db.execute("create table if not exists tapbacks (seq integer primary key autoincrement, visitor text not null, "
-                       "message_id text not null, emoji text not null, after_seq integer not null)")
-            for table, column in (("visitors", "agent_sha256 text"), ("visitors", "routed_seq integer not null default 0"),
-                                  ("messages", "kind text not null default 'message'"), ("messages", "tapback text")):
+            db.execute(
+                "create table if not exists tapbacks (seq integer primary key autoincrement, visitor text not null, "
+                "message_id text not null, emoji text not null, after_seq integer not null)"
+            )
+            for table, column in (
+                ("visitors", "agent_sha256 text"),
+                ("visitors", "routed_seq integer not null default 0"),
+                ("messages", "kind text not null default 'message'"),
+                ("messages", "tapback text"),
+            ):
                 if column.split()[0] not in [r["name"] for r in db.execute(f"pragma table_info({table})")]:
                     db.execute(f"alter table {table} add column {column}")
 
@@ -94,7 +101,10 @@ class Store:
     def new_visitor(self, page):
         token, vid = secrets.token_urlsafe(24), f"w{secrets.token_hex(4)}"
         with self.db() as db:
-            db.execute("insert into visitors (id, sha256, page, created_at) values (?, ?, ?, ?)", (vid, sha(token), page, now()))
+            db.execute(
+                "insert into visitors (id, sha256, page, created_at) values (?, ?, ?, ?)",
+                (vid, sha(token), page, now()),
+            )
         return vid, token
 
     def visitor(self, token):
@@ -105,34 +115,53 @@ class Store:
     def add(self, vid, mine, text):
         mid = f"m{secrets.token_hex(5)}"
         with self.db() as db:
-            db.execute("insert into messages (id, visitor, mine, text, created_at) values (?, ?, ?, ?, ?)", (mid, vid, int(mine), text, now()))
+            db.execute(
+                "insert into messages (id, visitor, mine, text, created_at) values (?, ?, ?, ?, ?)",
+                (mid, vid, int(mine), text, now()),
+            )
             return dict(db.execute("select * from messages where id = ?", (mid,)).fetchone())
 
     def thread(self, vid, limit=200):
         with self.db() as db:
-            rows = db.execute("select * from messages where visitor = ? and kind = 'message' order by seq desc limit ?", (vid, limit)).fetchall()
+            rows = db.execute(
+                "select * from messages where visitor = ? and kind = 'message' order by seq desc limit ?", (vid, limit)
+            ).fetchall()
         return [dict(r) for r in reversed(rows)]
 
     def inbox(self, after, key):
         """What the visitors this key has wrote after seq, and its handovers. key None = the owner (unrouted visitors)."""
         with self.db() as db:
-            rows = db.execute("""select m.seq, m.id, m.visitor, m.kind, m.text, m.created_at, v.page,
+            rows = db.execute(
+                """select m.seq, m.id, m.visitor, m.kind, m.text, m.created_at, v.page,
                 not exists (select 1 from messages p where p.visitor = m.visitor and p.kind = 'message' and p.seq < m.seq) as first
                 from messages m join visitors v on v.id = m.visitor
-                where m.mine = 1 and m.seq > ? and m.seq >= v.routed_seq and v.agent_sha256 is ? order by m.seq limit 50""", (after, key))
+                where m.mine = 1 and m.seq > ? and m.seq >= v.routed_seq and v.agent_sha256 is ? order by m.seq limit 50""",
+                (after, key),
+            )
             out = []
             for r in rows:
                 if r["kind"] == "handover":
                     out.append({"seq": r["seq"], "visitor": r["visitor"], "kind": "handover"})
                     continue
                 # The visitor's tapbacks made after their previous message and still standing, reach the agent with this one.
-                prev = db.execute("select coalesce(max(seq), 0) from messages where visitor = ? and mine = 1 and kind = 'message' and seq < ?",
-                                  (r["visitor"], r["seq"])).fetchone()[0]
-                taps = db.execute("""select t.emoji, m.text, m.mine from tapbacks t join messages m on m.id = t.message_id
+                prev = db.execute(
+                    "select coalesce(max(seq), 0) from messages where visitor = ? and mine = 1 and kind = 'message' and seq < ?",
+                    (r["visitor"], r["seq"]),
+                ).fetchone()[0]
+                taps = db.execute(
+                    """select t.emoji, m.text, m.mine from tapbacks t join messages m on m.id = t.message_id
                     where t.visitor = ? and t.after_seq >= ? and t.after_seq < ? and t.emoji != '' and m.tapback = t.emoji
-                    group by t.message_id order by max(t.seq)""", (r["visitor"], prev, r["seq"])).fetchall()
-                out.append({**{k: r[k] for k in r.keys()},
-                            "tapbacks": [{"emoji": t["emoji"], "on": t["text"][:80], "on_mine": not t["mine"]} for t in taps]})
+                    group by t.message_id order by max(t.seq)""",
+                    (r["visitor"], prev, r["seq"]),
+                ).fetchall()
+                out.append(
+                    {
+                        **{k: r[k] for k in r.keys()},
+                        "tapbacks": [
+                            {"emoji": t["emoji"], "on": t["text"][:80], "on_mine": not t["mine"]} for t in taps
+                        ],
+                    }
+                )
             return out
 
     def holder(self, vid):
@@ -146,28 +175,37 @@ class Store:
         with self.db() as db:
             db.execute("begin immediate")
             if key:
-                seq = db.execute("insert into messages (id, visitor, mine, text, created_at, kind) values (?, ?, 1, '', ?, 'handover')",
-                                 (f"h{secrets.token_hex(5)}", vid, now())).lastrowid
+                seq = db.execute(
+                    "insert into messages (id, visitor, mine, text, created_at, kind) values (?, ?, 1, '', ?, 'handover')",
+                    (f"h{secrets.token_hex(5)}", vid, now()),
+                ).lastrowid
             else:  # back to the owner: from the next message on
                 seq = (db.execute("select max(seq) from messages").fetchone()[0] or 0) + 1
             db.execute("update visitors set agent_sha256 = ?, routed_seq = ? where id = ?", (key, seq, vid))
             db.execute("commit")
 
-
     def tapback(self, vid, mid, emoji):
         """The visitor's tapback on a message of their thread ("" takes it back); False if it isn't theirs."""
         with self.db() as db:
             db.execute("begin immediate")
-            n = db.execute("update messages set tapback = ? where id = ? and visitor = ? and kind = 'message'", (emoji or None, mid, vid)).rowcount
+            n = db.execute(
+                "update messages set tapback = ? where id = ? and visitor = ? and kind = 'message'",
+                (emoji or None, mid, vid),
+            ).rowcount
             if n:
-                db.execute("insert into tapbacks (visitor, message_id, emoji, after_seq) values (?, ?, ?, (select coalesce(max(seq), 0) from messages))",
-                           (vid, mid, emoji))
+                db.execute(
+                    "insert into tapbacks (visitor, message_id, emoji, after_seq) values (?, ?, ?, (select coalesce(max(seq), 0) from messages))",
+                    (vid, mid, emoji),
+                )
             db.execute("commit")
         return n == 1
 
     def react(self, vid, mid, emoji):
         with self.db() as db:
-            n = db.execute("update messages set reactions = ? where id = ? and visitor = ?", (json.dumps([emoji] if emoji else []), mid, vid)).rowcount
+            n = db.execute(
+                "update messages set reactions = ? where id = ? and visitor = ?",
+                (json.dumps([emoji] if emoji else []), mid, vid),
+            ).rowcount
         return n == 1
 
     def exists(self, vid):
@@ -176,15 +214,22 @@ class Store:
 
 
 def view(m):
-    return {"id": m["id"], "mine": bool(m["mine"]), "text": m["text"], "created_at": m["created_at"],
-            "reactions": json.loads(m["reactions"]), "tapback": m.get("tapback"), "files": []}
+    return {
+        "id": m["id"],
+        "mine": bool(m["mine"]),
+        "text": m["text"],
+        "created_at": m["created_at"],
+        "reactions": json.loads(m["reactions"]),
+        "tapback": m.get("tapback"),
+        "files": [],
+    }
 
 
 class Relay:
     def __init__(self, data=DATA, agent_sha=None):
         self.store = Store(Path(data) / "relay.sqlite")
         self.agent_sha = agent_sha if agent_sha is not None else os.environ.get("AGENT_KEY_SHA256", "")
-        self.streams = {}                    # visitor id -> set of queues, one per open page
+        self.streams = {}  # visitor id -> set of queues, one per open page
         self.lock = threading.Lock()
         self.arrived = threading.Condition()  # a visitor wrote: wake the agent's long poll
         self.hits = {}
@@ -205,7 +250,7 @@ class Relay:
         return len(recent) > most
 
     def agent(self, handler):
-        """"owner", or the sha256 of any other key: a new MyPlow polls before the owner routes it a visitor, and a key
+        """ "owner", or the sha256 of any other key: a new MyPlow polls before the owner routes it a visitor, and a key
         sees nothing until one is routed to it (its inbox is an empty long-poll; every visitor call is a 404)."""
         got = handler.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if not got:
@@ -261,8 +306,13 @@ def handler_for(relay):
                 if method == "GET" and url.path in ("/", "/chat"):
                     v = q.get("v", [""])[0]
                     alt = LANDING.with_name(f"landing-{v}.html") if v in VERSIONS else None
-                    page = (alt if url.path == "/" and alt and alt.exists()
-                            else LANDING if url.path == "/" and LANDING.exists() else PAGE).read_bytes()
+                    page = (
+                        alt
+                        if url.path == "/" and alt and alt.exists()
+                        else LANDING
+                        if url.path == "/" and LANDING.exists()
+                        else PAGE
+                    ).read_bytes()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Content-Length", str(len(page)))
@@ -273,14 +323,16 @@ def handler_for(relay):
                 if method == "POST" and url.path == "/react":
                     return self.post_tapback()
                 if method == "GET" and url.path == "/messages":
-                    return self.send_json(200, {"messages": [view(m) for m in relay.store.thread(self.visitor()["id"])]})
+                    return self.send_json(
+                        200, {"messages": [view(m) for m in relay.store.thread(self.visitor()["id"])]}
+                    )
                 if method == "GET" and url.path == "/events":
                     return self.events(self.visitor((q.get("token") or [""])[0]))
                 if url.path.startswith("/agent/"):
                     who = relay.agent(self)
                     if not who:
                         raise Fail(404, "not found")
-                    if relay.limited(f"agent {self.client()}", 120, 60):   # a real bridge polls a few times a minute
+                    if relay.limited(f"agent {self.client()}", 120, 60):  # a real bridge polls a few times a minute
                         raise Fail(429, "slow down")
                     return self.agent_call(method, url.path, q, who)
                 raise Fail(404, "not found")
@@ -356,7 +408,7 @@ def handler_for(relay):
                 self.close_connection = True
 
         def agent_call(self, method, path, q, who):
-            key = None if who == "owner" else who   # the owner's visitors are the ones routed to no key
+            key = None if who == "owner" else who  # the owner's visitors are the ones routed to no key
 
             def mine(vid):  # a visitor this key has; anyone else's reads as unknown
                 found, holder = relay.store.holder(vid)
@@ -397,7 +449,9 @@ def handler_for(relay):
                     raise Fail(422, "empty reply")
                 m = relay.store.add(vid, False, text)
                 relay.push(vid, "message", view(m))
-                return self.send_json(201, {"visitor": vid, "message": m["id"], "live": len(relay.streams.get(vid, ()))})
+                return self.send_json(
+                    201, {"visitor": vid, "message": m["id"], "live": len(relay.streams.get(vid, ()))}
+                )
             if method == "POST" and path == "/agent/react":
                 emoji = str(b.get("emoji") or "")
                 if not relay.store.react(vid, str(b.get("message") or ""), emoji):

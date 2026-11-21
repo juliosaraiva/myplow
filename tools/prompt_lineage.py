@@ -46,10 +46,12 @@ def static_template(name, revision):
     source = json.loads(CATALOG.read_text(encoding="utf-8"))[name]
     commit = subprocess.check_output(
         ["git", "rev-parse", "--verify", "--end-of-options", revision + "^{commit}"],
-        cwd=ROOT, text=True,
+        cwd=ROOT,
+        text=True,
     ).strip()
     body = subprocess.check_output(
-        ["git", "cat-file", "blob", f"{commit}:{source['path']}"], cwd=ROOT,
+        ["git", "cat-file", "blob", f"{commit}:{source['path']}"],
+        cwd=ROOT,
     )
     if "symbol" in source:
         body = python_template(body, source["symbol"]).encode("utf-8")
@@ -71,8 +73,7 @@ def record_prompt(client, run_id, name, template, digest, version=None):
     params = client.get_run(run_id).data.params
     recorded_version = params.get(prefix + "version")
     if recorded_version is not None and (
-        params.get(prefix + "sha256") != digest
-        or (version is not None and str(version) != recorded_version)
+        params.get(prefix + "sha256") != digest or (version is not None and str(version) != recorded_version)
     ):
         raise ValueError("Run already records a different prompt version")
     version = recorded_version if recorded_version is not None else version

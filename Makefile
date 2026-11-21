@@ -2,7 +2,7 @@
 # images from 0.3.2 source).
 VERSION := $(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' mypeople/__init__.py)
 
-.PHONY: image live app released cloud cli test
+.PHONY: image live app released cloud cli test lint
 
 image:
 	docker build -t mypeople:$(VERSION) .
@@ -36,11 +36,12 @@ RT_ENV = env -i HOME="$$HOME" USER="$$USER" LOGNAME="$$LOGNAME" SHELL="$$SHELL" 
 # INSTALL_DIR: an empty one, so text the owner saved on this machine is not what the tests read as a plugin's own words.
 # TERM: the tmux tests need it. A Mac without node skips the .test.mjs files, as tmux tests skip without tmux.
 test:
-	cd tests && mods="$$(ls test_*.py | sed 's/\.py$$//')" && none="$$(mktemp -d)" && \
+	cd tests && mods="$$(find . -name 'test_*.py' -printf '%P\n' | sed 's|\.py$$||; s|/|.|g' | sort)" && none="$$(mktemp -d)" && \
 	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$mods && \
 	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$(printf '%s\n' $$mods | sort -r)
 	@command -v node >/dev/null || { echo "make test: no node, plugin .test.mjs files skipped"; exit 0; }; \
 	for t in mypeople/runtime/plugins/*/*.test.mjs; do node --test "$$t" || exit 1; done
+
 # boss-supervisor's login gate runs the `mypeople` on PATH, a separate `uv tool` install that no
 # release touched: it sat at 5.14.0 with an auth probe that started the 1Password MCP, one macOS
 # "access data from other apps" prompt per release (card 70a20b5dcf). Reinstall it from this
@@ -52,6 +53,10 @@ cli: released
 	  env -u PYTHONPATH uv tool install -q --force "$$d"/mypeople-$(VERSION)-*.whl && \
 	  echo "[myplow] mypeople CLI $$v -> $(VERSION)"; \
 	fi
+
+# Pyflakes and syntax only. Not a formatter: see CONTRIBUTING.md.
+lint:
+	python3 -m ruff check .
 
 live: released test cli
 	$(RT_ENV) SSH_AUTH_SOCK="$$SSH_AUTH_SOCK" python3 -m mypeople.cli up --detach

@@ -14,6 +14,7 @@ login goes into tmux's environment, then every Claude agent is restarted on its 
 once the Boss is back; if it does not come back, this VM stays on the old login and gives the new
 one back. The VM, its data and the chat bridge stay up throughout.
 """
+
 import hashlib
 import json
 import os
@@ -33,13 +34,17 @@ MP = HOME / "bin" / "mp"
 ROSTER = HOME / "run" / "roster.json"
 PROJECTS = Path.home() / ".claude" / "projects"
 EVERY = int(os.environ.get("MYPLOW_POOL_EVERY", "60"))
-RETRY_AFTER = int(os.environ.get("MYPLOW_POOL_RETRY_AFTER", "600"))   # after a failed move, before the next
+RETRY_AFTER = int(os.environ.get("MYPLOW_POOL_RETRY_AFTER", "600"))  # after a failed move, before the next
 ROOT = Path(os.environ.get("MYPLOW_ROOT", "/opt/myplow"))
 OWN = Path(__file__).resolve().parent
 # What a usage limit looks like in Claude Code's own session log (an API error turn).
 LIMIT = re.compile(r"usage limit|limit reached|rate_limit_error|API Error: 429", re.I)
-USAGE = {"input_tokens": "input", "output_tokens": "output",
-         "cache_read_input_tokens": "cache_read", "cache_creation_input_tokens": "cache_write"}
+USAGE = {
+    "input_tokens": "input",
+    "output_tokens": "output",
+    "cache_read_input_tokens": "cache_read",
+    "cache_creation_input_tokens": "cache_write",
+}
 
 
 def bank():
@@ -62,15 +67,21 @@ def log(msg, beacon=False):
         pass
     if beacon and bank():
         try:
-            urllib.request.urlopen(urllib.request.Request(bank() + "/beacon", method="POST",
-                                   data=("%s pool: %s" % (os.uname().nodename, msg)).encode()), timeout=5)
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    bank() + "/beacon", method="POST", data=("%s pool: %s" % (os.uname().nodename, msg)).encode()
+                ),
+                timeout=5,
+            )
         except Exception:
             pass
 
 
 def assertion():
-    req = urllib.request.Request(os.environ.get("PLOW_API_BASE", "https://api.plow.co") + "/v1/auth/index-identity",
-                                 headers={"Authorization": "Bearer " + os.environ.get("PLOW_AGENT_TOKEN", "proxied")})
+    req = urllib.request.Request(
+        os.environ.get("PLOW_API_BASE", "https://api.plow.co") + "/v1/auth/index-identity",
+        headers={"Authorization": "Bearer " + os.environ.get("PLOW_AGENT_TOKEN", "proxied")},
+    )
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.load(r)["assertion"]
 
@@ -82,8 +93,12 @@ def call(path, body):
         a = assertion()
     except Exception:
         return 0, {}
-    req = urllib.request.Request(bank() + path, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "X-Plow-Index-Assertion": a})
+    req = urllib.request.Request(
+        bank() + path,
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json", "X-Plow-Index-Assertion": a},
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, json.load(r)
@@ -108,7 +123,7 @@ def write_lease(d):
     tmp = LEASE.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
-        json.dump(d, f)                       # ids and account name only: the login itself is never on disk
+        json.dump(d, f)  # ids and account name only: the login itself is never on disk
     os.replace(tmp, LEASE)
 
 
@@ -173,8 +188,9 @@ def claude_agents():
         roster = json.loads(ROSTER.read_text())
     except (OSError, ValueError):
         return []
-    live = [(aid, r) for aid, r in roster.items()
-            if not r.get("retired") and (r.get("backend") or "claude") == "claude"]
+    live = [
+        (aid, r) for aid, r in roster.items() if not r.get("retired") and (r.get("backend") or "claude") == "claude"
+    ]
     return [aid for aid, r in sorted(live, key=lambda x: not x[1].get("is_master"))]
 
 
@@ -191,8 +207,9 @@ def set_login(token):
 
 
 def claude_pids():
-    return set(subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "claude"], capture_output=True,
-                              text=True).stdout.split())
+    return set(
+        subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "claude"], capture_output=True, text=True).stdout.split()
+    )
 
 
 def proc_view(pid):
@@ -229,7 +246,9 @@ def restart_all(agents, token):
     from the caller, not from the old server's global one (that lost the new login on the rig)."""
     env = dict(os.environ, CLAUDE_CODE_OAUTH_TOKEN=token)
     for aid in agents:
-        subprocess.run([str(MP), "kill", aid, "--reason", "moving to another Claude login"], capture_output=True, env=env)
+        subprocess.run(
+            [str(MP), "kill", aid, "--reason", "moving to another Claude login"], capture_output=True, env=env
+        )
         try:
             subprocess.run([str(MP), "revive", aid], capture_output=True, timeout=180, env=env)
         except subprocess.TimeoutExpired:
@@ -267,14 +286,19 @@ def regain(lease, token):
     is kept as is; any other one is moved to like a rotation, so no login is ever used unleased."""
     code, out = call("/checkout", {})
     if code != 200 or not out.get("token"):
-        log("lease gone and no login free (%s): still on %s, which may be lent to someone else"
-            % (code, lease.get("account")), beacon=True)
+        log(
+            "lease gone and no login free (%s): still on %s, which may be lent to someone else"
+            % (code, lease.get("account")),
+            beacon=True,
+        )
         return token
     if out["token"] == token:
         write_lease({"lease_id": out["lease_id"], "account": out["account"], "started": time.time()})
         log("lease gone; took %s back" % out["account"], beacon=True)
         return token
-    log("lease gone; %s may be lent to someone else, moving to %s" % (lease.get("account"), out["account"]), beacon=True)
+    log(
+        "lease gone; %s may be lent to someone else, moving to %s" % (lease.get("account"), out["account"]), beacon=True
+    )
     return rotate(lease, out, token)
 
 
@@ -304,7 +328,7 @@ def loop():
         if code == 410:
             token = regain(lease, token)
         elif out.get("rotate") and time.time() < lease.get("retry_at", 0):
-            call("/return", {"lease_id": out["rotate"]["lease_id"]})   # backing off: don't sit on a reservation
+            call("/return", {"lease_id": out["rotate"]["lease_id"]})  # backing off: don't sit on a reservation
         elif out.get("rotate"):
             token = rotate(lease, out["rotate"], token)
         elif out.get("no_capacity"):
@@ -321,5 +345,5 @@ if __name__ == "__main__":
         sys.exit(bad())
     if cmd == "loop":
         loop()
-        sys.exit(0)   # left on purpose: its release is no longer the running one
+        sys.exit(0)  # left on purpose: its release is no longer the running one
     sys.exit(__doc__)

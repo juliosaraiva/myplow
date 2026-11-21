@@ -124,6 +124,7 @@ flowchart TD
 
 | To see | Open |
 | --- | --- |
+| Where the code for each of these lives | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | What everyone is working on | The Board (`http://localhost:9933`) |
 | Every agent's live terminal | The Graph (the Board's top-right switch) |
 | Who is up, from a shell | `mp status` |

@@ -24,28 +24,20 @@ class AudioRoutingTests(unittest.TestCase):
     def test_playback_uses_configured_url_speed_device_and_blocks(self):
         with tempfile.TemporaryDirectory() as d:
             source = Path(d) / "voice.json"
-            source.write_text(
-                json.dumps({"speaker": 0, "tts_speed": 0.8, "tts_port": 18975})
-            )
+            source.write_text(json.dumps({"speaker": 0, "tts_speed": 0.8, "tts_port": 18975}))
             audio = io.BytesIO()
             sf.write(audio, np.zeros(2400, dtype=np.float32), 24000, format="WAV")
             audio.seek(0)
             with (
-                patch.dict(
-                    os.environ, {"MYPLOW_VOICE_CONFIG": str(source)}, clear=True
-                ),
-                patch.object(
-                    fala.urllib.request, "urlopen", return_value=audio
-                ) as request,
+                patch.dict(os.environ, {"MYPLOW_VOICE_CONFIG": str(source)}, clear=True),
+                patch.object(fala.urllib.request, "urlopen", return_value=audio) as request,
                 patch.object(fala.sd, "check_output_settings") as output,
                 patch.object(fala.sd, "play") as play,
             ):
                 fala.speak("Teste em português.")
             sent = request.call_args.args[0]
             self.assertEqual(sent.full_url, "http://127.0.0.1:18975/speak")
-            self.assertEqual(
-                json.loads(sent.data), {"text": "Teste em português.", "speed": 0.8}
-            )
+            self.assertEqual(json.loads(sent.data), {"text": "Teste em português.", "speed": 0.8})
             output.assert_called_once_with(device=0, samplerate=24000, channels=1)
             self.assertTrue(play.call_args.kwargs["blocking"])
             self.assertEqual(play.call_args.kwargs["device"], 0)

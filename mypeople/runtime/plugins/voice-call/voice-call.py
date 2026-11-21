@@ -48,6 +48,7 @@ Usage:
   voice-call.py test-window MIN       let our own Twilio number in for MIN minutes (max 60, 0 closes)
   voice-call.py latency rec.wav       reply gaps in a dual-channel call recording
 """
+
 import array
 import base64
 import hmac
@@ -68,11 +69,10 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME")
-               or Path.home() / "mypeople")
+INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME") or Path.home() / "mypeople")
 STATE_DIR = Path(os.environ.get("VOICE_CALL_STATE_DIR") or INSTALL / "state" / "voice-call")
 CONFIG = STATE_DIR / "config.json"  # 600: keys and PIN, written by keys/setup
-CLIPS_DIR = STATE_DIR / "clips"      # the short canned lines, rendered once in the call's voice
+CLIPS_DIR = STATE_DIR / "clips"  # the short canned lines, rendered once in the call's voice
 PORT = int(os.environ.get("VOICE_CALL_PORT", "8796"))  # Twilio webhooks; PORT+1 is the media stream
 SAY_PORT = PORT + 2  # `say` from the Boss: its own port, so no Funnel on PORT can ever publish it
 PUBLIC_URL = os.environ.get("VOICE_CALL_PUBLIC_URL", "").rstrip("/")
@@ -97,8 +97,10 @@ CLIPS = {
     "ack": {"pt": "Hum, tá.", "en": "Mm, okay."},
     "one_sec": {"pt": "Só um segundo.", "en": "One sec."},
     "still_on_it": {"pt": "Ainda tô nisso, já te falo.", "en": "Still on it, I'll tell you as soon as I have it."},
-    "offer_text": {"pt": "Isso vai demorar. Quer ficar na linha, ou te mando por mensagem?",
-                   "en": "This one's slow. Stay on, or should I text you the answer?"},
+    "offer_text": {
+        "pt": "Isso vai demorar. Quer ficar na linha, ou te mando por mensagem?",
+        "en": "This one's slow. Stay on, or should I text you the answer?",
+    },
 }
 
 
@@ -135,7 +137,9 @@ def http(req: urllib.request.Request, timeout=20):
 
 def twilio(cfg, method, path, form=None):
     data = urllib.parse.urlencode(form).encode() if form else None
-    url = path if path.startswith("https://") else f"https://api.twilio.com/2010-04-01/Accounts/{cfg['twilio_sid']}{path}"
+    url = (
+        path if path.startswith("https://") else f"https://api.twilio.com/2010-04-01/Accounts/{cfg['twilio_sid']}{path}"
+    )
     req = urllib.request.Request(url, data=data, method=method)
     # An API key, not the account's Auth Token: it can be revoked alone, and it is the one we hold.
     auth = base64.b64encode(f"{cfg['twilio_key']}:{cfg['twilio_secret']}".encode()).decode()
@@ -144,6 +148,7 @@ def twilio(cfg, method, path, form=None):
 
 
 # --- who may call: checked at Twilio, before a second of his audio leaves Twilio ---
+
 
 # Twilio signs webhooks with the Auth Token alone, which we do not hold. So each webhook URL carries
 # Basic auth credentials only Twilio's config of our number has (Twilio sends them after a 401), and
@@ -160,13 +165,18 @@ def hook_auth_ok(header: str, cfg) -> bool:
 def live_call(cfg, sid: str, caller: str) -> bool:
     """Twilio's own record: a call on our account, ringing or up, to our number, from this caller."""
     code, c = twilio(cfg, "GET", f"/Calls/{urllib.parse.quote(sid)}.json")
-    return (code == 200 and c.get("account_sid") == cfg["twilio_sid"] and c.get("to") == cfg["twilio_number"]
-            and c.get("from") == caller and c.get("status") in ("ringing", "in-progress"))
+    return (
+        code == 200
+        and c.get("account_sid") == cfg["twilio_sid"]
+        and c.get("to") == cfg["twilio_number"]
+        and c.get("from") == caller
+        and c.get("status") in ("ringing", "in-progress")
+    )
 
 
 REJECTED = set()  # CallSids of strangers, deleted from Twilio's log once they end
-ATTEMPTS = {}     # CallSid -> wrong PINs so far
-GRANTS = {}       # one-time media-stream token -> (expires, call_sid, is_test)
+ATTEMPTS = {}  # CallSid -> wrong PINs so far
+GRANTS = {}  # one-time media-stream token -> (expires, call_sid, is_test)
 
 
 def twiml(*verbs) -> str:
@@ -175,14 +185,20 @@ def twiml(*verbs) -> str:
 
 def gather(cfg, before="") -> str:
     # No prompt: the owner's contact dials the PIN by itself (number,,PIN) right after pickup.
-    return twiml(before, f'<Gather input="dtmf" numDigits="{len(cfg["pin"])}" timeout="8" '
-                         f'actionOnEmptyResult="true" action="{hook_base(cfg)}/voice/twilio/pin"/>')
+    return twiml(
+        before,
+        f'<Gather input="dtmf" numDigits="{len(cfg["pin"])}" timeout="8" '
+        f'actionOnEmptyResult="true" action="{hook_base(cfg)}/voice/twilio/pin"/>',
+    )
 
 
 def test_call(p: dict, cfg: dict, now=None) -> bool:
     """Our own Twilio number calling inside an open test window: a synthetic call, never a person."""
-    return (bool(cfg.get("twilio_number")) and p.get("From") == cfg["twilio_number"]
-            and (now or time.time()) < cfg.get("test_until", 0))
+    return (
+        bool(cfg.get("twilio_number"))
+        and p.get("From") == cfg["twilio_number"]
+        and (now or time.time()) < cfg.get("test_until", 0)
+    )
 
 
 def on_twilio(path: str, p: dict, cfg: dict) -> str:
@@ -205,15 +221,19 @@ def on_twilio(path: str, p: dict, cfg: dict) -> str:
             GRANTS[token] = (time.time() + 60, sid, test_call(p, cfg))
             log(f"call {sid}: PIN ok, opening the voice stream")
             stream = PUBLIC_URL.replace("https://", "wss://", 1) + "/voice/stream"
-            return twiml(f'<Connect><Stream url="{stream}"><Parameter name="token" value="{token}"/>'
-                         f"</Stream></Connect>")
+            return twiml(
+                f'<Connect><Stream url="{stream}"><Parameter name="token" value="{token}"/></Stream></Connect>'
+            )
         ATTEMPTS[sid] = ATTEMPTS.get(sid, 0) + 1
         log(f"call {sid}: wrong PIN ({ATTEMPTS[sid]}/3)")
         if ATTEMPTS[sid] < 3:
             return gather(cfg, "<Say>Try again.</Say>")
         ATTEMPTS.pop(sid, None)
-        threading.Thread(target=text_owner, daemon=True, args=(
-            f"Someone called the Boss line from {p.get('From')} and got the PIN wrong 3 times. Hung up.",)).start()
+        threading.Thread(
+            target=text_owner,
+            daemon=True,
+            args=(f"Someone called the Boss line from {p.get('From')} and got the PIN wrong 3 times. Hung up.",),
+        ).start()
         return twiml("<Hangup/>")
     if path == "/voice/twilio/status":
         if sid in REJECTED and p.get("CallStatus") in ("completed", "busy", "failed", "no-answer", "canceled"):
@@ -240,10 +260,12 @@ def scrub(cfg, sid):
 
 # --- the Boss ---
 
+
 def send_to_boss(message: str) -> bool:
     try:
-        r = subprocess.run([sys.executable, MP_BIN, "send", BOSS_AGENT, message],
-                           capture_output=True, text=True, timeout=SEND_TIMEOUT)
+        r = subprocess.run(
+            [sys.executable, MP_BIN, "send", BOSS_AGENT, message], capture_output=True, text=True, timeout=SEND_TIMEOUT
+        )
     except (OSError, subprocess.TimeoutExpired) as e:
         log(f"ERROR mp send: {e}")
         return False
@@ -252,25 +274,42 @@ def send_to_boss(message: str) -> bool:
     return r.returncode == 0
 
 
-OWNER_RULE = ("When the owner addresses you, it is a task: carry it to the end unless they say otherwise. Never treat it as "
-              "just conversation. Absolute rule.")
+OWNER_RULE = (
+    "When the owner addresses you, it is a task: carry it to the end unless they say otherwise. Never treat it as "
+    "just conversation. Absolute rule."
+)
 
 
 STAMP = "[CALL {ticket}] {sender} ({language}):"
-TEMPLATE = (STAMP + ' "{their_message}"{interrupted}\n'
-            "({safety_line}Answer with: {reply_command} — he hears it within a second. One or two "
-            "spoken sentences in his language, no markdown or links. He is waiting on the line, so answer "
-            "first and work after; for longer work say a short ack now and the result later with the same "
-            "command. If the call has ended it reaches him by iMessage.)")
+TEMPLATE = (
+    STAMP + ' "{their_message}"{interrupted}\n'
+    "({safety_line}Answer with: {reply_command} — he hears it within a second. One or two "
+    "spoken sentences in his language, no markdown or links. He is waiting on the line, so answer "
+    "first and work after; for longer work say a short ack now and the result later with the same "
+    "command. If the call has ended it reaches him by iMessage.)"
+)
 
 
 def envelope(ticket: str, lang: str, text: str, interrupted: bool, test=False) -> str:
     cut = " (He cut off your last reply to say this.)" if interrupted else ""
-    who = (f"SYNTHETIC TEST CALL from our own number, not {OWNER}: answer it like a real call, act on nothing"
-           if test else f"{OWNER}, live on the phone")
-    return plugin_text("voice-call", TEMPLATE, {"ticket": ticket, "sender": who, "language": lang, "their_message": text, "interrupted": cut,
-                                                "safety_line": "" if test else OWNER_RULE + " ",
-                                                "reply_command": f'python3 {SELF} say {ticket} "..."'})
+    who = (
+        f"SYNTHETIC TEST CALL from our own number, not {OWNER}: answer it like a real call, act on nothing"
+        if test
+        else f"{OWNER}, live on the phone"
+    )
+    return plugin_text(
+        "voice-call",
+        TEMPLATE,
+        {
+            "ticket": ticket,
+            "sender": who,
+            "language": lang,
+            "their_message": text,
+            "interrupted": cut,
+            "safety_line": "" if test else OWNER_RULE + " ",
+            "reply_command": f'python3 {SELF} say {ticket} "..."',
+        },
+    )
 
 
 def text_owner(text: str) -> bool:
@@ -291,17 +330,17 @@ class Call:
     def __init__(self, play, clear, boss=send_to_boss, now=time.monotonic, test=False):
         self.play, self.clear, self.boss, self.now = play, clear, boss, now
         self.lock = threading.Lock()
-        self.lines = queue.SimpleQueue()   # (ticket, text) from the Boss, waiting for a pause
+        self.lines = queue.SimpleQueue()  # (ticket, text) from the Boss, waiting for a pause
         self.user_talking = self.speaking = self.interrupted = False
         self.lang, self.live, self.test = LANG, True, test
-        self.waiting = None                # [ticket, his turn ended at, nudges given] until the Boss speaks
-        self.said_at = {}                  # ticket -> when the Boss's line arrived, for the latency log
-        self.queued = ["hello"]            # canned lines to play at the next pause
+        self.waiting = None  # [ticket, his turn ended at, nudges given] until the Boss speaks
+        self.said_at = {}  # ticket -> when the Boss's line arrived, for the latency log
+        self.queued = ["hello"]  # canned lines to play at the next pause
 
     def user_started(self):
         with self.lock:
             self.user_talking = True
-            if self.speaking:              # he talks over the voice: it stops at once
+            if self.speaking:  # he talks over the voice: it stops at once
                 self.speaking, self.interrupted = False, True
                 self.clear()
 
@@ -316,7 +355,9 @@ class Call:
             self.queued.append("ack")
         with LOCK:
             TICKETS[ticket] = self
-        threading.Thread(target=self.boss, args=(envelope(ticket, self.lang, text, cut, self.test),), daemon=True).start()
+        threading.Thread(
+            target=self.boss, args=(envelope(ticket, self.lang, text, cut, self.test),), daemon=True
+        ).start()
         log(f"{ticket} sent to the Boss")
 
     def say_later(self, ticket: str, text: str):
@@ -356,9 +397,9 @@ class Call:
 def tts(cfg, text: str):
     """ElevenLabs, straight to Twilio's 8 kHz mu-law, chunk by chunk as it is generated."""
     from websockets.sync.client import connect
+
     # ponytail: one socket per reply costs a TLS handshake (~0.1 s); a socket kept open per call removes it.
-    url = (f"wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?model_id={TTS_MODEL}"
-           f"&output_format=ulaw_8000")
+    url = f"wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?model_id={TTS_MODEL}&output_format=ulaw_8000"
     with connect(url, additional_headers={"xi-api-key": cfg["tts_key"]}) as ws:
         # the dialogue socket refuses a first message that does not register its voices
         ws.send(json.dumps({"voices": [cfg["voice_id"]], "inputs": [{"text": text, "voice_id": cfg["voice_id"]}]}))
@@ -420,6 +461,7 @@ class Stream:
 
     def run(self):
         from websockets.sync.client import connect
+
         stt = None
         try:
             for raw in self.ws:
@@ -433,12 +475,29 @@ class Stream:
                         return
                     self.sid = st["streamSid"]
                     if grant[2]:  # synthetic test call: the only kind ever recorded
-                        threading.Thread(target=twilio, daemon=True, args=(
-                            self.cfg, "POST", f"/Calls/{grant[1]}/Recordings.json", {"RecordingChannels": "dual"})).start()
-                    q = urllib.parse.urlencode([("model", STT_MODEL), ("encoding", "mulaw"), ("sample_rate", 8000),
-                                                ("language_hint", "pt"), ("language_hint", "en")])  # unhinted, it heard pt as Dutch
-                    stt = connect(f"wss://api.deepgram.com/v2/listen?{q}",
-                                  additional_headers={"Authorization": f"Token {self.cfg['stt_key']}"})
+                        threading.Thread(
+                            target=twilio,
+                            daemon=True,
+                            args=(
+                                self.cfg,
+                                "POST",
+                                f"/Calls/{grant[1]}/Recordings.json",
+                                {"RecordingChannels": "dual"},
+                            ),
+                        ).start()
+                    q = urllib.parse.urlencode(
+                        [
+                            ("model", STT_MODEL),
+                            ("encoding", "mulaw"),
+                            ("sample_rate", 8000),
+                            ("language_hint", "pt"),
+                            ("language_hint", "en"),
+                        ]
+                    )  # unhinted, it heard pt as Dutch
+                    stt = connect(
+                        f"wss://api.deepgram.com/v2/listen?{q}",
+                        additional_headers={"Authorization": f"Token {self.cfg['stt_key']}"},
+                    )
                     self.call = Call(self.play, self.clear, test=grant[2])
                     threading.Thread(target=self.listen, args=(stt,), daemon=True).start()
                     threading.Thread(target=self.pace, daemon=True).start()
@@ -486,6 +545,7 @@ class Stream:
 
 # --- servers ---
 
+
 class Handler(BaseHTTPRequestHandler):
     disable_nagle_algorithm = True
 
@@ -497,8 +557,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(401, headers={"WWW-Authenticate": 'Basic realm="voice-call"'})
             params = dict(urllib.parse.parse_qsl(body.decode(), keep_blank_values=True))
             return self.reply(200, on_twilio(path, params, cfg), "text/xml")
-        if (port == SAY_PORT and path == "/voice/say"
-                and hmac.compare_digest(self.headers.get("X-Say-Token") or "", cfg["say_token"])):
+        if (
+            port == SAY_PORT
+            and path == "/voice/say"
+            and hmac.compare_digest(self.headers.get("X-Say-Token") or "", cfg["say_token"])
+        ):
             req = json.loads(body)
             call = TICKETS.get(req.get("ticket"))
             if call and call.live:
@@ -506,7 +569,9 @@ class Handler(BaseHTTPRequestHandler):
                 log(f"{req['ticket']} queued for his next pause")
                 return self.reply(200, '{"result": "queued"}', "application/json")
             # a late answer to a synthetic call is ours to drop: it must never iMessage him
-            return self.reply(200, '{"result": "%s"}' % ("test-over" if call and call.test else "no-call"), "application/json")
+            return self.reply(
+                200, '{"result": "%s"}' % ("test-over" if call and call.test else "no-call"), "application/json"
+            )
         self.reply(404)
 
     def reply(self, code, body="", ctype="text/plain", headers=None):
@@ -523,6 +588,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve():
     from websockets.sync.server import serve as ws_serve
+
     cfg = load_config()
     if not cfg.get("pin") or not cfg.get("stt_key") or not cfg.get("hook_secret"):
         sys.exit("not set up: run `voice-call.py keys` then `voice-call.py setup`")
@@ -538,8 +604,11 @@ def serve():
 
 def cmd_say(ticket: str, text: str):
     cfg = load_config()
-    req = urllib.request.Request(f"http://127.0.0.1:{SAY_PORT}/voice/say", method="POST",
-                                 data=json.dumps({"ticket": ticket, "text": text}).encode())
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{SAY_PORT}/voice/say",
+        method="POST",
+        data=json.dumps({"ticket": ticket, "text": text}).encode(),
+    )
     req.add_header("X-Say-Token", cfg.get("say_token", ""))
     try:
         _, out = http(req, timeout=5)
@@ -557,19 +626,22 @@ def cmd_say(ticket: str, text: str):
 
 # --- one-time setup ---
 
+
 def cmd_keys():
     import getpass
+
     cfg = load_config()
-    for key, env, label in (("twilio_sid", "TWILIO_ACCOUNT_SID", "Twilio Account SID (AC...)"),
-                            ("twilio_key", "TWILIO_API_KEY", "Twilio API key SID (SK...)"),
-                            ("twilio_secret", "TWILIO_API_SECRET", "Twilio API key secret"),
-                            ("stt_key", "DEEPGRAM_API_KEY", "Deepgram API key"),
-                            ("tts_key", "ELEVENLABS_API_KEY", "ElevenLabs API key"),
-                            ("voice_id", "ELEVENLABS_VOICE_ID", "ElevenLabs voice id for the Boss")):
+    for key, env, label in (
+        ("twilio_sid", "TWILIO_ACCOUNT_SID", "Twilio Account SID (AC...)"),
+        ("twilio_key", "TWILIO_API_KEY", "Twilio API key SID (SK...)"),
+        ("twilio_secret", "TWILIO_API_SECRET", "Twilio API key secret"),
+        ("stt_key", "DEEPGRAM_API_KEY", "Deepgram API key"),
+        ("tts_key", "ELEVENLABS_API_KEY", "ElevenLabs API key"),
+        ("voice_id", "ELEVENLABS_VOICE_ID", "ElevenLabs voice id for the Boss"),
+    ):
         cfg[key] = os.environ.get(env) or getpass.getpass(f"{label}: ").strip() or cfg.get(key, "")
     save_config(cfg)
     print(f"saved to {CONFIG}")
-
 
 
 def cmd_test_window(minutes: int):
@@ -577,8 +649,10 @@ def cmd_test_window(minutes: int):
     minutes = max(0, min(minutes, TEST_WINDOW_MAX_MIN))
     cfg["test_until"] = time.time() + minutes * 60 if minutes else 0
     save_config(cfg)
-    print(f"test window {'open for ' + str(minutes) + ' min' if minutes else 'closed'}: "
-          f"{cfg.get('twilio_number')} {'may' if minutes else 'may not'} call in")
+    print(
+        f"test window {'open for ' + str(minutes) + ' min' if minutes else 'closed'}: "
+        f"{cfg.get('twilio_number')} {'may' if minutes else 'may not'} call in"
+    )
 
 
 def cmd_setup(buy=""):
@@ -593,30 +667,51 @@ def cmd_setup(buy=""):
         sys.exit(f"already set up with {cfg['twilio_number']}: not buying {buy}")
     if not cfg.get("twilio_number"):
         if not buy:  # a number is a purchase: setup never buys one on its own
-            code, found = twilio(cfg, "GET", f"/AvailablePhoneNumbers/US/Local.json?AreaCode={AREA_CODE}&VoiceEnabled=true")
+            code, found = twilio(
+                cfg, "GET", f"/AvailablePhoneNumbers/US/Local.json?AreaCode={AREA_CODE}&VoiceEnabled=true"
+            )
             pick = ((found.get("available_phone_numbers") or [{}])[0]).get("phone_number") or f"a {AREA_CODE} number"
             _, prices = twilio(cfg, "GET", "https://pricing.twilio.com/v1/PhoneNumbers/Countries/US")
-            price = next((f"{x['current_price']} {prices.get('price_unit', 'USD')}" for x in prices.get("phone_number_prices", [])
-                          if x.get("number_type") == "local"), "price unknown")
-            sys.exit(f"No Twilio number yet, and buying one needs the owner's yes first. Ask for: {pick}, "
-                     f"{price} a month, recurring. After the yes: voice-call.py setup --buy {pick}")
+            price = next(
+                (
+                    f"{x['current_price']} {prices.get('price_unit', 'USD')}"
+                    for x in prices.get("phone_number_prices", [])
+                    if x.get("number_type") == "local"
+                ),
+                "price unknown",
+            )
+            sys.exit(
+                f"No Twilio number yet, and buying one needs the owner's yes first. Ask for: {pick}, "
+                f"{price} a month, recurring. After the yes: voice-call.py setup --buy {pick}"
+            )
         if not re.fullmatch(r"\+\d{8,15}", buy):
             sys.exit(f"--buy takes the number to buy, like +16505550100, not {buy!r}")
-        code, bought = twilio(cfg, "POST", "/IncomingPhoneNumbers.json", {"PhoneNumber": buy, "FriendlyName": "voice-call"})
+        code, bought = twilio(
+            cfg, "POST", "/IncomingPhoneNumbers.json", {"PhoneNumber": buy, "FriendlyName": "voice-call"}
+        )
         if code not in (200, 201):
             sys.exit(f"buying {buy} failed: {code} {bought.get('message')}")
         cfg["twilio_number"], cfg["twilio_number_sid"] = bought["phone_number"], bought["sid"]
         save_config(cfg)  # bought: never lose it to a later failure
     # Every run re-points the number, so a new PUBLIC_URL or hook secret takes effect.
-    code, out = twilio(cfg, "POST", f"/IncomingPhoneNumbers/{cfg['twilio_number_sid']}.json", {
-        "VoiceUrl": f"{hook_base(cfg)}/voice/twilio", "VoiceMethod": "POST",
-        "StatusCallback": f"{hook_base(cfg)}/voice/twilio/status", "StatusCallbackMethod": "POST"})
+    code, out = twilio(
+        cfg,
+        "POST",
+        f"/IncomingPhoneNumbers/{cfg['twilio_number_sid']}.json",
+        {
+            "VoiceUrl": f"{hook_base(cfg)}/voice/twilio",
+            "VoiceMethod": "POST",
+            "StatusCallback": f"{hook_base(cfg)}/voice/twilio/status",
+            "StatusCallbackMethod": "POST",
+        },
+    )
     if code != 200:
         sys.exit(f"pointing {cfg['twilio_number']} here failed: {code} {out.get('message')}")
     print(f"ready: {cfg['twilio_number']}. The owner's contact dials <line>,,<PIN> (PIN in {CONFIG}).")
 
 
 # --- measuring ---
+
 
 def latency(path: str, frame_ms=20, pause_ms=700):
     """Reply gaps in a Twilio dual recording: channel 1 is the caller, channel 2 the agent.
@@ -629,7 +724,7 @@ def latency(path: str, frame_ms=20, pause_ms=700):
 
     def loud(ch):
         samples = pcm[ch::2]
-        energy = [sum(abs(s) for s in samples[i:i + n]) / n for i in range(0, len(samples) - n + 1, n)]
+        energy = [sum(abs(s) for s in samples[i : i + n]) / n for i in range(0, len(samples) - n + 1, n)]
         floor = sorted(energy)[len(energy) // 10] if energy else 0
         return [e > max(4 * floor, 300) for e in energy]
 
@@ -637,9 +732,9 @@ def latency(path: str, frame_ms=20, pause_ms=700):
     gaps, quiet, pause = [], 0, pause_ms // frame_ms
     for i, c in enumerate(caller):
         quiet = 0 if c else quiet + 1
-        if quiet == pause and any(caller[max(0, i - pause - 25):i - pause + 1]):
+        if quiet == pause and any(caller[max(0, i - pause - 25) : i - pause + 1]):
             end = i - pause + 1
-            if any(agent[max(0, end - 5):end]):
+            if any(agent[max(0, end - 5) : end]):
                 continue  # the agent was already talking: not a reply gap
             nxt = next((j for j in range(end, len(agent)) if agent[j]), None)
             if nxt is not None and not any(caller[end:nxt]):
@@ -653,7 +748,7 @@ def main():
         serve()
     elif cmd == "say" and len(sys.argv) == 4:
         cmd_say(sys.argv[2], sys.argv[3])
-    elif cmd == "message":   # the board's Plugins page shows this
+    elif cmd == "message":  # the board's Plugins page shows this
         print(TEMPLATE)
     elif cmd == "keys":
         cmd_keys()
@@ -665,8 +760,10 @@ def main():
         gaps = sorted(latency(sys.argv[2]))
         if not gaps:
             sys.exit("no reply gaps found")
-        print(f"{len(gaps)} replies: p50 {gaps[len(gaps) // 2]:.2f}s, "
-              f"p95 {gaps[min(len(gaps) - 1, int(len(gaps) * 0.95))]:.2f}s, max {gaps[-1]:.2f}s")
+        print(
+            f"{len(gaps)} replies: p50 {gaps[len(gaps) // 2]:.2f}s, "
+            f"p95 {gaps[min(len(gaps) - 1, int(len(gaps) * 0.95))]:.2f}s, max {gaps[-1]:.2f}s"
+        )
     else:
         sys.exit(__doc__)
 
