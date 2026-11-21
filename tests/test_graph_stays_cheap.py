@@ -121,7 +121,7 @@ console.log(reloads);""" % (json.dumps(stream), json.dumps({"mp_graph_version": 
 
     def test_page_and_poll_carry_the_same_stamp(self):
         self.assertIn('PAGE_VERSION="__MP_VERSION__"', PAGE)  # render_page fills this in: "v" + version()
-        self.assertIn('"version": "v" + C.version()', (BIN / "todo-server.py").read_text())
+        self.assertIn('"version": "v" + C.version()', sandbox.implementation("todo-server.py"))
         self.assertIn("followRelease(data.version)", PAGE)
 
 
@@ -160,7 +160,7 @@ class AgentsReadsTheRosterOnce(unittest.TestCase):
             rows = [srv.agent_row(a, r, roster) for a, r in srv.AGENTS.items()]
             self.assertEqual(5, len(rows))
             self.assertEqual(1, len(reads))
-        code = (BIN / "queue-server.py").read_text()
+        code = sandbox.implementation("queue-server.py")
         self.assertIn("agent_row(a, r, roster) for a, r in AGENTS.items()", code)
 
 

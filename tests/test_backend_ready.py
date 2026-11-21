@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import sandbox
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mypeople" / "runtime" / "bin"))
 import mpcommon as C  # noqa: E402
 
@@ -41,13 +43,12 @@ class BackendReady(unittest.TestCase):
         self.assertEqual("", C.backend_unready("claude"))
 
     def test_the_boss_card_and_mp_spawn_ask_it_first(self):
-        bin_ = Path(__file__).resolve().parents[1] / "mypeople" / "runtime" / "bin"
-        server = (bin_ / "todo-server.py").read_text()
+        server = sandbox.implementation("todo-server.py")
         spawn = server[server.index('elif action == "spawn":'):server.index('payload = {"backend": backend, "is_master": True')]
         self.assertIn("backend_unready(backend)", spawn)
         revive = server[server.index('elif action == "revive":'):server.index("payload = {}\n            target = BOSS_AGENT")]
         self.assertIn("backend_unready(was)", revive)
-        mp = (bin_ / "mp").read_text()
+        mp = sandbox.implementation("mp")
         self.assertLess(mp.index("why = C.backend_unready(backend)"), mp.index('C.tmux_run("new-window"'), "refused before any window")
 
 

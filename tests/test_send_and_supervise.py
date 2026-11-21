@@ -213,7 +213,7 @@ class BoardUiTests(unittest.TestCase):
         so every surface links to every other one instead of each page carrying its own partial
         list. The rendered-page assertions live in test_version_badge.PageRenderTests; here we
         only pin that the seam still owns the link."""
-        nav = (BIN / "mpcommon.py").read_text()
+        nav = sandbox.implementation("mpcommon.py")
         self.assertIn('href="/terminal-graph"', nav)
         self.assertIn('id="mp-nav"', nav)
 

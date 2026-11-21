@@ -1445,7 +1445,7 @@ class WiringTest(unittest.TestCase):
         sup = (root / "mypeople" / "runtime" / "bin" / "supervise.sh").read_text()
         self.assertIn("ensure_plugins\n", sup)
         self.assertIn("needs=env:PLOW_CHAT\n", (PLUGINS / "plow-chat" / "plugin.conf").read_text())
-        self.assertIn('os.path.join(install, sub) + os.sep', (root / "mypeople" / "cli.py").read_text())
+        self.assertIn('os.path.join(install, sub) + os.sep', sandbox.implementation("cli.py"))
 
     def test_supervise_sees_only_the_main_bridge_as_the_main_bridge(self):
         """10-13: a second bridge (the owner's WhatsApp number as its own Plow account) ran the same

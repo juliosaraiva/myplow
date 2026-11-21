@@ -301,7 +301,7 @@ class WiringTests(unittest.TestCase):
         self.assertIn("needs=env:GITHUB_PRS\n", conf)
 
     def test_down_stops_it(self):
-        cli = (ROOT / "mypeople" / "cli.py").read_text()
+        cli = sandbox.implementation("cli.py")
         self.assertIn('os.path.join(install, sub) + os.sep', cli)
 
 

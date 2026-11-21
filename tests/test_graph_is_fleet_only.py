@@ -10,10 +10,12 @@ from pathlib import Path
 import re
 import unittest
 
+import sandbox
+
 BIN = Path(__file__).resolve().parents[1] / "mypeople" / "runtime" / "bin"
 GRAPH = (BIN / "terminal-graph.html").read_text()
 BOARD = (BIN / "todos.html").read_text()
-SERVER = (BIN / "todo-server.py").read_text()
+SERVER = sandbox.implementation("todo-server.py")
 
 
 class GraphIsFleetOnly(unittest.TestCase):

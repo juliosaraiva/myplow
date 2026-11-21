@@ -10,12 +10,36 @@ import importlib.machinery
 import importlib.util
 import os
 from pathlib import Path
+import re
 import sys
 from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "mypeople" / "runtime" / "bin"
+_IMPLEMENTATION = {
+    "todo-server.py": BIN / "todo-server.py",
+    "queue-server.py": BIN / "queue-server.py",
+    "mpcommon.py": BIN / "mpcommon.py",
+    "mp": BIN / "mp",
+    "cli.py": ROOT / "mypeople" / "cli.py",
+    "firstrun.py": ROOT / "mypeople" / "firstrun.py",
+}
+
+
+def implementation(filename):
+    """Source of a split module, in the order its entrypoint executes the parts.
+
+    Tests that pin a snippet still see the code, not the loader.
+    """
+    entry = _IMPLEMENTATION[filename]
+    text = entry.read_text(encoding="utf-8")
+    match = re.search(r"os\.path\.join\(here, '([^']+)'\)", text)
+    if not match:
+        return text
+    directory = (entry.parent / match.group(1)).resolve()
+    names = re.findall(r'"([A-Za-z0-9_]+\.py)"', text)
+    return "".join((directory / name).read_text(encoding="utf-8") for name in names)
 # Pinned in the env as well as the file, because the live env outranks the file. The rest stay in
 # the file only, where a test can still override one through its own env.
 PINNED = {"HOST_ID": "test-node", "QUEUE_URL": "http://127.0.0.1:1", "QUEUE_SECRET": "secret",

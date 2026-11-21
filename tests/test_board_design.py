@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import unittest
 
+import sandbox
+
 BIN = Path(__file__).resolve().parents[1] / "mypeople" / "runtime" / "bin"
 HTML = (BIN / "todos.html").read_text()
 
@@ -63,7 +65,7 @@ class BrandFontsTests(unittest.TestCase):
             self.assertTrue((BIN / "fonts" / ("OFL-%s.txt" % fam)).is_file())
 
     def test_the_board_server_serves_them(self):
-        src = (BIN / "todo-server.py").read_text()
+        src = sandbox.implementation("todo-server.py")
         self.assertIn('if p.startswith("/fonts/"):', src)
         self.assertIn("name = os.path.basename(p)", src)   # never a path outside bin/fonts
 
