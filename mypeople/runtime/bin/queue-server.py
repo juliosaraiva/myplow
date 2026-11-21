@@ -3,7 +3,6 @@
 Binds BIND_ADDR:HUD_PORT (9900). Reverse-proxies TODO routes to TODO_PORT so both
 front doors serve both pages (symmetric cross-nav, §ITEM-2). Python stdlib only."""
 import os, sys, time, threading, uuid
-from http.server import ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -352,7 +351,7 @@ class Handler(C.JSONHandler):
 
 def main():
     threading.Thread(target=reaper, daemon=True).start()
-    srv = ThreadingHTTPServer((CFG["BIND_ADDR"], HUD_PORT), Handler)
+    srv = C.BoundedThreadingHTTPServer((CFG["BIND_ADDR"], HUD_PORT), Handler)
     srv.daemon_threads = True
     sys.stderr.write("queue-server on %s:%d\n" % (CFG["BIND_ADDR"], HUD_PORT))
     srv.serve_forever()

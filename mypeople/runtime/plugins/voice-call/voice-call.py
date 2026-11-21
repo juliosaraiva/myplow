@@ -487,6 +487,8 @@ class Stream:
 # --- servers ---
 
 class Handler(BaseHTTPRequestHandler):
+    disable_nagle_algorithm = True
+
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         path, cfg, port = self.path.split("?")[0], load_config(), self.server.server_address[1]

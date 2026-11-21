@@ -284,6 +284,8 @@ def forward_loop():
 
 # ---------------------------------------------------------------- HTTP
 class Hook(BaseHTTPRequestHandler):
+    disable_nagle_algorithm = True
+
     def log_message(self, *a):
         pass
 

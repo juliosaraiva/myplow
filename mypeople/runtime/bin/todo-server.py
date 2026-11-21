@@ -4,8 +4,8 @@ Serves todos.html at / and /todos, and reverse-proxies the HUD routes so the
 cross-nav works from either front door. Python 3 stdlib only.
 MODULE-LEVEL imports of every stdlib a handler uses (§5.3b UnboundLocalError guard)."""
 import os, sys, json, time, uuid, threading, shutil, subprocess, glob, re
+import copy
 import urllib.parse, urllib.request
-from http.server import ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -271,7 +271,26 @@ def seed_board_if_missing():
     return True
 
 
-def load_board():
+# Published board. Replaced as a whole after a commit; the object itself is never mutated.
+# _SNAP_JSON is that object already encoded. It is filled when a reader asks, not on the
+# write: encoding every commit made adds pay for the whole board, and eight readers each
+# encoding it held the GIL so a writer could not run. One reader encodes, without holding
+# LOCK; the others, and later polls, send the cached bytes.
+_SNAP = None
+_SNAP_JSON = None
+# Serializes the one reader that rebuilds _SNAP_JSON. Not LOCK, so a writer is not
+# stuck behind that encode.
+_ENCODE = threading.Lock()
+
+
+def _install(snap):
+    """Publish a new immutable board and drop the cached encoding of the previous one."""
+    global _SNAP, _SNAP_JSON
+    _SNAP_JSON = None
+    _SNAP = snap
+
+
+def _load_disk():
     if BOARD_BACKEND == "sqlite":
         return BS.load_board(_sqlite_path())
     b = C.read_json(BOARD_PATH, None)
@@ -283,15 +302,118 @@ def load_board():
     return b
 
 
-def save_board(board):
-    """Atomic save + rolling timestamped backup + catastrophic-shrink guard (§3).
+def _ensure_snap():
+    """Caller holds LOCK. Cold load only; the JSON cache is filled by board_json."""
+    global _SNAP
+    if _SNAP is None:
+        _SNAP = _load_disk()
+    return _SNAP
 
-    SQLite backend: atomic single-transaction row-per-card write (only changed cards), same
-    catastrophic-shrink refusal; durable backups come from the decoupled board-exporter.
+
+def board_snapshot():
+    """The last committed board object. No lock on the hit path: the object is immutable."""
+    if _SNAP is not None:
+        return _SNAP
+    with LOCK:
+        return _ensure_snap()
+
+
+def board_json():
+    """The last committed board as JSON bytes. One encode per commit, shared by every reader.
+
+    The encode does not hold LOCK, so a writer is not queued behind it. The bytes match
+    JSONHandler._send's encoding of the same dict.
+    """
+    global _SNAP_JSON
+    if _SNAP is not None and _SNAP_JSON is not None:
+        return _SNAP_JSON
+    with _ENCODE:
+        if _SNAP is not None and _SNAP_JSON is not None:
+            return _SNAP_JSON
+        with LOCK:
+            snap = _ensure_snap()
+            cached = _SNAP_JSON
+        if cached is not None:
+            return cached
+        encoded = json.dumps(snap).encode("utf-8")
+        with LOCK:
+            if _SNAP is snap and _SNAP_JSON is None:
+                _SNAP_JSON = encoded
+            elif _SNAP_JSON is not None:
+                return _SNAP_JSON
+        return encoded
+
+
+def load_board():
+    """A fresh dict. Unsaved mutations of the result never show up in the next load."""
+    return copy.deepcopy(board_snapshot())
+
+
+def board_for_edit():
+    """Caller holds LOCK. Task objects are the snapshot's; copy one with task_for_edit before writing it."""
+    snap = _ensure_snap()
+    board = {"tasks": dict(snap.get("tasks") or {})}
+    for k, v in snap.items():
+        if k == "tasks":
+            continue
+        board[k] = copy.deepcopy(v) if isinstance(v, (list, dict)) else v
+    board.setdefault("order", [])
+    board.setdefault("pinSeq", 0)
+    return board
+
+
+def task_for_edit(board, tid):
+    cur = (board.get("tasks") or {}).get(tid)
+    if cur is None:
+        return None
+    task = copy.deepcopy(cur)
+    board["tasks"][tid] = task
+    return task
+
+
+def _publish(board, changed, deleted):
+    """Install the committed board. `changed is None` replaces the whole snapshot."""
+    if changed is None:
+        _install(copy.deepcopy(board))
+        return
+    tasks = dict((_SNAP or {}).get("tasks") or {})
+    for tid in deleted or ():
+        tasks.pop(tid, None)
+    for tid in changed:
+        task = (board.get("tasks") or {}).get(tid)
+        if isinstance(task, dict):
+            tasks[tid] = copy.deepcopy(task)
+    snap = {}
+    for k, v in board.items():
+        if k == "tasks":
+            continue
+        snap[k] = copy.deepcopy(v) if isinstance(v, (list, dict)) else v
+    snap["tasks"] = tasks
+    _install(snap)
+
+
+def save_board(board, changed=None, deleted=None):
+    """Atomic save + catastrophic-shrink guard (§3).
+
+    SQLite: pass `changed` (and `deleted`) to write only those cards. Omit them for a full
+    diff, which is what a caller that mutated an arbitrary copy still needs. JSON installs
+    still rewrite the file; the snapshot update is the same either way. Durable backups
+    come from the decoupled board-exporter. Returns False when the shrink guard refuses.
     """
     if BOARD_BACKEND == "sqlite":
         os.makedirs(TODOS_DIR, exist_ok=True)
-        return BS.save_board(_sqlite_path(), board)
+        if changed is None:
+            ok = BS.save_board(_sqlite_path(), board)
+        else:
+            ok = BS.save_changes(_sqlite_path(), board, changed, deleted or ())
+    else:
+        ok = _save_json(board)
+    if ok:
+        _publish(board, changed, deleted)
+    return ok
+
+
+def _save_json(board):
     os.makedirs(TODOS_DIR, exist_ok=True)
     ondisk = C.read_json(BOARD_PATH, None)
     new_n = len(board.get("tasks", {}))
@@ -510,13 +632,27 @@ def title_of(task):
     return task.get("text", "") or ""
 
 
+def task_event_message(task, reason):
+    return '[todo] task %s "%s": %s' % (task["id"], title_of(task), reason)
+
+
+def take_task_event(task, reason):
+    """Count a Boss ping on the card. None for a test card, which stays silent.
+
+    The caller saves the card before ping_boss, so one fsync carries the counter and the
+    card is durable before the Boss is told.
+    """
+    if task.get("test"):
+        return None
+    task["pingsToBoss"] = task.get("pingsToBoss", 0) + 1
+    return task_event_message(task, reason)
+
+
 def emit_task_event(task, reason):
     """Ping Boss for a non-test add / work-state change. Exempt {test} tasks."""
-    if task.get("test"):
-        return
-    tid = task["id"]
-    task["pingsToBoss"] = task.get("pingsToBoss", 0) + 1
-    ping_boss('[todo] task %s "%s": %s' % (tid, title_of(task), reason))
+    msg = take_task_event(task, reason)
+    if msg:
+        ping_boss(msg)
 
 
 def owner_relay(card_id, by, bodytext):
@@ -568,11 +704,15 @@ def deliver_comment(card_id, title, owner, by, bodytext, boss_chat=False):
                  " (already delivered to %s)" % owner if delivered else "", bodytext))
 
 
-def emit_comment_event(board, task, by, bodytext):
+def take_comment_event(board, task, by, bodytext):
+    """Count the comment ping and return deliver_comment's args, or None when nobody is told.
+
+    `board` is unused; it stays in the signature because emit_comment_event's callers pass it.
+    """
     if task.get("test"):
-        return
+        return None
     if by == BOSS_AGENT:
-        return                                  # the Boss's own comment pings nobody
+        return None                                  # the Boss's own comment pings nobody
     task["pingsToBoss"] = task.get("pingsToBoss", 0) + 1
     # Straight to the card's owner. Routing through the Boss meant every word waited for a whole
     # agent turn before it moved: measured on the CEO's own card, a median of 18s between his
@@ -582,10 +722,13 @@ def emit_comment_event(board, task, by, bodytext):
     owner = (task.get("assignee") or "").strip()
     if owner in (by, BOSS_AGENT):
         owner = ""
-    threading.Thread(target=deliver_comment,
-                     args=(task["id"], title_of(task), owner, by, bodytext,
-                           bool(task.get("bossChat"))),
-                     daemon=True).start()
+    return (task["id"], title_of(task), owner, by, bodytext, bool(task.get("bossChat")))
+
+
+def emit_comment_event(board, task, by, bodytext):
+    args = take_comment_event(board, task, by, bodytext)
+    if args:
+        threading.Thread(target=deliver_comment, args=args, daemon=True).start()
 
 
 # ---------------- proof kind classification ----------------
@@ -743,8 +886,10 @@ class Handler(C.JSONHandler):
         if p == "/todo/board":
             if not ok:
                 return self._send(401, {"error": "unauthorized"})
-            with LOCK:
-                return self._send(200, self._board_view())
+            # Pre-encoded bytes, written outside LOCK. A reader that re-serialized the board
+            # on every poll held the GIL long enough to stall writers; a reader that only
+            # writes these bytes does not.
+            return self._send(200, raw=board_json())
         if p == "/todo/terminal-graph":
             if not ok:
                 return self._send(401, {"error": "unauthorized"})
@@ -793,10 +938,17 @@ class Handler(C.JSONHandler):
             return C.proxy_request(self, "127.0.0.1", HUD_PORT)
         ok, ident = self._identity()
         if not ok:
+            # Do not read the body. Close so a keep-alive client cannot have that unread
+            # body parsed as its next request.
+            if self._declared_length():
+                self.close_connection = True
             return self._send(401, {"error": "unauthorized"})
 
         ctype = self.headers.get("Content-Type", "")
-        if p == "/todo/proof" and ctype.startswith("multipart/form-data"):
+        upload = p == "/todo/proof" and ctype.startswith("multipart/form-data")
+        if self._enforce_body_limit(C.max_upload_bytes() if upload else C.max_json_bytes()):
+            return
+        if upload:
             return self._proof_multipart()
         body = self._body()
 
@@ -855,19 +1007,19 @@ class Handler(C.JSONHandler):
         there the agent can confirm them, which no sender can fake, and its answer lands where the owner reads. A careful
         agent will not act on pasted text that merely says "your owner"."""
         with LOCK:
-            cid = load_board().get("bossChat")
+            cid = board_snapshot().get("bossChat")
         note = ("\nThese words are on your owner's Boss card, written from their app. Confirm with mp card %s, and answer "
                 "there: mp comment %s \"...\"" % (cid, cid)) if cid else ""
         if mp_send(BOSS_AGENT, text + note) != 0:
             raise mpplugins.PluginError("not sent: your agent could not be reached")
         with LOCK:
-            board = load_board()
-            t = board["tasks"].get(cid)
+            board = board_for_edit()
+            t = task_for_edit(board, cid) if cid else None
             if t:
                 t["comments"].append({"id": uuid.uuid4().hex[:8], "by": "CEO", "to": BOSS_AGENT, "kind": "comment",
                                       "body": "From the Plugins page: " + words, "ts": now()})
                 t["updated"] = now()
-                save_board(board)
+                save_board(board, changed=[cid])
 
     def _access(self, *op, extra=None):
         """The a2a plugin owns pairing state: the Access page asks it, as mp pair does."""
@@ -999,7 +1151,7 @@ class Handler(C.JSONHandler):
         op = body.get("op")
         actor = body.get("by") or ("CEO" if ident == "browser" else "")
         with LOCK:
-            board = load_board()
+            board = board_for_edit()
             if op == "add":
                 tid = uuid.uuid4().hex[:10]
                 # assignee is NOT settable here: /todo/owner is the only door, and it is the one
@@ -1012,9 +1164,11 @@ class Handler(C.JSONHandler):
                         "test": bool(body.get("test")), "created": now(), "updated": now()}
                 board["tasks"][tid] = task
                 board["order"].insert(0, tid)
-                save_board(board)
-                emit_task_event(task, "new task added")
-                save_board(board)
+                # Count the ping before the only save, and tell the Boss after it commits.
+                msg = take_task_event(task, "new task added")
+                save_board(board, changed=[tid])
+                if msg:
+                    ping_boss(msg)
                 # Every new card, regardless of who created it. Boss relays most of the CEO's
                 # cards via the API (by=.../Boss), so an actor=="CEO" guard here would leave those
                 # silently uncovered.
@@ -1033,12 +1187,12 @@ class Handler(C.JSONHandler):
                                 pass
                     del board["tasks"][tid]
                     board["order"] = [x for x in board["order"] if x != tid]
-                    save_board(board)
+                    save_board(board, changed=[], deleted=[tid])
                     return self._send(200, {"ok": True})
                 return self._send(200, {"ok": False, "error": "no_task"})
             if op == "set":
                 tid = body.get("id")
-                t = board["tasks"].get(tid)
+                t = task_for_edit(board, tid)
                 if not t:
                     return self._send(200, {"ok": False, "error": "no_task"})
                 if "assignee" in body:
@@ -1067,12 +1221,13 @@ class Handler(C.JSONHandler):
                 if "verified" in body:
                     t["verified"] = bool(body["verified"])
                 t["updated"] = now()
+                msg = None
                 if t.get("state") != prev_state:
                     apply_owner_state_transition(t, prev_state, t.get("state"), actor)
-                save_board(board)
-                if t.get("state") != prev_state:
-                    emit_task_event(t, "state -> %s" % t.get("state"))
-                    save_board(board)
+                    msg = take_task_event(t, "state -> %s" % t.get("state"))
+                save_board(board, changed=[tid])
+                if msg:
+                    ping_boss(msg)
                 return self._send(200, {"ok": True})
             if op == "pin":
                 tid = body.get("id")
@@ -1081,19 +1236,20 @@ class Handler(C.JSONHandler):
                     return self._send(200, {"ok": False, "error": "no_task"})
                 if t.get("pinned"):
                     return self._send(200, {"ok": True})
+                t = task_for_edit(board, tid)
                 board["pinSeq"] += 1
                 t["pinned"] = True
                 t["pinRank"] = board["pinSeq"]
-                save_board(board)
+                save_board(board, changed=[tid])
                 return self._send(200, {"ok": True})
             if op == "unpin":
                 tid = body.get("id")
-                t = board["tasks"].get(tid)
+                t = task_for_edit(board, tid)
                 if not t:
                     return self._send(200, {"ok": False, "error": "no_task"})
                 t["pinned"] = False
                 t["pinRank"] = None
-                save_board(board)
+                save_board(board, changed=[tid])
                 return self._send(200, {"ok": True})
             return self._send(400, {"ok": False, "error": "bad_op"})
 
@@ -1117,7 +1273,8 @@ class Handler(C.JSONHandler):
                 row.get("owner_task_id") != tid):
             return self._send(400, {"ok": False, "error": "ineligible_owner"})
         with LOCK:
-            board = load_board(); task = board.get("tasks", {}).get(tid)
+            board = board_for_edit()
+            task = task_for_edit(board, tid)
             if not task:
                 return self._send(200, {"ok": False, "error": "no_task"})
             for other in board.get("tasks", {}).values():
@@ -1142,7 +1299,7 @@ class Handler(C.JSONHandler):
             previous = current
             task["assignee"] = agent_id; task["ownerNeedsReplacement"] = False
             record_owner_event(task, action, agent_id, previous=previous)
-            task["updated"] = now(); save_board(board)
+            task["updated"] = now(); save_board(board, changed=[tid])
             if action == "replace" and previous:
                 request_owner_lifecycle(task, "replace", previous)
             return self._send(200, {"ok": True, "assignee": agent_id,
@@ -1151,7 +1308,7 @@ class Handler(C.JSONHandler):
     # ---- comment ----
     def _comment(self, body, ident):
         with LOCK:
-            board = load_board()
+            board = board_for_edit()
             tid = body.get("task_id")
             t = board["tasks"].get(tid)
             if not t:
@@ -1162,6 +1319,7 @@ class Handler(C.JSONHandler):
             # has already addressed that peer, so a peer cannot write itself into any card whose id it can guess.
             if peer and (ident != "machine" or str(by).split("/")[0] != peer or peer not in t.get("peers", [])):
                 return self._send(200, {"ok": False, "error": "not_on_card"})
+            t = task_for_edit(board, tid)
             c = {"id": uuid.uuid4().hex[:8], "by": by, "kind": "comment",
                  "body": body.get("body", ""), "ts": now()}
             if to:
@@ -1176,12 +1334,13 @@ class Handler(C.JSONHandler):
             if by != "CEO":
                 t["unread"] = t.get("unread", 0) + 1
             t["updated"] = now()
-            save_board(board)
-            if to:      # mp send already delivered it to the one it names: this line is for the thread, it pings nobody
-                return self._send(200, {"ok": True, "id": c["id"]})
-            emit_comment_event(board, t, by, c["body"])
-            save_board(board)
-            wd_schedule_unanswered(tid, c["id"], by)
+            # The comment is durable before anyone is told. `to` means mp send already
+            # delivered it, so this line is for the thread and it pings nobody.
+            save_board(board, changed=[tid])
+            if not to:
+                emit_comment_event(board, t, by, c["body"])
+                save_board(board, changed=[tid])
+                wd_schedule_unanswered(tid, c["id"], by)
             return self._send(200, {"ok": True, "id": c["id"]})
 
     # ---- comment delete (one id, author or Boss only) ----
@@ -1191,13 +1350,15 @@ class Handler(C.JSONHandler):
         if not tid or not cid:
             return self._send(400, {"ok": False, "error": "task_id_and_comment_id_required"})
         with LOCK:
-            board = load_board()
+            board = board_for_edit()
+            if tid in board["tasks"]:
+                task_for_edit(board, tid)
             err, c = delete_comment(board, tid, cid, actor)
             if err:
                 code = 403 if err == "not_author" else 200
                 return self._send(code, {"ok": False, "error": err})
             board["tasks"][tid]["updated"] = now()
-            save_board(board)
+            save_board(board, changed=[tid])
             try:
                 with open(os.path.join(TODOS_DIR, "comment-deletes.jsonl"), "a") as f:
                     f.write(json.dumps({"comment_id": cid, "card": tid, "author": c.get("by"),
@@ -1209,7 +1370,7 @@ class Handler(C.JSONHandler):
     # ---- proof (json) ----
     def _proof_json(self, body):
         with LOCK:
-            board = load_board()
+            board = board_for_edit()
             tid = body.get("task_id")
             t = board["tasks"].get(tid)
             if not t:
@@ -1218,11 +1379,12 @@ class Handler(C.JSONHandler):
             bad = unservable_proof_url(url)
             if bad:
                 return self._send(200, {"ok": False, "error": "unservable_url", "detail": bad})
+            t = task_for_edit(board, tid)
             kind = classify_kind(url=url, given=body.get("kind"))
             proof = {"kind": kind, "url": url, "body": body.get("body", ""), "ts": now()}
             t["proofs"].append(proof)
             t["updated"] = now()
-            save_board(board)
+            save_board(board, changed=[tid])
             return self._send(200, {"ok": True, "proof": proof})
 
     # ---- proof (multipart upload) ----
@@ -1230,8 +1392,8 @@ class Handler(C.JSONHandler):
         fields, fileobj = parse_multipart(self, self.headers.get("Content-Type", ""))
         tid = fields.get("task_id", "")
         with LOCK:
-            board = load_board()
-            t = board["tasks"].get(tid)
+            board = board_for_edit()
+            t = task_for_edit(board, tid)
             if not t:
                 return self._send(200, {"ok": False, "error": "no_task"})
             if fileobj:
@@ -1248,16 +1410,16 @@ class Handler(C.JSONHandler):
                 proof = {"kind": classify_kind(url=url, given=fields.get("kind")),
                          "url": url, "body": fields.get("body", ""), "ts": now()}
             t["proofs"].append(proof)
-            save_board(board)
+            save_board(board, changed=[tid])
             return self._send(200, {"ok": True, "proof": proof})
 
     # ---- status op ----
     def _status_op(self, body, ident):
         actor = body.get("by") or ("CEO" if ident == "browser" else "")
         with LOCK:
-            board = load_board()
+            board = board_for_edit()
             tid = body.get("task_id")
-            t = board["tasks"].get(tid)
+            t = task_for_edit(board, tid)
             if not t:
                 return self._send(200, {"ok": False, "error": "no_task"})
             st = body.get("state")
@@ -1272,12 +1434,13 @@ class Handler(C.JSONHandler):
             if "verified" in body:
                 t["verified"] = bool(body["verified"])
             t["updated"] = now()
+            msg = None
             if st and st != prev:
                 apply_owner_state_transition(t, prev, st, actor)
-            save_board(board)
-            if st and st != prev:
-                emit_task_event(t, "state -> %s" % st)
-                save_board(board)
+                msg = take_task_event(t, "state -> %s" % st)
+            save_board(board, changed=[tid])
+            if msg:
+                ping_boss(msg)
             return self._send(200, {"ok": True})
 
 
@@ -1289,7 +1452,7 @@ def main():
         if migrate_legacy_owner_fields(board) | ensure_boss_chat(board):
             save_board(board)
     threading.Thread(target=watchdog_worker, daemon=True, name="watchdog-worker").start()
-    srv = ThreadingHTTPServer((CFG["BIND_ADDR"], TODO_PORT), Handler)
+    srv = C.BoundedThreadingHTTPServer((CFG["BIND_ADDR"], TODO_PORT), Handler)
     srv.daemon_threads = True
     sys.stderr.write("todo-server on %s:%d\n" % (CFG["BIND_ADDR"], TODO_PORT))
     srv.serve_forever()

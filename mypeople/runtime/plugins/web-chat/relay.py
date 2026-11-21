@@ -223,6 +223,7 @@ class Fail(Exception):
 def handler_for(relay):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        disable_nagle_algorithm = True
 
         def log_message(self, fmt, *args):  # no visitor text or tokens in the log: method, path and status only
             pass

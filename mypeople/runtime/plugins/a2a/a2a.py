@@ -239,6 +239,8 @@ def relay(port=8499, db_path=None, bind="127.0.0.1"):
     lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
+        disable_nagle_algorithm = True
+
         def log_message(self, *a):
             pass
 
