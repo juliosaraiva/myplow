@@ -77,17 +77,22 @@ def request_owner_lifecycle(task, action, owner=""):
         )
 
 
-def apply_owner_state_transition(task, previous, state, actor):
+def apply_owner_state_transition(task, previous, state, actor, *, defer=False):
     was_terminal, is_terminal = previous in TERMINAL_STATES, state in TERMINAL_STATES
     owner = task.get("assignee", "")
+    action = None
     if not was_terminal and is_terminal:
         record_owner_event(task, "closed", owner, previous=owner, by=actor)
         task["ownerNeedsReplacement"] = False
-        request_owner_lifecycle(task, "close", owner)
+        action = ("close", owner)
     elif was_terminal and not is_terminal:
         record_owner_event(task, "reopen_requested", "", previous=owner, by=actor)
         task["ownerNeedsReplacement"] = True
-        request_owner_lifecycle(task, "reopen", owner)
+        action = ("reopen", owner)
+
+    if action and not defer:
+        request_owner_lifecycle(task, *action)
+    return action
 
 
 def title_of(task):

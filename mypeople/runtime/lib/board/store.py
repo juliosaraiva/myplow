@@ -115,7 +115,7 @@ def board_json():
             cached = _SNAP_JSON
         if cached is not None:
             return cached
-        encoded = json.dumps(snap).encode("utf-8")
+        encoded = json.dumps({key: val for key, val in snap.items() if key != SUPERVISOR_JOURNAL}).encode("utf-8")
         with LOCK:
             if _SNAP is snap and _SNAP_JSON is None:
                 _SNAP_JSON = encoded

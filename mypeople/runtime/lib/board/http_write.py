@@ -19,6 +19,10 @@ class _BoardWrite:
             return self._proof_multipart()
         body = self._body()
 
+        if p == "/todo/supervisor/ack":
+            if not supervisor_journal_authorized(self, ident):
+                return self._send(403, {"error": "supervisor_unavailable"})
+            return self._send(*supervisor_ack(body.get("ids") if isinstance(body, dict) else None))
         if p == "/todo/update":
             return self._update(body, ident)
         if p == "/todo/comment":
@@ -333,13 +337,20 @@ class _BoardWrite:
                 if "assignee" in body:
                     return self._send(400, {"ok": False, "error": "assignee_controlled"})
                 prev_state = t.get("state")
+                if "supervisorPRs" in body:
+                    if not supervisor_enabled() or ident != "browser" or not supervisor_owner_authorized(self):
+                        return self._send(403, {"error": "owner_credential_required"})
+                    links = body["supervisorPRs"]
+                    if not valid_supervisor_links(links):
+                        return self._send(400, {"error": "invalid_supervisor_links"})
+                    t["supervisorPRs"] = list(dict.fromkeys(links))
                 if "state" in body:
                     st = body["state"]
                     if st not in VALID_STATES:
                         return self._send(400, {"ok": False, "error": "bad_state"})
                     # Closing a card is the CEO's call alone: it kills the owner and declares the
                     # work over, so an agent must not be able to retire its own card.
-                    if st in TERMINAL_STATES and actor != "CEO":
+                    if st in TERMINAL_STATES and (actor != "CEO" or supervisor_owner_required(self, ident)):
                         return self._send(403, {"ok": False, "error": "ceo_only_terminal"})
                     t["state"] = st
                     if st == "done":
@@ -349,20 +360,15 @@ class _BoardWrite:
                         t[f] = body[f]
                 if body.get("done") is True:
                     # the same close, by another name -- gate it identically
-                    if actor != "CEO":
+                    if actor != "CEO" or supervisor_owner_required(self, ident):
                         return self._send(403, {"ok": False, "error": "ceo_only_terminal"})
                     t["state"] = "done"
                     t["done"] = True
                 if "verified" in body:
                     t["verified"] = bool(body["verified"])
                 t["updated"] = now()
-                msg = None
-                if t.get("state") != prev_state:
-                    apply_owner_state_transition(t, prev_state, t.get("state"), actor)
-                    msg = take_task_event(t, "state -> %s" % t.get("state"))
-                save_board(board, changed=[tid])
-                if msg:
-                    ping_boss(msg)
+                if not commit_status_update(board, t, prev_state, ident, actor):
+                    return self._send(409, {"error": "board_save_refused"})
                 return self._send(200, {"ok": True})
             if op == "pin":
                 tid = body.get("id")
@@ -572,7 +578,7 @@ class _BoardWrite:
             st = body.get("state")
             if st and st not in VALID_STATES:
                 return self._send(400, {"ok": False, "error": "bad_state"})
-            if st in TERMINAL_STATES and actor != "CEO":
+            if st in TERMINAL_STATES and (actor != "CEO" or supervisor_owner_required(self, ident)):
                 return self._send(403, {"ok": False, "error": "ceo_only_terminal"})
             prev = t.get("state")
             if st:
@@ -581,11 +587,6 @@ class _BoardWrite:
             if "verified" in body:
                 t["verified"] = bool(body["verified"])
             t["updated"] = now()
-            msg = None
-            if st and st != prev:
-                apply_owner_state_transition(t, prev, st, actor)
-                msg = take_task_event(t, "state -> %s" % st)
-            save_board(board, changed=[tid])
-            if msg:
-                ping_boss(msg)
+            if not commit_status_update(board, t, prev, ident, actor):
+                return self._send(409, {"error": "board_save_refused"})
             return self._send(200, {"ok": True})

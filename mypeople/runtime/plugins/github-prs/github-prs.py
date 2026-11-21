@@ -592,6 +592,10 @@ def main(argv):
         return 0
     if cmd not in ("status", "catchup", "catchup-dry", "once", "serve"):
         raise SystemExit(__doc__)
+    if cfg("SUPERVISOR_ENABLED") == "1":
+        from supervisor_service import run
+
+        return run(cmd, STATE.parent, cfg, boss_id(), [sys.executable, MP_BIN], SEND_TIMEOUT)
     author = login()
     if cmd == "status":
         try:
