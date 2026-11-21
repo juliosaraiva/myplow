@@ -8,8 +8,9 @@ Imports, monkeypatches and ``__file__`` keep seeing this path.
 
 def _load_implementation():
     import os
+
     here = os.path.dirname(os.path.abspath(__file__))
-    base = os.path.normpath(os.path.join(here, '../lib/mpcommon'))
+    base = os.path.normpath(os.path.join(here, "../lib/mpcommon"))
     namespace = globals()
     for name in (
         "config.py",

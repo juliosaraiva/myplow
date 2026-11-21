@@ -1,5 +1,6 @@
 """cloud/pool-lease.py reads its own Claude logs right: usage once per message, limits detected, and
 the Boss restarted first (its resume is the proof a new login works)."""
+
 import json
 import os
 import tempfile
@@ -33,9 +34,13 @@ class SeenSince(unittest.TestCase):
     def test_counts_each_message_once_and_only_after_the_lease_began(self):
         start = time.time() - 100
         u = {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 100}
-        self.write(turn(start - 50, "old", u),                       # before the lease: not ours
-                   turn(start + 10, "m1", u), turn(start + 11, "m1", u),   # one message logged twice
-                   turn(start + 20, "m2", {"output_tokens": 7}), "not json")
+        self.write(
+            turn(start - 50, "old", u),  # before the lease: not ours
+            turn(start + 10, "m1", u),
+            turn(start + 11, "m1", u),  # one message logged twice
+            turn(start + 20, "m2", {"output_tokens": 7}),
+            "not json",
+        )
         usage, limit = pl.seen_since(start, self.projects)
         self.assertEqual(usage, {"input": 10, "output": 12, "cache_read": 100, "cache_write": 0})
         self.assertFalse(limit)
@@ -46,7 +51,7 @@ class SeenSince(unittest.TestCase):
         self.assertFalse(pl.seen_since(start, self.projects)[1])
         self.write(turn(start + 5, "e2", error="Claude usage limit reached. Your limit will reset at 3pm."))
         self.assertTrue(pl.seen_since(start, self.projects)[1])
-        self.write(turn(start - 60, "e3", error="5-hour limit reached"))   # before this lease: not ours
+        self.write(turn(start - 60, "e3", error="5-hour limit reached"))  # before this lease: not ours
         self.assertFalse(pl.seen_since(start, self.projects)[1])
 
 
@@ -54,12 +59,16 @@ class Agents(unittest.TestCase):
     def test_boss_first_live_claude_only(self):
         d = Path(tempfile.mkdtemp())
         pl.ROSTER = d / "roster.json"
-        pl.ROSTER.write_text(json.dumps({
-            "n/main:eng-1": {"backend": "claude"},
-            "n/main:Boss": {"backend": "claude", "is_master": True},
-            "n/main:eng-2": {"backend": "codex"},
-            "n/main:eng-3": {"backend": "claude", "retired": True},
-        }))
+        pl.ROSTER.write_text(
+            json.dumps(
+                {
+                    "n/main:eng-1": {"backend": "claude"},
+                    "n/main:Boss": {"backend": "claude", "is_master": True},
+                    "n/main:eng-2": {"backend": "codex"},
+                    "n/main:eng-3": {"backend": "claude", "retired": True},
+                }
+            )
+        )
         self.assertEqual(pl.claude_agents(), ["n/main:Boss", "n/main:eng-1"])
 
 
@@ -73,9 +82,9 @@ class OnlyItsOwnRelease(unittest.TestCase):
         b.mkdir(parents=True)
         (root / "current").symlink_to("releases/5.0.1")
         self.assertTrue(pl.still_mine(own=a.resolve(), root=root, ppid=4242))
-        self.assertFalse(pl.still_mine(own=a.resolve(), root=root, ppid=1))      # run.sh is gone
+        self.assertFalse(pl.still_mine(own=a.resolve(), root=root, ppid=1))  # run.sh is gone
         (root / "current").unlink()
-        (root / "current").symlink_to("releases/5.0.2")                         # switched
+        (root / "current").symlink_to("releases/5.0.2")  # switched
         self.assertFalse(pl.still_mine(own=a.resolve(), root=root, ppid=4242))
         self.assertTrue(pl.still_mine(own=b.resolve(), root=root, ppid=4242))
 
@@ -116,9 +125,12 @@ class SeesTheBossWithoutProc(unittest.TestCase):
     def test_reads_command_line_and_login_of_a_live_process(self):
         import subprocess
         import sys
+
         # Not /bin/sh: macOS hides a system binary's env from `ps -E`; Claude Code is not one.
-        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "sess-4242"],
-                             env=dict(os.environ, CLAUDE_CODE_OAUTH_TOKEN="tok-1"))
+        p = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)", "sess-4242"],
+            env=dict(os.environ, CLAUDE_CODE_OAUTH_TOKEN="tok-1"),
+        )
         try:
             time.sleep(0.3)
             cmd, tok = pl.proc_view(p.pid)

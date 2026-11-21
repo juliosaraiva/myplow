@@ -226,7 +226,6 @@ def _save_json(board):
     return True
 
 
-
 def delete_comment(board, tid, cid, actor):
     """Remove ONE comment by id. Only its own author or the Boss may do it.
 
@@ -242,6 +241,7 @@ def delete_comment(board, tid, cid, actor):
                 return "not_author", None
             return None, t["comments"].pop(i)
     return "no_comment", None
+
 
 def now():
     return time.time()
@@ -259,10 +259,13 @@ def _tmux_window_sizes():
     reason the fleet does not render.
     """
     try:
-        out = subprocess.run(["tmux", "list-windows", "-a", "-F",
-                              "#{session_name}:#{window_name} #{window_width} #{window_height}"],
-                             capture_output=True, text=True, timeout=4,
-                             env={**os.environ, "TMUX": ""})
+        out = subprocess.run(
+            ["tmux", "list-windows", "-a", "-F", "#{session_name}:#{window_name} #{window_width} #{window_height}"],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            env={**os.environ, "TMUX": ""},
+        )
         if out.returncode != 0:
             return {}
     except Exception:
@@ -287,9 +290,13 @@ def _tmux_viewers():
     a tmux hiccup must not make the page reload every tile.
     """
     try:
-        out = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"],
-                             capture_output=True, text=True, timeout=4,
-                             env={**os.environ, "TMUX": ""})
+        out = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            env={**os.environ, "TMUX": ""},
+        )
         if out.returncode != 0:
             return None
     except Exception:
@@ -300,5 +307,3 @@ def _tmux_viewers():
             tab = name[3:].rsplit("_", 2)[0]
             viewers[tab] = viewers.get(tab, 0) + 1
     return viewers
-
-

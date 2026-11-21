@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Shared Claude/Codex/Grok lifecycle handler for SessionStart, UserPromptSubmit, and Stop."""
-import os, sys, json, time, glob
+
+import os
+import sys
+import json
+import time
+import glob
 
 INSTALL_DIR = os.environ.get("INSTALL_DIR", os.path.expanduser("~/mypeople"))
 sys.path.insert(0, os.path.join(INSTALL_DIR, "bin"))
@@ -90,8 +95,7 @@ def grok_transcript(tp, sid):
             return cand
     if sid:
         root = os.environ.get("GROK_HOME") or os.path.expanduser("~/.grok")
-        for f in glob.glob(os.path.join(root, "sessions", "**", sid, "chat_history.jsonl"),
-                           recursive=True):
+        for f in glob.glob(os.path.join(root, "sessions", "**", sid, "chat_history.jsonl"), recursive=True):
             return f
     return None
 
@@ -143,8 +147,7 @@ def _opens_turn(ev):
     if ev.get("type") != "user":
         return False
     content = (ev.get("message") or {}).get("content")
-    return isinstance(content, str) or any(
-        isinstance(b, dict) and b.get("type") == "text" for b in content or [])
+    return isinstance(content, str) or any(isinstance(b, dict) and b.get("type") == "text" for b in content or [])
 
 
 def says_something(summary):
@@ -179,8 +182,7 @@ def last_assistant_summary():
                             # claude nests blocks under .message.content[]; grok puts the
                             # reply text (or blocks) directly in .content
                             msg = ev.get("message", {})
-                            text = (content_text(msg.get("content"))
-                                    or content_text(ev.get("content")) or text)
+                            text = content_text(msg.get("content")) or content_text(ev.get("content")) or text
                         elif ev.get("role") == "assistant" and isinstance(ev.get("content"), str):
                             text = ev["content"] or text
                 if text:
@@ -205,8 +207,11 @@ def turn_inbound_text():
                     continue
                 if _opens_turn(ev):
                     c = ev.get("content") if ev.get("role") == "user" else (ev.get("message") or {}).get("content")
-                    parts = [c] if isinstance(c, str) else [
-                        b.get("text", "") for b in c or [] if isinstance(b, dict) and b.get("type") == "text"]
+                    parts = (
+                        [c]
+                        if isinstance(c, str)
+                        else [b.get("text", "") for b in c or [] if isinstance(b, dict) and b.get("type") == "text"]
+                    )
                 elif isinstance(ev.get("attachment"), dict) and ev["attachment"].get("type") == "queued_command":
                     parts.append(str(ev["attachment"].get("prompt") or ""))
     except Exception:
@@ -230,9 +235,13 @@ def notify_completion(summary):
     # The senders whose message reached this turn hear how it ended; otherwise the agent's boss.
     msg = "[AGENT NOTIFICATION] %s finished: %s" % (AGENT_ID, summary)
     for target in C.claim_notification_routes(AGENT_ID) or [t for t in (BOSS_ID,) if t]:
-        C.http_json("POST", QUEUE_URL + "/task/submit",
-                    {"type": "send", "target_agent": target, "payload": {"message": msg}},
-                    {"X-Queue-Secret": SECRET}, timeout=6)
+        C.http_json(
+            "POST",
+            QUEUE_URL + "/task/submit",
+            {"type": "send", "target_agent": target, "payload": {"message": msg}},
+            {"X-Queue-Secret": SECRET},
+            timeout=6,
+        )
 
 
 def normalize(d):
@@ -248,9 +257,9 @@ AGENT_CLIS = ("claude", "grok", "codex")
 def process_table():
     """{pid: (ppid, command basename)} for every process, from one `ps` call; {} if ps fails."""
     import subprocess
+
     try:
-        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True,
-                             text=True, timeout=5).stdout
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, timeout=5).stdout
     except Exception:
         return {}
     table = {}
@@ -308,7 +317,7 @@ def main():
         else:
             set_status(AGENT_ID, "starting")
     elif event == "UserPromptSubmit":
-        set_status(AGENT_ID, "working")   # status-file only; NOTHING to stdout
+        set_status(AGENT_ID, "working")  # status-file only; NOTHING to stdout
         open_routes(DATA.get("prompt") or "")
     elif event == "Stop":
         open_routes(turn_inbound_text())

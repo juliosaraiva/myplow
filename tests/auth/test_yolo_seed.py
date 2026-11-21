@@ -12,6 +12,7 @@ These tests pin the ordering invariant (seed before the auth gate), the login-la
 (`auth-check`, which boss-supervisor polls immediately before spawning the Boss), and the
 belt-and-braces role-bundle overlay.
 """
+
 import json
 import os
 from pathlib import Path
@@ -45,11 +46,13 @@ class SeedRunsBeforeTheAuthGateTests(unittest.TestCase):
         p = mock.patch.dict(os.environ, {"HOME": self.home})
         p.start()
         self.addCleanup(p.stop)
-        for p in [mock.patch.object(firstrun, "CONFIG_PATH", config),
-                  mock.patch.object(firstrun, "CONFIG_DIR", os.path.dirname(config)),
-                  mock.patch.object(firstrun, "install_dir", lambda: self.install),
-                  mock.patch.object(firstrun, "install_tmux_conf", lambda i: None),
-                  mock.patch.object(firstrun, "_echo", lambda m: None)]:
+        for p in [
+            mock.patch.object(firstrun, "CONFIG_PATH", config),
+            mock.patch.object(firstrun, "CONFIG_DIR", os.path.dirname(config)),
+            mock.patch.object(firstrun, "install_dir", lambda: self.install),
+            mock.patch.object(firstrun, "install_tmux_conf", lambda i: None),
+            mock.patch.object(firstrun, "_echo", lambda m: None),
+        ]:
             p.start()
             self.addCleanup(p.stop)
 
@@ -67,9 +70,10 @@ class SeedRunsBeforeTheAuthGateTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 firstrun.ensure()
         self.assertEqual(caught.exception.code, 2, "the clean refusal must not change")
-        self.assertTrue(self._settings()["skipDangerousModePermissionPrompt"],
-                        "without this, --dangerously-skip-permissions blocks on a modal whose "
-                        "default button is 'No, exit'")
+        self.assertTrue(
+            self._settings()["skipDangerousModePermissionPrompt"],
+            "without this, --dangerously-skip-permissions blocks on a modal whose default button is 'No, exit'",
+        )
         self.assertTrue(self._claude_json()["hasCompletedOnboarding"])
         self.assertTrue(os.path.exists(os.path.join(self.home, ".codex", "hooks.json")))
 
@@ -79,16 +83,14 @@ class SeedRunsBeforeTheAuthGateTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 firstrun.ensure()
         projects = self._claude_json()["projects"]
-        for path in (self.install, os.path.join(self.install, "run", "boss"),
-                     os.path.join(self.install, "run", "eng")):
+        for path in (self.install, os.path.join(self.install, "run", "boss"), os.path.join(self.install, "run", "eng")):
             self.assertTrue(projects.get(path, {}).get("hasTrustDialogAccepted"), path)
 
     def test_reseeding_an_unchanged_config_never_rewrites_it(self):
         """Every live Claude session reads these files; a no-op rewrite made `claude auth status`
         take 23 s under ~50 sessions and can drop a session's own write (5.22.27 follow-up)."""
         firstrun.write_claude_config(self.install)
-        files = [os.path.join(self.home, ".claude.json"),
-                 os.path.join(self.home, ".claude", "settings.json")]
+        files = [os.path.join(self.home, ".claude.json"), os.path.join(self.home, ".claude", "settings.json")]
         before = [os.stat(p).st_ino for p in files]
         firstrun.write_claude_config(self.install)
         self.assertEqual(before, [os.stat(p).st_ino for p in files])
@@ -105,23 +107,28 @@ class SeedRunsBeforeTheAuthGateTests(unittest.TestCase):
 
     def test_auth_check_seeds_when_the_login_lands(self):
         """boss-supervisor spawns the Boss the moment this returns 0 -- seed before it does."""
-        with mock.patch.object(cli.firstrun, "install_dir", lambda: self.install), \
-             mock.patch.object(cli.firstrun, "write_queue_env", lambda i, b: None), \
-             mock.patch.object(cli.firstrun, "write_auth_state", lambda *a, **k: None), \
-             mock.patch.object(cli.firstrun, "resolve_auth",
-                               lambda requested, chooser=None: (True, "claude", "claude ready")):
+        with (
+            mock.patch.object(cli.firstrun, "install_dir", lambda: self.install),
+            mock.patch.object(cli.firstrun, "write_queue_env", lambda i, b: None),
+            mock.patch.object(cli.firstrun, "write_auth_state", lambda *a, **k: None),
+            mock.patch.object(
+                cli.firstrun, "resolve_auth", lambda requested, chooser=None: (True, "claude", "claude ready")
+            ),
+        ):
             self.assertEqual(cli.cmd_auth_check(["--quiet"]), 0)
         self.assertTrue(self._settings()["skipDangerousModePermissionPrompt"])
 
     def test_seeding_never_blocks_a_landed_login(self):
         """A read-only ~ must not turn a good login into a failed auth-check."""
-        with mock.patch.object(cli.firstrun, "install_dir", lambda: self.install), \
-             mock.patch.object(cli.firstrun, "write_queue_env", lambda i, b: None), \
-             mock.patch.object(cli.firstrun, "write_auth_state", lambda *a, **k: None), \
-             mock.patch.object(cli.firstrun, "write_claude_config",
-                               mock.Mock(side_effect=OSError("read-only home"))), \
-             mock.patch.object(cli.firstrun, "resolve_auth",
-                               lambda requested, chooser=None: (True, "claude", "claude ready")):
+        with (
+            mock.patch.object(cli.firstrun, "install_dir", lambda: self.install),
+            mock.patch.object(cli.firstrun, "write_queue_env", lambda i, b: None),
+            mock.patch.object(cli.firstrun, "write_auth_state", lambda *a, **k: None),
+            mock.patch.object(cli.firstrun, "write_claude_config", mock.Mock(side_effect=OSError("read-only home"))),
+            mock.patch.object(
+                cli.firstrun, "resolve_auth", lambda requested, chooser=None: (True, "claude", "claude ready")
+            ),
+        ):
             self.assertEqual(cli.cmd_auth_check(["--quiet"]), 0)
 
 
@@ -143,10 +150,16 @@ class RoleBundleOverlayTests(unittest.TestCase):
                 with self.subTest(role=role, master=is_master):
                     bundle = None
                     if role:
-                        bundle = mp.materialize_role(mp.resolve_role(role, "claude"),
-                                                     "t/main:a", "claude")
-                    launch = mp.build_launch("t/main:a", td, "" if is_master else "t/main:Boss",
-                                             is_master, None, "claude", role_bundle=bundle)
+                        bundle = mp.materialize_role(mp.resolve_role(role, "claude"), "t/main:a", "claude")
+                    launch = mp.build_launch(
+                        "t/main:a",
+                        td,
+                        "" if is_master else "t/main:Boss",
+                        is_master,
+                        None,
+                        "claude",
+                        role_bundle=bundle,
+                    )
                     words = shlex.split(launch)
                     self.assertIn("--dangerously-skip-permissions", words)
                     # never the tmux env's MyPlow.app PYTHONPATH (its older bundled mypeople)
@@ -162,10 +175,8 @@ class RoleBundleOverlayTests(unittest.TestCase):
     def test_overlay_declares_the_consent(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            bundle = mp.materialize_role(mp.resolve_role("engineer", "claude"),
-                                         "t/main:eng", "claude")
-            launch = mp.build_launch("t/main:eng", td, "t/main:Boss", False, None, "claude",
-                                     role_bundle=bundle)
+            bundle = mp.materialize_role(mp.resolve_role("engineer", "claude"), "t/main:eng", "claude")
+            launch = mp.build_launch("t/main:eng", td, "t/main:Boss", False, None, "claude", role_bundle=bundle)
             with open(bundle["settings_path"]) as f:
                 overlay = json.load(f)
         self.assertTrue(overlay["skipDangerousModePermissionPrompt"])

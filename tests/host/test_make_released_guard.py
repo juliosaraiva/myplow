@@ -3,6 +3,7 @@
 On 10-03 a second commit reused 5.21.17 and 5.21.26-28 went live untagged by hand; a version
 number that names two trees makes every later claim about what shipped unreliable.
 """
+
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,8 +26,11 @@ class ReleasedGuardTests(unittest.TestCase):
         shutil.copy(ROOT / "Makefile", d)
         Path(d, "mypeople").mkdir()
         Path(d, "mypeople", "__init__.py").write_text('__version__ = "9.9.9"\n')
-        for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
-                    ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Release 9.9.9"]):
+        for cmd in (
+            ["git", "init", "-q"],
+            ["git", "add", "-A"],
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Release 9.9.9"],
+        ):
             sh(d, *cmd)
 
     def released(self):
@@ -48,7 +52,9 @@ class ReleasedGuardTests(unittest.TestCase):
 
     def test_live_runs_the_whole_suite_first(self):
         rule = next(l for l in (ROOT / "Makefile").read_text().splitlines() if l.startswith("live:"))
-        self.assertIn("test", rule.split(":", 1)[1].split(), "5.22.113 shipped failing tests: no make live without make test")
+        self.assertIn(
+            "test", rule.split(":", 1)[1].split(), "5.22.113 shipped failing tests: no make live without make test"
+        )
 
 
 FAKE_UV = """#!/bin/sh
@@ -78,8 +84,7 @@ class CliRefreshTests(unittest.TestCase):
         (bin_dir / "uv").chmod(0o755)
         calls = Path(self.d, "calls")
         calls.write_text("")
-        env = {"PATH": "%s:/usr/bin:/bin" % bin_dir, "UV_CALLS": str(calls), "CLI_VERSION": installed,
-               "HOME": self.d}
+        env = {"PATH": "%s:/usr/bin:/bin" % bin_dir, "UV_CALLS": str(calls), "CLI_VERSION": installed, "HOME": self.d}
         r = subprocess.run(["make", "-s", "cli"], cwd=self.d, env=env, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         return [c for c in calls.read_text().splitlines() if c.startswith("tool install")]

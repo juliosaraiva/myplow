@@ -3,6 +3,7 @@
 Runs the SHIPPED splitTitle() from todos.html in node. The stored title must survive untouched:
 the row shows "growth" as a handle and the rest as the title, but editing edits the raw text.
 """
+
 from pathlib import Path
 import json
 import re
@@ -18,7 +19,7 @@ HTML = (BIN / "todos.html").read_text()
 
 def fn(name):
     start = HTML.index("function %s(" % name)
-    return HTML[start:HTML.index("\n}\n", start) + 3]
+    return HTML[start : HTML.index("\n}\n", start) + 3]
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
@@ -33,7 +34,11 @@ class SplitTitleTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        script = fn("splitTitle") + "console.log(JSON.stringify(Object.fromEntries(Object.entries(%s).map(([k,v])=>[k,splitTitle(v)]))))" % json.dumps(cls.CASES)
+        script = (
+            fn("splitTitle")
+            + "console.log(JSON.stringify(Object.fromEntries(Object.entries(%s).map(([k,v])=>[k,splitTitle(v)]))))"
+            % json.dumps(cls.CASES)
+        )
         res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
         assert res.returncode == 0, res.stderr
         cls.out = json.loads(res.stdout)
@@ -67,12 +72,14 @@ class BrandFontsTests(unittest.TestCase):
     def test_the_board_server_serves_them(self):
         src = sandbox.implementation("todo-server.py")
         self.assertIn('if p.startswith("/fonts/"):', src)
-        self.assertIn("name = os.path.basename(p)", src)   # never a path outside bin/fonts
+        self.assertIn("name = os.path.basename(p)", src)  # never a path outside bin/fonts
 
     def test_every_page_links_the_stylesheet_once(self):
         import sys
+
         sys.path.insert(0, str(BIN))
         import mpcommon as C
+
         page = C.render_page(HTML)
         self.assertEqual(page.count('href="/fonts/fonts.css"'), 1)
         self.assertLess(page.index('href="/fonts/fonts.css"'), page.index("</head>"))

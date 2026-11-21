@@ -7,6 +7,7 @@ are recorded. On the call every finished turn reaches the Boss, the Boss's answe
 a pause, never over him, talking over the voice stops it, a slow Boss gets one "one sec", one
 "still on it" and one offer to text, and the latency check measures the gap it claims to.
 """
+
 import array
 import io
 import json
@@ -29,24 +30,42 @@ def load(env):
 
 
 OWNER = "+15555550123"  # synthetic: this repo is public
-CFG = {"pin": "482913", "twilio_number": "+16505550100", "twilio_sid": "AC" + "0" * 32, "hook_secret": "s3cret",
-       "twilio_key": "SK" + "0" * 32, "twilio_secret": "x", "say_token": "say"}
+CFG = {
+    "pin": "482913",
+    "twilio_number": "+16505550100",
+    "twilio_sid": "AC" + "0" * 32,
+    "hook_secret": "s3cret",
+    "twilio_key": "SK" + "0" * 32,
+    "twilio_secret": "x",
+    "say_token": "say",
+}
 ENV = {"VOICE_CALL_ALLOW": OWNER, "VOICE_CALL_PUBLIC_URL": "https://h.example"}
 
 
 def sync_threads(test, vc):
     # vc.threading is the process-wide module: patch it for this test only, or every later test's servers run inline
-    patch = mock.patch.object(vc.threading, "Thread", lambda target, args=(), daemon=None: mock.Mock(start=lambda: target(*args)))
+    patch = mock.patch.object(
+        vc.threading, "Thread", lambda target, args=(), daemon=None: mock.Mock(start=lambda: target(*args))
+    )
     patch.start()
     test.addCleanup(patch.stop)
 
 
 def vouching(vc, **over):
     """Twilio's API answering GET /Calls/<sid>: a live call to our number from whoever the webhook says."""
+
     def twilio(cfg, method, path, form=None):
         sid = path.split("/Calls/")[1].split(".")[0]
-        return over.get("code", 200), dict({"account_sid": CFG["twilio_sid"], "to": CFG["twilio_number"],
-                                            "from": vc._from[sid], "status": "in-progress"}, **over.get("call", {}))
+        return over.get("code", 200), dict(
+            {
+                "account_sid": CFG["twilio_sid"],
+                "to": CFG["twilio_number"],
+                "from": vc._from[sid],
+                "status": "in-progress",
+            },
+            **over.get("call", {}),
+        )
+
     vc._from = {}
     vc.twilio = twilio
 
@@ -69,13 +88,21 @@ class WebhookAuthTest(unittest.TestCase):
         self.assertTrue(self.vc.hook_auth_ok(good, CFG))
         for bad in (None, "", "Basic " + __import__("base64").b64encode(b"twilio:guess").decode()):
             self.assertFalse(self.vc.hook_auth_ok(bad, CFG))
-        self.assertFalse(self.vc.hook_auth_ok("Basic " + __import__("base64").b64encode(b"twilio:").decode(),
-                                              dict(CFG, hook_secret="")))  # unset secret never matches
+        self.assertFalse(
+            self.vc.hook_auth_ok(
+                "Basic " + __import__("base64").b64encode(b"twilio:").decode(), dict(CFG, hook_secret="")
+            )
+        )  # unset secret never matches
 
     def test_right_pin_needs_twilio_to_vouch_for_the_call(self):
         self.assertIn("<Connect>", pin(self.vc, "CA1", OWNER))
-        for over in ({"code": 404}, {"call": {"status": "completed"}}, {"call": {"to": "+16505550199"}},
-                     {"call": {"account_sid": "AC" + "1" * 32}}, {"call": {"from": "+14155550000"}}):
+        for over in (
+            {"code": 404},
+            {"call": {"status": "completed"}},
+            {"call": {"to": "+16505550199"}},
+            {"call": {"account_sid": "AC" + "1" * 32}},
+            {"call": {"from": "+14155550000"}},
+        ):
             vouching(self.vc, **over)
             out = pin(self.vc, "CA2", OWNER)
             self.assertNotIn("<Connect", out, over)
@@ -186,13 +213,18 @@ class SetupNeverBuysOnItsOwnTest(unittest.TestCase):
             if "AvailablePhoneNumbers" in path:
                 return 200, {"available_phone_numbers": [{"phone_number": "+16505550142"}]}
             if path.startswith("https://pricing."):
-                return 200, {"price_unit": "USD", "phone_number_prices": [{"number_type": "local", "current_price": "1.15"}]}
+                return 200, {
+                    "price_unit": "USD",
+                    "phone_number_prices": [{"number_type": "local", "current_price": "1.15"}],
+                }
             if path == "/IncomingPhoneNumbers.json":
                 return 201, {"phone_number": form["PhoneNumber"], "sid": "PN1"}
             return 200, {}
+
         self.vc.twilio = twilio
-        self.vc.save_config({"twilio_sid": CFG["twilio_sid"], "twilio_key": "SK1", "twilio_secret": "x",
-                             "stt_key": "k", "tts_key": "k"})
+        self.vc.save_config(
+            {"twilio_sid": CFG["twilio_sid"], "twilio_key": "SK1", "twilio_secret": "x", "stt_key": "k", "tts_key": "k"}
+        )
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -226,8 +258,12 @@ class CallTest(unittest.TestCase):
         self.vc.log = lambda m: None
         sync_threads(self, self.vc)
         self.t, self.played, self.cleared, self.boss = 0.0, [], [], []
-        self.call = self.vc.Call(play=lambda kind, what, lang, ticket: self.played.append((kind, what, lang)),
-                                 clear=lambda: self.cleared.append(1), boss=self.boss.append, now=lambda: self.t)
+        self.call = self.vc.Call(
+            play=lambda kind, what, lang, ticket: self.played.append((kind, what, lang)),
+            clear=lambda: self.cleared.append(1),
+            boss=self.boss.append,
+            now=lambda: self.t,
+        )
 
     def step(self, until, every=0.5):
         """Advance the clock, letting each line finish playing before the next pump."""
@@ -395,7 +431,9 @@ class ServerTest(unittest.TestCase):
         self.assertIn("SYNTHETIC TEST CALL", self.vc.envelope("t1", "pt", "oi", False, test=True))
         self.assertNotIn("SYNTHETIC", self.vc.envelope("t2", "pt", "oi", False))
         self.assertIn(self.vc.OWNER_RULE, self.vc.envelope("t2", "pt", "oi", False), "the owner on the phone: a task")
-        self.assertNotIn(self.vc.OWNER_RULE, self.vc.envelope("t1", "pt", "oi", False, test=True), "a test call acts on nothing")
+        self.assertNotIn(
+            self.vc.OWNER_RULE, self.vc.envelope("t1", "pt", "oi", False, test=True), "a test call acts on nothing"
+        )
 
 
 class FluxTurnsTest(unittest.TestCase):
@@ -403,11 +441,14 @@ class FluxTurnsTest(unittest.TestCase):
         vc = load(ENV)
         stream = vc.Stream(ws=None, cfg=CFG)
         stream.call = mock.Mock(live=True)
-        msgs = [{"type": "Connected"}, {"type": "TurnInfo", "event": "Update", "transcript": "e o"},
-                {"type": "TurnInfo", "event": "StartOfTurn", "transcript": "e o"},
-                {"type": "TurnInfo", "event": "EndOfTurn", "transcript": "e o deploy?", "languages": ["pt"]},
-                {"type": "TurnInfo", "event": "TurnResumed"},
-                {"type": "TurnInfo", "event": "EndOfTurn", "transcript": "ok", "languages": []}]
+        msgs = [
+            {"type": "Connected"},
+            {"type": "TurnInfo", "event": "Update", "transcript": "e o"},
+            {"type": "TurnInfo", "event": "StartOfTurn", "transcript": "e o"},
+            {"type": "TurnInfo", "event": "EndOfTurn", "transcript": "e o deploy?", "languages": ["pt"]},
+            {"type": "TurnInfo", "event": "TurnResumed"},
+            {"type": "TurnInfo", "event": "EndOfTurn", "transcript": "ok", "languages": []},
+        ]
         stream.listen([json.dumps(m) for m in msgs])
         self.assertEqual(stream.call.user_started.call_count, 2)
         self.assertEqual(stream.call.user_ended.call_args_list, [mock.call("e o deploy?", "pt"), mock.call("ok", "")])

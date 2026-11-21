@@ -8,6 +8,7 @@ Claude Boss. DEFAULT_AGENT_BACKEND is the knob for new agents; unset, it means D
 Spawns are aimed at another node so do_spawn hands its resolved backend to remote_task before any
 tmux or roster work — the test reads the decision without creating anything.
 """
+
 import os
 import tempfile
 import unittest
@@ -38,15 +39,16 @@ class AgentBackendDefaultTests(unittest.TestCase):
             return payload["backend"]
 
     def test_new_agents_use_the_agent_default(self):
-        self.assertEqual("grok", self.spawn_backend(
-            [REMOTE % "eng-1", "--boss", "other-node/main:Boss"],
-            DEFAULT_AGENT_BACKEND="grok"))
+        self.assertEqual(
+            "grok",
+            self.spawn_backend([REMOTE % "eng-1", "--boss", "other-node/main:Boss"], DEFAULT_AGENT_BACKEND="grok"),
+        )
 
     def test_the_boss_keeps_the_node_default(self):
         """The whole point: new agents moving to grok must not move the Boss."""
-        self.assertEqual("claude", self.spawn_backend(
-            [REMOTE % "Boss", "--master", "--role", "boss"],
-            DEFAULT_AGENT_BACKEND="grok"))
+        self.assertEqual(
+            "claude", self.spawn_backend([REMOTE % "Boss", "--master", "--role", "boss"], DEFAULT_AGENT_BACKEND="grok")
+        )
 
     def test_the_boss_gets_the_default_model_too(self):
         # #49: a Boss launched without --model ran Claude Code's own default, Sonnet, for two weeks.
@@ -60,19 +62,18 @@ class AgentBackendDefaultTests(unittest.TestCase):
     def test_an_explicit_backend_always_wins(self):
         # This is also how revive keeps an existing agent on the backend its session lives in:
         # do_revive passes the recorded --backend, so no default can move a revived agent.
-        self.assertEqual("claude", self.spawn_backend(
-            [REMOTE % "eng-2", "--backend", "claude"], DEFAULT_AGENT_BACKEND="grok"))
+        self.assertEqual(
+            "claude", self.spawn_backend([REMOTE % "eng-2", "--backend", "claude"], DEFAULT_AGENT_BACKEND="grok")
+        )
 
     def test_unset_means_the_same_as_before(self):
         self.assertEqual("claude", self.spawn_backend([REMOTE % "eng-3"]))
 
     def test_the_value_is_normalised(self):
-        self.assertEqual("grok", self.spawn_backend(
-            [REMOTE % "eng-4"], DEFAULT_AGENT_BACKEND=" Grok "))
+        self.assertEqual("grok", self.spawn_backend([REMOTE % "eng-4"], DEFAULT_AGENT_BACKEND=" Grok "))
 
     def test_new_grok_agents_get_the_grok_model(self):
-        with tempfile.TemporaryDirectory() as td, \
-             env_with(DEFAULT_AGENT_BACKEND="grok", DEFAULT_GROK_MODEL="grok-4.7"):
+        with tempfile.TemporaryDirectory() as td, env_with(DEFAULT_AGENT_BACKEND="grok", DEFAULT_GROK_MODEL="grok-4.7"):
             mp = load_mp(td)
             with mock.patch.object(mp, "remote_task", return_value=(True, "ok")) as remote:
                 mp.do_spawn([REMOTE % "eng-5"])
@@ -81,8 +82,7 @@ class AgentBackendDefaultTests(unittest.TestCase):
 
     def test_an_edited_queue_env_reaches_a_spawn_from_a_stale_env(self):
         """The Boss's env is a launch-time snapshot; the file is what the owner edits."""
-        with tempfile.TemporaryDirectory() as td, \
-             env_with(DEFAULT_AGENT_BACKEND="grok", DEFAULT_GROK_MODEL="grok-4.7"):
+        with tempfile.TemporaryDirectory() as td, env_with(DEFAULT_AGENT_BACKEND="grok", DEFAULT_GROK_MODEL="grok-4.7"):
             mp = load_mp(td)
             conf = os.path.join(td, "queue.env")
             with open(conf) as f:

@@ -6,6 +6,7 @@ and never asked -- "since I have claude installed it used that for mypeople inst
 automatically" (card 5211716904, items 8+9). List order is an implementation detail, so these tests
 pin that it is never allowed to be the deciding factor on its own.
 """
+
 import sys
 import unittest
 from unittest import mock
@@ -40,8 +41,7 @@ class ResolveAuthTest(unittest.TestCase):
     def test_explicit_preference_is_never_second_guessed(self):
         asked = []
         with with_auth("claude", "codex"):
-            ok, backend, _ = firstrun.resolve_auth("codex",
-                                                   chooser=lambda a: asked.append(a) or "claude")
+            ok, backend, _ = firstrun.resolve_auth("codex", chooser=lambda a: asked.append(a) or "claude")
         self.assertTrue(ok)
         self.assertEqual(backend, "codex")
         self.assertEqual(asked, [], "an explicit --backend must not trigger a prompt")
@@ -85,33 +85,41 @@ class PromptBackendTest(unittest.TestCase):
     def test_non_tty_never_prompts(self):
         fake = mock.Mock()
         fake.isatty.return_value = False
-        with mock.patch.object(sys, "stdin", fake), \
-             mock.patch("builtins.input", side_effect=AssertionError("must not prompt")):
+        with (
+            mock.patch.object(sys, "stdin", fake),
+            mock.patch("builtins.input", side_effect=AssertionError("must not prompt")),
+        ):
             self.assertEqual(firstrun._prompt_backend(["claude", "codex"]), "")
 
     def test_tty_number_selects_that_backend(self):
         fake = mock.Mock()
         fake.isatty.return_value = True
-        with mock.patch.object(sys, "stdin", fake), \
-             mock.patch("builtins.input", return_value="2"), \
-             mock.patch.object(firstrun, "_echo"):
+        with (
+            mock.patch.object(sys, "stdin", fake),
+            mock.patch("builtins.input", return_value="2"),
+            mock.patch.object(firstrun, "_echo"),
+        ):
             self.assertEqual(firstrun._prompt_backend(["claude", "codex"]), "codex")
 
     def test_tty_empty_answer_takes_the_offered_default(self):
         fake = mock.Mock()
         fake.isatty.return_value = True
-        with mock.patch.object(sys, "stdin", fake), \
-             mock.patch("builtins.input", return_value=""), \
-             mock.patch.object(firstrun, "_echo"):
+        with (
+            mock.patch.object(sys, "stdin", fake),
+            mock.patch("builtins.input", return_value=""),
+            mock.patch.object(firstrun, "_echo"),
+        ):
             self.assertEqual(firstrun._prompt_backend(["claude", "codex"]), "claude")
 
     def test_eof_on_a_claimed_tty_does_not_explode(self):
         """A closed stdin mid-install must degrade to 'no answer', not crash the installer."""
         fake = mock.Mock()
         fake.isatty.return_value = True
-        with mock.patch.object(sys, "stdin", fake), \
-             mock.patch("builtins.input", side_effect=EOFError), \
-             mock.patch.object(firstrun, "_echo"):
+        with (
+            mock.patch.object(sys, "stdin", fake),
+            mock.patch("builtins.input", side_effect=EOFError),
+            mock.patch.object(firstrun, "_echo"),
+        ):
             self.assertEqual(firstrun._prompt_backend(["claude", "codex"]), "")
 
 

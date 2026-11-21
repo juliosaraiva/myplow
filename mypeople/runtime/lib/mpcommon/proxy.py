@@ -1,6 +1,17 @@
 # ---------- reverse proxy (stream one request to an inner port) ----------
-HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-       "te", "trailers", "transfer-encoding", "upgrade", "content-length", "host"}
+HOP = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+    "host",
+}
+
 
 def proxy_request(handler, inner_host, inner_port):
     """Forward handler's current request to inner_host:inner_port, stream response back.
@@ -47,5 +58,3 @@ def proxy_request(handler, inner_host, inner_port):
     handler.end_headers()
     if raw:
         handler.wfile.write(raw)
-
-

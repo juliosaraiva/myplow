@@ -9,10 +9,22 @@ the CLI's job (see cli.up).
 The steps below are marked in order: materialize, auth, queue.env, backend
 hooks, tmux.conf, then ensure() which runs them.
 """
-import os, sys, json, shutil, secrets, socket, stat, subprocess, shlex, time, hashlib
+
+import os
+import sys
+import json
+import shutil
+import secrets
+import socket
+import stat
+import subprocess
+import shlex
+import time
+import hashlib
 
 VALID_BACKENDS = ("claude", "codex", "grok")
 LIFECYCLE_EVENTS = ("SessionStart", "UserPromptSubmit", "Stop")
+
 
 def _config_path():
     explicit = os.environ.get("MYPEOPLE_CONFIG_PATH")
@@ -52,17 +64,15 @@ def runtime_dir():
     """Absolute path to the packaged runtime tree (bin/, plugins/, verify/, ...)."""
     try:
         from importlib.resources import files
+
         return str(files("mypeople") / "runtime")
     except Exception:
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime")
 
 
 def install_dir():
-    return os.path.abspath(os.path.expanduser(
-        os.environ.get("MYPEOPLE_HOME") or "~/.local/share/mypeople"))
+    return os.path.abspath(os.path.expanduser(os.environ.get("MYPEOPLE_HOME") or "~/.local/share/mypeople"))
 
 
 def _echo(msg):
     sys.stderr.write(msg + "\n")
-
-

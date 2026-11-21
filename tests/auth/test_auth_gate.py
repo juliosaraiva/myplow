@@ -10,6 +10,7 @@ the HUD painted ALIVE/WORKING and the board delivered pings -- while the agent s
 Two things are pinned here: the gate refuses a dead credential, and a node whose credential was
 refused never renders an agent as ALIVE or WORKING.
 """
+
 import json
 import os
 from pathlib import Path
@@ -46,9 +47,13 @@ class CredentialStructureTests(unittest.TestCase):
     def test_expired_refresh_token_is_dead(self):
         now = 1_784_000_000_000.0
         with tempfile.TemporaryDirectory() as td:
-            p = write_creds(td, accessToken="x", refreshToken="y",
-                            expiresAt=now - 10 * HOUR_MS,
-                            refreshTokenExpiresAt=now - 5 * HOUR_MS)
+            p = write_creds(
+                td,
+                accessToken="x",
+                refreshToken="y",
+                expiresAt=now - 10 * HOUR_MS,
+                refreshTokenExpiresAt=now - 5 * HOUR_MS,
+            )
             state, detail = A.claude_credential_state(path=p, now_ms=now)
         self.assertEqual(state, A.DEAD)
         self.assertIn("cannot be refreshed", detail)
@@ -56,9 +61,13 @@ class CredentialStructureTests(unittest.TestCase):
     def test_open_window_is_live(self):
         now = 1_784_000_000_000.0
         with tempfile.TemporaryDirectory() as td:
-            p = write_creds(td, accessToken="x", refreshToken="y",
-                            expiresAt=now + HOUR_MS,
-                            refreshTokenExpiresAt=now + 100 * HOUR_MS)
+            p = write_creds(
+                td,
+                accessToken="x",
+                refreshToken="y",
+                expiresAt=now + HOUR_MS,
+                refreshTokenExpiresAt=now + 100 * HOUR_MS,
+            )
             state, _ = A.claude_credential_state(path=p, now_ms=now)
         self.assertEqual(state, A.LIVE)
 
@@ -66,9 +75,13 @@ class CredentialStructureTests(unittest.TestCase):
         """The CLI refreshes this on its own; calling it dead would be the opposite lie."""
         now = 1_784_000_000_000.0
         with tempfile.TemporaryDirectory() as td:
-            p = write_creds(td, accessToken="x", refreshToken="y",
-                            expiresAt=now - HOUR_MS,
-                            refreshTokenExpiresAt=now + 100 * HOUR_MS)
+            p = write_creds(
+                td,
+                accessToken="x",
+                refreshToken="y",
+                expiresAt=now - HOUR_MS,
+                refreshTokenExpiresAt=now + 100 * HOUR_MS,
+            )
             state, _ = A.claude_credential_state(path=p, now_ms=now)
         self.assertEqual(state, A.LIVE)
 
@@ -86,14 +99,13 @@ class ProbeTests(unittest.TestCase):
 
     def test_401_refusal_is_dead(self):
         state, detail = self._probe(
-            stderr="Failed to authenticate. API Error: 401 OAuth access token is invalid.",
-            returncode=1)
+            stderr="Failed to authenticate. API Error: 401 OAuth access token is invalid.", returncode=1
+        )
         self.assertEqual(state, A.DEAD)
         self.assertIn("401", detail)
 
     def test_expired_session_message_is_dead(self):
-        state, _ = self._probe(
-            stderr="OAuth session expired and could not be refreshed", returncode=1)
+        state, _ = self._probe(stderr="OAuth session expired and could not be refreshed", returncode=1)
         self.assertEqual(state, A.DEAD)
 
     def test_answer_is_live(self):
@@ -106,15 +118,17 @@ class ProbeTests(unittest.TestCase):
 
     def test_timeout_is_unknown(self):
         with mock.patch.object(A.shutil, "which", return_value="/usr/bin/claude"):
+
             def boom(*a, **k):
                 raise subprocess.TimeoutExpired("claude", 90)
+
             state, _ = A.claude_probe(runner=boom)
         self.assertEqual(state, A.UNKNOWN)
 
 
 class VerdictTests(unittest.TestCase):
     def setUp(self):
-        token = mock.patch.object(A, "agent_token", return_value="")   # never this machine's tmux and its login
+        token = mock.patch.object(A, "agent_token", return_value="")  # never this machine's tmux and its login
         token.start()
         self.addCleanup(token.stop)
 
@@ -123,26 +137,33 @@ class VerdictTests(unittest.TestCase):
         account, and the probe checked and billed that account every 15 min."""
         now = 1_784_000_000_000.0
         envs = []
-        with tempfile.TemporaryDirectory() as td, mock.patch.object(A, "agent_token", return_value="tok-agents"), \
-                mock.patch.object(A.shutil, "which", return_value="/usr/bin/claude"):
-            p = write_creds(td, refreshTokenExpiresAt=now - HOUR_MS)   # the other account's file reads dead
-            state, _ = A.claude_verdict(path=p, now_ms=now,
-                                        runner=lambda *a, **k: envs.append(k["env"]) or completed("PONG"))
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(A, "agent_token", return_value="tok-agents"),
+            mock.patch.object(A.shutil, "which", return_value="/usr/bin/claude"),
+        ):
+            p = write_creds(td, refreshTokenExpiresAt=now - HOUR_MS)  # the other account's file reads dead
+            state, _ = A.claude_verdict(
+                path=p, now_ms=now, runner=lambda *a, **k: envs.append(k["env"]) or completed("PONG")
+            )
         self.assertEqual((A.LIVE, "tok-agents"), (state, envs[0].get("CLAUDE_CODE_OAUTH_TOKEN")))
 
-    real_agent_token = staticmethod(A.agent_token)   # taken before setUp stubs it
+    real_agent_token = staticmethod(A.agent_token)  # taken before setUp stubs it
 
     def test_the_agents_token_is_what_tmux_gives_a_new_pane(self):
         with tempfile.TemporaryDirectory() as td:
             tmux = Path(td) / "tmux"
             tmux.write_text('#!/bin/sh\necho "$TMUX_SAYS"\n')
             tmux.chmod(0o755)
-            for says, env_token, want in (("CLAUDE_CODE_OAUTH_TOKEN=tok-tmux", "tok-env", "tok-tmux"),
-                                          ("-CLAUDE_CODE_OAUTH_TOKEN", "tok-env", "tok-env"),   # unset in tmux
-                                          ("", "", "")):
+            for says, env_token, want in (
+                ("CLAUDE_CODE_OAUTH_TOKEN=tok-tmux", "tok-env", "tok-tmux"),
+                ("-CLAUDE_CODE_OAUTH_TOKEN", "tok-env", "tok-env"),  # unset in tmux
+                ("", "", ""),
+            ):
                 env = {"PATH": td, "TMUX_SAYS": says}
-                with mock.patch.dict(os.environ, dict(env, CLAUDE_CODE_OAUTH_TOKEN=env_token) if env_token else env,
-                                     clear=True):
+                with mock.patch.dict(
+                    os.environ, dict(env, CLAUDE_CODE_OAUTH_TOKEN=env_token) if env_token else env, clear=True
+                ):
                     self.assertEqual(want, self.real_agent_token(), says)
 
     def test_offline_node_with_open_window_stays_live(self):
@@ -152,8 +173,8 @@ class VerdictTests(unittest.TestCase):
             p = write_creds(td, expiresAt=now + HOUR_MS, refreshTokenExpiresAt=now + 100 * HOUR_MS)
             with mock.patch.object(A.shutil, "which", return_value="/usr/bin/claude"):
                 state, detail = A.claude_verdict(
-                    path=p, now_ms=now,
-                    runner=lambda *a, **k: completed(stderr="getaddrinfo ENOTFOUND", returncode=1))
+                    path=p, now_ms=now, runner=lambda *a, **k: completed(stderr="getaddrinfo ENOTFOUND", returncode=1)
+                )
         self.assertEqual(state, A.LIVE)
         self.assertIn("inconclusive", detail)
 
@@ -164,9 +185,10 @@ class VerdictTests(unittest.TestCase):
             p = write_creds(td, expiresAt=now + HOUR_MS, refreshTokenExpiresAt=now + 100 * HOUR_MS)
             with mock.patch.object(A.shutil, "which", return_value="/usr/bin/claude"):
                 state, _ = A.claude_verdict(
-                    path=p, now_ms=now,
-                    runner=lambda *a, **k: completed(
-                        stderr="Failed to authenticate. API Error: 401", returncode=1))
+                    path=p,
+                    now_ms=now,
+                    runner=lambda *a, **k: completed(stderr="Failed to authenticate. API Error: 401", returncode=1),
+                )
         self.assertEqual(state, A.DEAD)
 
     def test_dead_stamps_short_circuit_without_probing(self):
@@ -174,17 +196,17 @@ class VerdictTests(unittest.TestCase):
         calls = []
         with tempfile.TemporaryDirectory() as td:
             p = write_creds(td, refreshTokenExpiresAt=now - HOUR_MS)
-            state, _ = A.claude_verdict(
-                path=p, now_ms=now,
-                runner=lambda *a, **k: calls.append(a) or completed("PONG"))
+            state, _ = A.claude_verdict(path=p, now_ms=now, runner=lambda *a, **k: calls.append(a) or completed("PONG"))
         self.assertEqual(state, A.DEAD)
         self.assertEqual(calls, [], "a provably dead credential must not cost a model round-trip")
 
     def test_probe_runs_without_the_callers_agent_id(self):
         """Run from an agent's shell, the probe's Stop hook used to ping the Boss 'finished: PONG'."""
         envs = []
-        with mock.patch.dict(os.environ, {"AGENT_ID": "node/main:eng-7"}), \
-             mock.patch.object(A.shutil, "which", return_value="/test/bin/claude"):
+        with (
+            mock.patch.dict(os.environ, {"AGENT_ID": "node/main:eng-7"}),
+            mock.patch.object(A.shutil, "which", return_value="/test/bin/claude"),
+        ):
             A.claude_probe(runner=lambda *a, **k: envs.append(k["env"]) or completed("PONG"))
         self.assertNotIn("AGENT_ID", envs[0])
         self.assertIn("PATH", envs[0])
@@ -205,8 +227,10 @@ class FirstrunGateTests(unittest.TestCase):
 
     def _status_ok(self):
         return mock.patch.object(
-            firstrun.subprocess, "run",
-            return_value=completed(json.dumps({"loggedIn": True, "authMethod": "claude.ai"})))
+            firstrun.subprocess,
+            "run",
+            return_value=completed(json.dumps({"loggedIn": True, "authMethod": "claude.ai"})),
+        )
 
     def _verdict(self, state, detail="test"):
         module = mock.Mock()
@@ -214,25 +238,33 @@ class FirstrunGateTests(unittest.TestCase):
         return mock.patch.object(firstrun, "_authcheck", return_value=module)
 
     def test_dead_credential_is_not_authenticated_despite_logged_in_true(self):
-        with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"), \
-             self._status_ok(), self._verdict("dead", "OAuth session expired"):
+        with (
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"),
+            self._status_ok(),
+            self._verdict("dead", "OAuth session expired"),
+        ):
             self.assertFalse(firstrun._claude_authenticated())
 
     def test_live_credential_still_passes(self):
-        with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"), \
-             self._status_ok(), self._verdict("live"):
+        with (
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"),
+            self._status_ok(),
+            self._verdict("live"),
+        ):
             self.assertTrue(firstrun._claude_authenticated())
 
     def test_inconclusive_probe_still_passes(self):
-        with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"), \
-             self._status_ok(), self._verdict("unknown"):
+        with (
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"),
+            self._status_ok(),
+            self._verdict("unknown"),
+        ):
             self.assertTrue(firstrun._claude_authenticated())
 
     def test_slow_auth_status_is_not_a_refusal(self):
         """`make live` refused a logged-in node: right after `up` rewrote ~/.claude.json, `claude
         auth status` took 23 s and the 15 s timeout was read as "not logged in" (5.22.26)."""
-        slow = mock.patch.object(firstrun.subprocess, "run",
-                                 side_effect=subprocess.TimeoutExpired(["claude"], 15))
+        slow = mock.patch.object(firstrun.subprocess, "run", side_effect=subprocess.TimeoutExpired(["claude"], 15))
         with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"), slow:
             with self._verdict("live"):
                 self.assertTrue(firstrun._claude_authenticated())
@@ -240,10 +272,13 @@ class FirstrunGateTests(unittest.TestCase):
                 self.assertFalse(firstrun._claude_authenticated())
 
     def test_dead_credential_produces_the_login_message(self):
-        with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"), \
-             self._status_ok(), self._verdict("dead"), \
-             mock.patch.object(firstrun, "_codex_authenticated", return_value=False), \
-             mock.patch.object(firstrun, "_grok_authenticated", return_value=False):
+        with (
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/claude"),
+            self._status_ok(),
+            self._verdict("dead"),
+            mock.patch.object(firstrun, "_codex_authenticated", return_value=False),
+            mock.patch.object(firstrun, "_grok_authenticated", return_value=False),
+        ):
             ok, backend, msg = firstrun.resolve_auth("claude")
         self.assertFalse(ok)
         self.assertIn("not authenticated", msg)
@@ -262,23 +297,28 @@ class NodeHealthCacheTests(unittest.TestCase):
             A.node_auth_health(td, probe_ttl=900, now=1000.0, verdict=verdict)
             A.node_auth_health(td, probe_ttl=900, now=1010.0, verdict=verdict)
             A.node_auth_health(td, probe_ttl=900, now=5000.0, verdict=verdict)
-        self.assertEqual(seen, [True, False, True],
-                         "probe once, then coast on the cache until the TTL expires")
+        self.assertEqual(seen, [True, False, True], "probe once, then coast on the cache until the TTL expires")
 
     def test_refusal_is_remembered_until_a_probe_earns_the_green_back(self):
         with tempfile.TemporaryDirectory() as td:
             A.node_auth_health(td, now=1000.0, verdict=lambda **k: (A.DEAD, "401 refused"))
             # structural-only pass right after: the file looks fine, but nothing re-proved it
-            out = A.node_auth_health(td, probe_ttl=900, now=1010.0,
-                                     verdict=lambda **k: (A.LIVE, "credential window open"))
+            out = A.node_auth_health(
+                td, probe_ttl=900, now=1010.0, verdict=lambda **k: (A.LIVE, "credential window open")
+            )
             self.assertEqual(out["state"], A.DEAD)
             # nor when the file cannot tell (a token login, a keychain)
-            out = A.node_auth_health(td, probe_ttl=900, now=1020.0,
-                                     verdict=lambda **k: (A.UNKNOWN, "agents run on a CLAUDE_CODE_OAUTH_TOKEN"))
+            out = A.node_auth_health(
+                td,
+                probe_ttl=900,
+                now=1020.0,
+                verdict=lambda **k: (A.UNKNOWN, "agents run on a CLAUDE_CODE_OAUTH_TOKEN"),
+            )
             self.assertEqual(out["state"], A.DEAD)
             # TTL expired -> a real probe runs and may restore the green
-            out = A.node_auth_health(td, probe_ttl=900, now=5000.0,
-                                     verdict=lambda **k: (A.LIVE, "backend answered the probe"))
+            out = A.node_auth_health(
+                td, probe_ttl=900, now=5000.0, verdict=lambda **k: (A.LIVE, "backend answered the probe")
+            )
             self.assertEqual(out["state"], A.LIVE)
 
 
@@ -288,9 +328,15 @@ class HudHonestyTests(unittest.TestCase):
     def test_unauthenticated_agent_is_blocked_not_working(self):
         with tempfile.TemporaryDirectory() as td:
             qs = sandbox.load(td, "queue-server.py")
-            rec = {"agent_id": "test-node/main:Boss", "host": "test-node", "session": "main",
-                   "tab": "Boss", "backend": "claude", "state": "unauthenticated",
-                   "auth_detail": "OAuth session expired and cannot be refreshed"}
+            rec = {
+                "agent_id": "test-node/main:Boss",
+                "host": "test-node",
+                "session": "main",
+                "tab": "Boss",
+                "backend": "claude",
+                "state": "unauthenticated",
+                "auth_detail": "OAuth session expired and cannot be refreshed",
+            }
             # the lifecycle hook froze this agent at "working" when the ping it can never answer
             # was delivered -- exactly the false green from the card
             with mock.patch.object(qs, "status_for", return_value={"status": "working"}):
@@ -303,10 +349,15 @@ class HudHonestyTests(unittest.TestCase):
     def test_authenticated_agent_is_untouched(self):
         with tempfile.TemporaryDirectory() as td:
             qs = sandbox.load(td, "queue-server.py")
-            rec = {"agent_id": "test-node/main:eng-1", "host": "test-node", "session": "main",
-                   "tab": "eng-1", "backend": "claude", "state": "alive"}
-            with mock.patch.object(qs, "status_for",
-                                   return_value={"status": "working", "summary": "shipping"}):
+            rec = {
+                "agent_id": "test-node/main:eng-1",
+                "host": "test-node",
+                "session": "main",
+                "tab": "eng-1",
+                "backend": "claude",
+                "state": "alive",
+            }
+            with mock.patch.object(qs, "status_for", return_value={"status": "working", "summary": "shipping"}):
                 row = qs.agent_row("test-node/main:eng-1", rec)
         self.assertEqual(row["state"], "alive")
         self.assertEqual(row["status"], "working")
@@ -315,8 +366,14 @@ class HudHonestyTests(unittest.TestCase):
     def test_a_never_prompted_agent_reads_starting_not_working(self):
         with tempfile.TemporaryDirectory() as td:
             qs = sandbox.load(td, "queue-server.py")
-            rec = {"agent_id": "test-node/main:eng-2", "host": "test-node", "session": "main",
-                   "tab": "eng-2", "backend": "claude", "state": "alive"}
+            rec = {
+                "agent_id": "test-node/main:eng-2",
+                "host": "test-node",
+                "session": "main",
+                "tab": "eng-2",
+                "backend": "claude",
+                "state": "alive",
+            }
             # spawned, never given a turn: 7 such agents read "working" for 6 h (10-29)
             with mock.patch.object(qs, "status_for", return_value={"status": "starting"}):
                 row = qs.agent_row("test-node/main:eng-2", rec)

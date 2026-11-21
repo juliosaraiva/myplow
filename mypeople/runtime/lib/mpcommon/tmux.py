@@ -15,8 +15,8 @@ def claude_composer_ready(screen):
     lines = [l for l in (_ANSI.sub("", raw).rstrip() for raw in screen.splitlines()) if l.strip()][-25:]
     rule = [l.lstrip().startswith("\u2500" * 8) for l in lines]
     return any(
-        lines[i].lstrip().startswith("\u276f") and rule[i - 1] and any(rule[i + 1:])
-        for i in range(1, len(lines)))
+        lines[i].lstrip().startswith("\u276f") and rule[i - 1] and any(rule[i + 1 :]) for i in range(1, len(lines))
+    )
 
 
 def input_end(screen):
@@ -28,7 +28,7 @@ def input_end(screen):
     rules = [i for i, l in enumerate(lines) if l.lstrip().startswith("\u2500" * 8)]
     if not rules:
         return None
-    return re.sub(r"\s", "", "".join(lines[rules[-2] + 1 if len(rules) > 1 else 0:rules[-1]]))
+    return re.sub(r"\s", "", "".join(lines[rules[-2] + 1 if len(rules) > 1 else 0 : rules[-1]]))
 
 
 # Claude Code ends a paste that has had no bytes for 2 s (its input reader's IN_PASTE timeout) and
@@ -37,7 +37,7 @@ def input_end(screen):
 # (11-07: 83 of the Boss's 271 long messages). A piece this size arrives in one read, and one of at
 # most 800 characters and 2 lines goes into the box as text, not a "[Pasted text]" chip.
 PASTE_BYTES, PASTE_CHARS, PASTE_LINES = 900, 800, 2
-PASTE_WAIT = 30   # seconds a long message waits, in all, for its pieces to show in the box
+PASTE_WAIT = 30  # seconds a long message waits, in all, for its pieces to show in the box
 # What a caller gives one mp send: more than its longest delivery (MP_SEND_READY_WAIT 10 s for the
 # box, PASTE_WAIT + 5 for another sender's turn, PASTE_WAIT for the pieces, then the Enter). A shorter
 # one killed mp halfway through a long message, left it unsent in the box and pasted it again on the
@@ -73,7 +73,7 @@ def _target_backend(target):
 
 
 def pane_input_state(target):
-    """"no_pane", "not_ready" (a Claude agent with no input box on screen: still starting, or a
+    """ "no_pane", "not_ready" (a Claude agent with no input box on screen: still starting, or a
     dialog is up), or "ready". A pane that is not a Claude agent (Codex, Grok, a test receiver)
     reads "ready": there is no composer shape to hold it to."""
     env = dict(os.environ)
@@ -112,10 +112,11 @@ def retired_note(target):
     if not rr.get("retired"):
         return ""
     mins = int((time.time() - rr.get("retired_ts", time.time())) // 60)
-    return ("not sent: %s was retired %s ago (%s), so no one got this message; "
-            "`mp revive %s` on its MyPlow brings it back"
-            % (aid, "%d min" % mins if mins < 120 else "%d h" % (mins // 60),
-               rr.get("retire_reason") or "mp kill", aid))
+    return (
+        "not sent: %s was retired %s ago (%s), so no one got this message; "
+        "`mp revive %s` on its MyPlow brings it back"
+        % (aid, "%d min" % mins if mins < 120 else "%d h" % (mins // 60), rr.get("retire_reason") or "mp kill", aid)
+    )
 
 
 # tmux serves on one thread with about 128 connections queued behind it. While it is stalled, a client
@@ -152,13 +153,15 @@ def tmux_server_gone(env=None):
         return False
     except OSError as e:
         if e.errno not in (errno.ECONNREFUSED, errno.ENOENT, errno.ENOTSOCK):
-            return False    # a timeout, Linux's full queue, no permission: there is a server, maybe stalled
+            return False  # a timeout, Linux's full queue, no permission: there is a server, maybe stalled
     finally:
         s.close()
     if sys.platform != "darwin":
         return True
     try:
-        held = subprocess.run(["lsof", "-U", "-a", "-c", "tmux", "-Fn"], capture_output=True, text=True, timeout=5).stdout
+        held = subprocess.run(
+            ["lsof", "-U", "-a", "-c", "tmux", "-Fn"], capture_output=True, text=True, timeout=5
+        ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return False
     return not {path, os.path.realpath(path)} & {line[1:] for line in held.splitlines() if line.startswith("n")}
@@ -188,8 +191,9 @@ def tmux_windows(wait=None):
     # A client can block inside tmux on Linux before the retry loop sees a result.
     timeout = max(0.1, TMUX_STALL_WAIT if wait is None else wait)
     try:
-        r = tmux_run("list-windows", "-a", "-F", "#{session_name}:#{window_name}",
-                     env=env, wait=wait, timeout=timeout, text=True)
+        r = tmux_run(
+            "list-windows", "-a", "-F", "#{session_name}:#{window_name}", env=env, wait=wait, timeout=timeout, text=True
+        )
     except subprocess.TimeoutExpired:
         return None
     if r.returncode == 0:
@@ -214,8 +218,10 @@ def pane_key(target, key):
         return tmux("send-keys", "-t", target, key).returncode == 0
     buf = "mp-" + base64.urlsafe_b64encode(os.urandom(9)).decode("ascii").rstrip("=")
     raw = b"\r" if key == "Enter" else key.encode("utf-8")
-    return (tmux("load-buffer", "-b", buf, "-", input=raw).returncode == 0 and
-            tmux("paste-buffer", "-r", "-d", "-b", buf, "-t", target).returncode == 0)
+    return (
+        tmux("load-buffer", "-b", buf, "-", input=raw).returncode == 0
+        and tmux("paste-buffer", "-r", "-d", "-b", buf, "-t", target).returncode == 0
+    )
 
 
 def tmux_send_message(target, message):
@@ -250,7 +256,7 @@ def tmux_send_message(target, message):
     lock_path = os.path.join(CFG["INSTALL_DIR"], "run", "send-locks", re.sub(r"[^\w.-]", "_", target) + ".lock")
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
     with open(lock_path, "a+") as lock:
-        give_up = time.time() + PASTE_WAIT + 5   # another sender's longest turn; a stuck one must not stop every other
+        give_up = time.time() + PASTE_WAIT + 5  # another sender's longest turn; a stuck one must not stop every other
         while True:
             try:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -284,8 +290,10 @@ def _send_message(target, message):
                 return False
             before = box() if len(pieces) > 1 and state == "ready" else None
             # -p = bracketed paste markers, -d = drop the buffer once pasted.
-            if state == "no_pane" or tmux("load-buffer", "-b", buf, "-",
-                                          input=pieces[pasted].encode("utf-8")).returncode:
+            if (
+                state == "no_pane"
+                or tmux("load-buffer", "-b", buf, "-", input=pieces[pasted].encode("utf-8")).returncode
+            ):
                 break
             if tmux("paste-buffer", "-p", "-d", "-b", buf, "-t", target).returncode != 0:
                 tmux("delete-buffer", "-b", buf)
@@ -317,10 +325,11 @@ def _send_message(target, message):
         return True
     return False
 
+
 def tmux_capture(target, lines=200):
     env = dict(os.environ)
     env.pop("TMUX", None)
-    r = subprocess.run(["tmux", "capture-pane", "-p", "-t", target, "-S", "-%d" % lines],
-                       env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", target, "-S", "-%d" % lines], env=env, capture_output=True, text=True
+    )
     return r.stdout if r.returncode == 0 else ""
-

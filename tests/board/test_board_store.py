@@ -13,9 +13,19 @@ BIN = ROOT / "mypeople" / "runtime" / "bin"
 
 
 def sample_board():
-    return {"version": 2, "order": ["a1"], "pinSeq": 1,
-            "tasks": {"a1": {"id": "a1", "text": "olá — açaí ☕", "state": "working",
-                             "comments": [{"id": "c1", "by": "CEO", "body": "ship it"}]}}}
+    return {
+        "version": 2,
+        "order": ["a1"],
+        "pinSeq": 1,
+        "tasks": {
+            "a1": {
+                "id": "a1",
+                "text": "olá — açaí ☕",
+                "state": "working",
+                "comments": [{"id": "c1", "by": "CEO", "body": "ship it"}],
+            }
+        },
+    }
 
 
 class BackendSelectorTests(unittest.TestCase):
@@ -28,6 +38,7 @@ class BackendSelectorTests(unittest.TestCase):
         sys.path.insert(0, str(BIN))
         self.addCleanup(lambda: sys.path.remove(str(BIN)) if str(BIN) in sys.path else None)
         import boardstore
+
         self.BS = boardstore
         self.board_path = os.path.join(self.tmp.name, "board.v2.json")
 

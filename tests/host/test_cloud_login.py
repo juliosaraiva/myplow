@@ -1,4 +1,5 @@
 """Cloud MyPlow leases the shared Auth Bank before it asks an owner to log in."""
+
 import os
 import shutil
 import stat
@@ -21,22 +22,31 @@ class ClaudeLoginFetch(unittest.TestCase):
         rel.mkdir()
         shutil.copy(ROOT / "cloud" / "claude-login.sh", rel)
         (rel / "own-login.py").write_text(
-            "import os, sys\nopen(os.environ['ASKED'], 'w').write('asked')\nsys.stdout.write(%r)\n" % GOOD)
+            "import os, sys\nopen(os.environ['ASKED'], 'w').write('asked')\nsys.stdout.write(%r)\n" % GOOD
+        )
         bin_ = self.td / "bin"
         bin_.mkdir()
         # curl: identity -> an assertion; POST /token -> "<body>\n<status>" from $BANK_STATUS; beacons -> nothing
-        self.stub(bin_ / "curl", """#!/bin/bash
+        self.stub(
+            bin_ / "curl",
+            """#!/bin/bash
 case "$*" in
   *index-identity*) echo '{"assertion": "a"}' ;;
   */token*) printf '{"token": "sk-ant-oat01-daniels-%040d"}\\n%s' 0 "$BANK_STATUS" ;;
-esac""")
+esac""",
+        )
         # claude -p works only for a real-looking login
         self.stub(bin_ / "claude", '#!/bin/bash\n[[ "$CLAUDE_CODE_OAUTH_TOKEN" == sk-ant-oat01-* ]]')
         # timeout: the script runs on Linux, where coreutils has it; macOS has none (#50)
         self.stub(bin_ / "timeout", '#!/bin/bash\nshift; exec "$@"')
-        self.env = dict(os.environ, PATH=f"{bin_}:{os.environ['PATH']}", MYPEOPLE_HOME=str(self.td / "data"),
-                        PLOW_API_BASE="http://plow", MYPLOW_CLAUDE_BANK="http://bank",
-                        ASKED=str(self.td / "asked"))
+        self.env = dict(
+            os.environ,
+            PATH=f"{bin_}:{os.environ['PATH']}",
+            MYPEOPLE_HOME=str(self.td / "data"),
+            PLOW_API_BASE="http://plow",
+            MYPLOW_CLAUDE_BANK="http://bank",
+            ASKED=str(self.td / "asked"),
+        )
         self.own = self.td / "data" / "state" / "claude-login" / "own-token"
         self.script = rel / "claude-login.sh"
 
@@ -45,8 +55,13 @@ esac""")
         path.chmod(0o755)
 
     def fetch(self, bank):
-        return subprocess.run(["bash", str(self.script), "fetch"], capture_output=True, text=True,
-                              env=dict(self.env, BANK_STATUS=str(bank)), timeout=60)
+        return subprocess.run(
+            ["bash", str(self.script), "fetch"],
+            capture_output=True,
+            text=True,
+            env=dict(self.env, BANK_STATUS=str(bank)),
+            timeout=60,
+        )
 
     def test_the_login_server_can_come_from_the_install_s_own_file(self):
         """No built-in login server (the repo is public): an install names its own, by env or by a file on its
@@ -60,7 +75,7 @@ esac""")
 
     def test_without_a_login_server_an_install_uses_its_own_owner_s_login(self):
         self.env.pop("MYPLOW_CLAUDE_BANK")
-        r = self.fetch(200)   # a /token answer would be Daniel's: it must never be asked for
+        r = self.fetch(200)  # a /token answer would be Daniel's: it must never be asked for
         self.assertEqual(0, r.returncode)
         self.assertFalse(r.stdout.startswith("sk-ant-oat01-daniels-"))
         self.assertTrue(Path(self.env["ASKED"]).exists())
@@ -100,27 +115,44 @@ class OwnLoginParsing(unittest.TestCase):
 
     def test_link_comes_whole_from_the_terminal_hyperlink(self):
         url = "https://claude.com/cai/oauth/authorize?code=true&client_id=x&state=abc"
-        out = (b"Browser didn't open? Use the url below:\r\n\x1b]8;;" + url.encode() + b"\x07"
-               + url[:40].encode() + b"\r\n" + url[40:].encode() + b"\x1b]8;;\x07\r\nPaste code here if prompted>")
+        out = (
+            b"Browser didn't open? Use the url below:\r\n\x1b]8;;"
+            + url.encode()
+            + b"\x07"
+            + url[:40].encode()
+            + b"\r\n"
+            + url[40:].encode()
+            + b"\x1b]8;;\x07\r\nPaste code here if prompted>"
+        )
         self.assertEqual(url, self.m.link_of(out))
 
     def test_the_login_is_read_whole_even_when_the_terminal_wrapped_it(self):
         tok = "sk-ant-oat01-" + "A" * 66 + "e_iI4D2GpwsSFVy82CXw-_rwA_QAA"
-        out = (b"\x1b[32m\xe2\x9c\x93 Long-lived authentication token created successfully!\r\n"
-               b" Your OAuth token (valid for 1 year):\r\n \x1b[1m" + tok[:79].encode() + b"\r\n "
-               + tok[79:].encode() + b"\x1b[0m\r\n Store this token securely.")
+        out = (
+            b"\x1b[32m\xe2\x9c\x93 Long-lived authentication token created successfully!\r\n"
+            b" Your OAuth token (valid for 1 year):\r\n \x1b[1m"
+            + tok[:79].encode()
+            + b"\r\n "
+            + tok[79:].encode()
+            + b"\x1b[0m\r\n Store this token securely."
+        )
         self.assertEqual(tok, self.m.login_of(out))
         # what a 500-column pty really shows: spaces drawn as cursor moves, the login on one line
-        wide = (b"\x1b[32m\xe2\x9c\x93\x1b[1CLong-lived\x1b[1Cauthentication token created successfully!\r\n"
-                b"Your\x1b[1COAuth\x1b[1Ctoken\x1b[1C(valid\x1b[1Cfor\x1b[1C1\x1b[1Cyear):\r\n" + tok.encode()
-                + b"\r\nStore\x1b[1Cthis token securely. You won't be able to see it again.")
+        wide = (
+            b"\x1b[32m\xe2\x9c\x93\x1b[1CLong-lived\x1b[1Cauthentication token created successfully!\r\n"
+            b"Your\x1b[1COAuth\x1b[1Ctoken\x1b[1C(valid\x1b[1Cfor\x1b[1C1\x1b[1Cyear):\r\n"
+            + tok.encode()
+            + b"\r\nStore\x1b[1Cthis token securely. You won't be able to see it again."
+        )
         self.assertEqual(tok, self.m.login_of(wide))
         self.assertIsNone(self.m.login_of(b"OAuth error: Request failed with status code 400"))
 
     def test_the_code_is_the_owners_next_text_not_history_or_our_own(self):
-        msgs = [{"uid": "m1", "direction": "inbound", "body": "set this up", "created_at": "1"},
-                {"uid": "m2", "direction": "outbound", "body": "tap this: https://...", "created_at": "2"},
-                {"uid": "m3", "direction": "inbound", "body": "here: abc123#state9", "created_at": "3"}]
+        msgs = [
+            {"uid": "m1", "direction": "inbound", "body": "set this up", "created_at": "1"},
+            {"uid": "m2", "direction": "outbound", "body": "tap this: https://...", "created_at": "2"},
+            {"uid": "m3", "direction": "inbound", "body": "here: abc123#state9", "created_at": "3"},
+        ]
         self.m.messages = lambda chat: msgs
         with mock.patch.object(self.m.time, "sleep"):
             code, _ = self.m.wait_for_code("cht_x", {"m1"})
@@ -134,13 +166,19 @@ class ClaudeLoginFromPool(ClaudeLoginFetch):
         super().setUp()
         (self.script.parent / "pool-lease.py").write_text(
             "import os, sys\nrc = int(os.environ['POOL_RC'])\n"
-            "sys.stdout.write('sk-ant-oat01-pool-' + '0' * 30 if rc == 0 else '')\nsys.exit(rc)\n")
+            "sys.stdout.write('sk-ant-oat01-pool-' + '0' * 30 if rc == 0 else '')\nsys.exit(rc)\n"
+        )
         # The inherited tests run against a login server WITHOUT a pool (3): exactly the old behaviour.
         self.env["POOL_RC"] = "3"
 
     def pool(self, rc):
-        return subprocess.run(["bash", str(self.script), "fetch"], capture_output=True, text=True,
-                              env=dict(self.env, POOL_RC=str(rc), BANK_STATUS="200"), timeout=60)
+        return subprocess.run(
+            ["bash", str(self.script), "fetch"],
+            capture_output=True,
+            text=True,
+            env=dict(self.env, POOL_RC=str(rc), BANK_STATUS="200"),
+            timeout=60,
+        )
 
     def test_a_full_pool_starts_no_claude(self):
         r = self.pool(4)

@@ -21,9 +21,7 @@ def write_preserving(path: Path, data: bytes, mode: int = 0o600) -> bool:
         old = path.read_bytes()
         if old == data:
             return False
-        backup = path.with_name(
-            path.name + ".backup-" + hashlib.sha256(old).hexdigest()[:12]
-        )
+        backup = path.with_name(path.name + ".backup-" + hashlib.sha256(old).hexdigest()[:12])
         if not backup.exists():
             with backup.open("xb") as handle:
                 os.chmod(backup, mode)
@@ -36,9 +34,7 @@ def write_preserving(path: Path, data: bytes, mode: int = 0o600) -> bool:
     return True
 
 
-def launch_agents(
-    settings: Settings, source: Path, root: Path = ROOT
-) -> dict[str, dict]:
+def launch_agents(settings: Settings, source: Path, root: Path = ROOT) -> dict[str, dict]:
     home = Path.home()
     environment = {
         "PATH": f"{Path(settings.venv) / 'bin'}:{root / 'voz/runtime-bin'}:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -134,24 +130,18 @@ def plugin_config(settings: Settings, source: Path, root: Path = ROOT) -> dict:
 
 def install(settings: Settings, source: Path, root: Path = ROOT) -> None:
     if not Path(settings.python).is_file():
-        raise ValueError(
-            "Create the configured Python environment and install voz/requirements.txt first."
-        )
+        raise ValueError("Create the configured Python environment and install voz/requirements.txt first.")
     if not source.exists():
         write_preserving(
             source,
-            (
-                json.dumps(asdict(settings), indent=2, ensure_ascii=False) + "\n"
-            ).encode(),
+            (json.dumps(asdict(settings), indent=2, ensure_ascii=False) + "\n").encode(),
         )
     logs = Path(settings.logs)
     logs.mkdir(mode=0o700, parents=True, exist_ok=True)
     target = Path(settings.install_dir) / "state/voice/config.json"
     existing = json.loads(target.read_text()) if target.exists() else {}
     existing.update(plugin_config(settings, source, root))
-    write_preserving(
-        target, (json.dumps(existing, indent=2, ensure_ascii=False) + "\n").encode()
-    )
+    write_preserving(target, (json.dumps(existing, indent=2, ensure_ascii=False) + "\n").encode())
     for label, config in launch_agents(settings, source, root).items():
         target = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
         write_preserving(target, plistlib.dumps(config), mode=0o644)

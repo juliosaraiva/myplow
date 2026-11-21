@@ -3,6 +3,7 @@
 mp took the first argument literally: `mp spawn --help` started a real Claude agent named --help,
 `mp kill --help` retired a roster entry of that name, and `mp ensure-boss --help` ran ensure-boss.
 """
+
 import io
 from pathlib import Path
 import unittest
@@ -27,8 +28,10 @@ class HelpAndDashNameTests(unittest.TestCase):
             for verb in mp.USAGE:
                 for flag in ("--help", "-h"):
                     out = io.StringIO()
-                    with mock.patch.object(mp.sys, "argv", ["mp", verb, flag]), \
-                            mock.patch.object(mp.sys, "stdout", out):
+                    with (
+                        mock.patch.object(mp.sys, "argv", ["mp", verb, flag]),
+                        mock.patch.object(mp.sys, "stdout", out),
+                    ):
                         self.assertEqual(0, mp.main(), (verb, flag))
                     self.assertTrue(out.getvalue().startswith("usage: mp " + verb), (verb, out.getvalue()))
         self.assertEqual([], ran)

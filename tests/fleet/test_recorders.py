@@ -9,8 +9,7 @@ import sandbox
 
 
 def load_runtime(filename, home):
-    return sandbox.load(home, filename, TTYD_PORT="7681", DEFAULT_ENG_MODEL="claude-opus-5-5",
-                        HEARTBEAT_INTERVAL="10")
+    return sandbox.load(home, filename, TTYD_PORT="7681", DEFAULT_ENG_MODEL="claude-opus-5-5", HEARTBEAT_INTERVAL="10")
 
 
 class RecorderOptInTests(unittest.TestCase):
@@ -87,13 +86,15 @@ class RecorderLifecycleTests(unittest.TestCase):
             common = load_runtime("mpcommon.py", td)
             ident = common.recorder_identity("main", "eng-1", "test-node")
             metadata = dict(ident, pid=4242, server_pid=99)
-            with mock.patch.object(common, "current_recorder", return_value=None), \
-                 mock.patch.object(common, "_recorder_pid_matches", return_value=True), \
-                 mock.patch.object(common, "_recorder_child_pids", return_value=[4243]), \
-                 mock.patch.object(common, "_recorder_child_matches", return_value=True), \
-                 mock.patch.object(common, "_process_alive", return_value=False), \
-                 mock.patch.object(common, "_wait_for_exit", return_value=True), \
-                 mock.patch.object(common.os, "kill") as kill:
+            with (
+                mock.patch.object(common, "current_recorder", return_value=None),
+                mock.patch.object(common, "_recorder_pid_matches", return_value=True),
+                mock.patch.object(common, "_recorder_child_pids", return_value=[4243]),
+                mock.patch.object(common, "_recorder_child_matches", return_value=True),
+                mock.patch.object(common, "_process_alive", return_value=False),
+                mock.patch.object(common, "_wait_for_exit", return_value=True),
+                mock.patch.object(common.os, "kill") as kill,
+            ):
                 result = common.stop_recorder("main", "eng-1", metadata, "test-node")
             kill.assert_called_once_with(4243, signal.SIGTERM)
             self.assertEqual([4242], result["validated"])
@@ -103,10 +104,11 @@ class RecorderLifecycleTests(unittest.TestCase):
     def test_mismatched_metadata_cannot_signal_reused_pid(self):
         with tempfile.TemporaryDirectory() as td:
             common = load_runtime("mpcommon.py", td)
-            metadata = {"pid": 4242, "target": "mc-main:someone-else",
-                        "cast": str(Path(td) / "unrelated.cast")}
-            with mock.patch.object(common, "current_recorder", return_value=None), \
-                 mock.patch.object(common.os, "kill") as kill:
+            metadata = {"pid": 4242, "target": "mc-main:someone-else", "cast": str(Path(td) / "unrelated.cast")}
+            with (
+                mock.patch.object(common, "current_recorder", return_value=None),
+                mock.patch.object(common.os, "kill") as kill,
+            ):
                 result = common.stop_recorder("main", "eng-1", metadata, "test-node")
             kill.assert_not_called()
             self.assertEqual([], result["validated"])
@@ -117,15 +119,26 @@ class RecorderLifecycleTests(unittest.TestCase):
             aid = "test-node/main:eng-1"
             metadata = dict(mp.C.recorder_identity("main", "eng-1", "test-node"), pid=4242)
             Path(mp.ROSTER_PATH).parent.mkdir(parents=True, exist_ok=True)
-            Path(mp.ROSTER_PATH).write_text(json.dumps({aid: {
-                "agent_id": aid, "session": "main", "tab": "eng-1",
-                "recorder": metadata, "retired": False,
-            }}))
+            Path(mp.ROSTER_PATH).write_text(
+                json.dumps(
+                    {
+                        aid: {
+                            "agent_id": aid,
+                            "session": "main",
+                            "tab": "eng-1",
+                            "recorder": metadata,
+                            "retired": False,
+                        }
+                    }
+                )
+            )
             stopped = {"validated": [4242], "survivors": []}
             completed = mock.Mock(returncode=0, stdout="", stderr="")
-            with mock.patch.object(mp.C, "stop_recorder", return_value=stopped) as stop, \
-                 mock.patch.object(mp.C, "http_json", return_value=(200, {})), \
-                 mock.patch.object(mp.subprocess, "run", return_value=completed) as run:
+            with (
+                mock.patch.object(mp.C, "stop_recorder", return_value=stopped) as stop,
+                mock.patch.object(mp.C, "http_json", return_value=(200, {})),
+                mock.patch.object(mp.subprocess, "run", return_value=completed) as run,
+            ):
                 self.assertEqual(0, mp.do_kill([aid, "--reason", "done"]))
             stop.assert_called_once_with("main", "eng-1", metadata, "test-node")
             commands = [call.args[0] for call in run.call_args_list]
@@ -141,14 +154,25 @@ class RecorderLifecycleTests(unittest.TestCase):
             aid = "test-node/main:eng-1"
             metadata = dict(queue.C.recorder_identity("main", "eng-1", "test-node"), pid=4242)
             Path(queue.ROSTER_PATH).parent.mkdir(parents=True, exist_ok=True)
-            Path(queue.ROSTER_PATH).write_text(json.dumps({aid: {
-                "agent_id": aid, "session": "main", "tab": "eng-1",
-                "recorder": metadata, "retired": False,
-            }}))
+            Path(queue.ROSTER_PATH).write_text(
+                json.dumps(
+                    {
+                        aid: {
+                            "agent_id": aid,
+                            "session": "main",
+                            "tab": "eng-1",
+                            "recorder": metadata,
+                            "retired": False,
+                        }
+                    }
+                )
+            )
             stopped = {"validated": [4242], "survivors": []}
-            with mock.patch.object(queue.C, "tmux_windows", return_value=set()), \
-                 mock.patch.object(queue, "auth_health", return_value={"state": "live"}), \
-                 mock.patch.object(queue.C, "stop_recorder", return_value=stopped) as stop:
+            with (
+                mock.patch.object(queue.C, "tmux_windows", return_value=set()),
+                mock.patch.object(queue, "auth_health", return_value={"state": "live"}),
+                mock.patch.object(queue.C, "stop_recorder", return_value=stopped) as stop,
+            ):
                 self.assertEqual([], queue.live_agents())
             stop.assert_called_once_with("main", "eng-1", metadata, "test-node")
             roster = json.loads(Path(queue.ROSTER_PATH).read_text())
@@ -163,17 +187,21 @@ class RecorderLifecycleTests(unittest.TestCase):
             queue = load_runtime("queue-client.py", td)
             aid = "test-node/main:eng-1"
             Path(queue.ROSTER_PATH).parent.mkdir(parents=True, exist_ok=True)
-            Path(queue.ROSTER_PATH).write_text(json.dumps({aid: {
-                "agent_id": aid, "session": "main", "tab": "eng-1", "retired": False}}))
+            Path(queue.ROSTER_PATH).write_text(
+                json.dumps({aid: {"agent_id": aid, "session": "main", "tab": "eng-1", "retired": False}})
+            )
 
-            def tmux_windows():   # mp kill lands while the heartbeat probes
+            def tmux_windows():  # mp kill lands while the heartbeat probes
                 roster = json.loads(Path(queue.ROSTER_PATH).read_text())
                 roster[aid].update(retired=True, retire_reason="killed")
                 Path(queue.ROSTER_PATH).write_text(json.dumps(roster))
                 return set()
-            with mock.patch.object(queue.C, "tmux_windows", tmux_windows), \
-                 mock.patch.object(queue, "auth_health", return_value={"state": "live"}), \
-                 mock.patch.object(queue.C, "stop_recorder", return_value={}):
+
+            with (
+                mock.patch.object(queue.C, "tmux_windows", tmux_windows),
+                mock.patch.object(queue, "auth_health", return_value={"state": "live"}),
+                mock.patch.object(queue.C, "stop_recorder", return_value={}),
+            ):
                 self.assertEqual([], queue.live_agents())
             roster = json.loads(Path(queue.ROSTER_PATH).read_text())
             self.assertEqual("killed", roster[aid]["retire_reason"])
@@ -182,24 +210,31 @@ class RecorderLifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             queue = load_runtime("queue-client.py", td)
             aid = "test-node/main:eng-1"
-            old = dict(queue.C.recorder_identity("main", "eng-1", "test-node"), pid=4242,
-                       server_pid=10)
-            current = dict(queue.C.recorder_identity("main", "eng-1", "test-node"), pid=5000,
-                           server_pid=20)
+            old = dict(queue.C.recorder_identity("main", "eng-1", "test-node"), pid=4242, server_pid=10)
+            current = dict(queue.C.recorder_identity("main", "eng-1", "test-node"), pid=5000, server_pid=20)
             Path(queue.ROSTER_PATH).parent.mkdir(parents=True, exist_ok=True)
-            Path(queue.ROSTER_PATH).write_text(json.dumps({aid: {
-                "agent_id": aid, "session": "main", "tab": "eng-1",
-                "recorder": old, "retired": False,
-            }}))
-            with mock.patch.object(queue.C, "tmux_windows",
-                                   return_value={"mc-main:eng-1", current["session"] + ":x"}), \
-                 mock.patch.object(queue, "auth_health", return_value={"state": "live"}), \
-                 mock.patch.object(queue.C, "current_recorder", return_value=current), \
-                 mock.patch.object(queue.C, "stop_recorder", return_value={}) as stop:
+            Path(queue.ROSTER_PATH).write_text(
+                json.dumps(
+                    {
+                        aid: {
+                            "agent_id": aid,
+                            "session": "main",
+                            "tab": "eng-1",
+                            "recorder": old,
+                            "retired": False,
+                        }
+                    }
+                )
+            )
+            with (
+                mock.patch.object(queue.C, "tmux_windows", return_value={"mc-main:eng-1", current["session"] + ":x"}),
+                mock.patch.object(queue, "auth_health", return_value={"state": "live"}),
+                mock.patch.object(queue.C, "current_recorder", return_value=current),
+                mock.patch.object(queue.C, "stop_recorder", return_value={}) as stop,
+            ):
                 agents = queue.live_agents()
             self.assertEqual([aid], [agent["agent_id"] for agent in agents])
-            stop.assert_called_once_with(
-                "main", "eng-1", old, "test-node", include_current=False)
+            stop.assert_called_once_with("main", "eng-1", old, "test-node", include_current=False)
             roster = json.loads(Path(queue.ROSTER_PATH).read_text())
             self.assertEqual(current, roster[aid]["recorder"])
 

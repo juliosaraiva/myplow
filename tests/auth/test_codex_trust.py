@@ -5,6 +5,7 @@ answer. The override says "trust exactly this directory, for this process only" 
 interesting property is not that it trusts the run roots, it is everything it REFUSES to trust.
 A bug here silently grants Codex trust over a directory the operator never offered.
 """
+
 import os
 from pathlib import Path
 import tempfile
@@ -27,8 +28,7 @@ class CodexTrustOverrideTests(unittest.TestCase):
         self.assertIn(str((self.install / "run" / "eng").resolve()), out)
 
     def test_the_boss_run_root_is_trusted(self):
-        self.assertIn('trust_level="trusted"',
-                      self.mp.codex_trust_override(str(self.install / "run" / "boss")))
+        self.assertIn('trust_level="trusted"', self.mp.codex_trust_override(str(self.install / "run" / "boss")))
 
     def test_a_subdirectory_of_a_run_root_is_trusted(self):
         """Agents get their own cwd under the run root; that is still managed ground."""
@@ -51,8 +51,7 @@ class CodexTrustOverrideTests(unittest.TestCase):
         self.assertEqual("", self.mp.codex_trust_override(str(d)))
 
     def test_traversal_out_of_a_run_root_is_not_trusted(self):
-        self.assertEqual("", self.mp.codex_trust_override(
-            str(self.install / "run" / "eng" / ".." / ".." / "..")))
+        self.assertEqual("", self.mp.codex_trust_override(str(self.install / "run" / "eng" / ".." / ".." / "..")))
 
     def test_a_symlink_pointing_outside_is_not_trusted(self):
         """Resolution happens before the check, so a link cannot smuggle a path in."""
@@ -74,22 +73,19 @@ class CodexTrustOverrideTests(unittest.TestCase):
 
     def test_the_codex_launch_carries_the_override_for_a_managed_cwd(self):
         cwd = str(self.install / "run" / "eng")
-        launch = self.mp.build_launch("test-node/main:x", cwd, "test-node/main:Boss", False,
-                                      None, "codex")
+        launch = self.mp.build_launch("test-node/main:x", cwd, "test-node/main:Boss", False, None, "codex")
         self.assertIn("--config", launch)
         self.assertIn("trust_level", launch)
 
     def test_the_codex_launch_carries_no_override_for_an_unmanaged_cwd(self):
-        launch = self.mp.build_launch("test-node/main:x", "/tmp", "test-node/main:Boss", False,
-                                      None, "codex")
+        launch = self.mp.build_launch("test-node/main:x", "/tmp", "test-node/main:Boss", False, None, "codex")
         self.assertNotIn("trust_level", launch)
 
     def test_only_codex_gets_the_override(self):
         """claude/grok have their own trust mechanisms; this flag is codex-only."""
         cwd = str(self.install / "run" / "eng")
         for backend in ("claude", "grok"):
-            launch = self.mp.build_launch("test-node/main:x", cwd, "test-node/main:Boss", False,
-                                          None, backend)
+            launch = self.mp.build_launch("test-node/main:x", cwd, "test-node/main:Boss", False, None, backend)
             self.assertNotIn("trust_level", launch, backend)
 
 

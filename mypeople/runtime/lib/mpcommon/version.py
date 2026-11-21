@@ -25,6 +25,7 @@ def live_drift():
             changed.append(rel)
     return sorted(changed)
 
+
 def version():
     """Version of the install actually serving this process. Never raises: a page must not
     500 over a version string."""
@@ -41,9 +42,8 @@ def version():
     # running straight from the source tree / an editable install
     try:
         import mypeople
+
         return mypeople.__version__
     except Exception:
         pass
     return VERSION_UNKNOWN
-
-

@@ -20,11 +20,12 @@ def write_queue_env(install, backend):
         replacements = {
             "DEFAULT_BACKEND": backend,
             "DEFAULT_ENG_MODEL": current(existing.get("DEFAULT_ENG_MODEL", "")),
-            "DEFAULT_CLAUDE_MODEL": current(os.environ.get(
-                "DEFAULT_CLAUDE_MODEL", existing.get(
-                    "DEFAULT_CLAUDE_MODEL", existing.get("DEFAULT_ENG_MODEL", "")))),
-            "DEFAULT_CODEX_MODEL": os.environ.get(
-                "DEFAULT_CODEX_MODEL", existing.get("DEFAULT_CODEX_MODEL", "")),
+            "DEFAULT_CLAUDE_MODEL": current(
+                os.environ.get(
+                    "DEFAULT_CLAUDE_MODEL", existing.get("DEFAULT_CLAUDE_MODEL", existing.get("DEFAULT_ENG_MODEL", ""))
+                )
+            ),
+            "DEFAULT_CODEX_MODEL": os.environ.get("DEFAULT_CODEX_MODEL", existing.get("DEFAULT_CODEX_MODEL", "")),
         }
         seen = set()
         out = []
@@ -46,22 +47,21 @@ def write_queue_env(install, backend):
     kv = {
         "INSTALL_DIR": install,
         "HOST_ID": host,
-        "QUEUE_SECRET": secrets.token_hex(24),          # FRESH per install; never baked
+        "QUEUE_SECRET": secrets.token_hex(24),  # FRESH per install; never baked
         "HUD_PORT": os.environ.get("HUD_PORT", "9900"),
         "TODO_PORT": os.environ.get("TODO_PORT", "9933"),
         "TTYD_PORT": os.environ.get("TTYD_PORT", "7681"),
-        "TTYD_BROWSER_PORT": os.environ.get(
-            "TTYD_BROWSER_PORT", os.environ.get("TTYD_PORT", "7681")),
+        "TTYD_BROWSER_PORT": os.environ.get("TTYD_BROWSER_PORT", os.environ.get("TTYD_PORT", "7681")),
         # read-only ttyd behind the Terminal Graph's tiles (stock ttyd, no -W)
-        "TTYD_RO_PORT": os.environ.get(
-            "TTYD_RO_PORT", str(int(os.environ.get("TTYD_PORT", "7681")) + 1)),
+        "TTYD_RO_PORT": os.environ.get("TTYD_RO_PORT", str(int(os.environ.get("TTYD_PORT", "7681")) + 1)),
         "BIND_ADDR": os.environ.get("BIND_ADDR", "127.0.0.1"),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "DEFAULT_BACKEND": backend,
         "DEFAULT_ENG_MODEL": os.environ.get("DEFAULT_ENG_MODEL", "claude-opus-5-5"),
         "DEFAULT_CLAUDE_MODEL": os.environ.get(
-            "DEFAULT_CLAUDE_MODEL", os.environ.get("DEFAULT_ENG_MODEL", "claude-opus-5-5")),
+            "DEFAULT_CLAUDE_MODEL", os.environ.get("DEFAULT_ENG_MODEL", "claude-opus-5-5")
+        ),
         "DEFAULT_CODEX_MODEL": os.environ.get("DEFAULT_CODEX_MODEL", ""),
         "DEFAULT_GROK_MODEL": os.environ.get("DEFAULT_GROK_MODEL", ""),
         "QUEUE_DEAD_AFTER": "45",
@@ -72,5 +72,3 @@ def write_queue_env(install, backend):
     lines += ['export %s="%s"' % (k, v) for k, v in kv.items()]
     _write_env_file(CONFIG_PATH, lines)
     return True
-
-

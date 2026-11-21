@@ -33,6 +33,7 @@ says which chat changed and that chat is read at once. Every (re)connect, and ev
 minute, a pass over all chats catches whatever the socket missed; while the socket
 is down the bridge polls every PLOW_CHAT_POLL_SECONDS.
 """
+
 import http.client
 import fcntl
 import json
@@ -58,12 +59,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bin"))
 from mpcommon import SEND_TIMEOUT, WebSocket, plugin_text  # noqa: E402  (the one discord-chat holds Discord's gateway with)
 
-BASE = (os.environ.get("PLOW_CHAT_BASE_URL") or os.environ.get("PLOW_API_BASE")
-        or "https://api.plow.co").rstrip("/")
-INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME")
-               or Path.home() / "mypeople")
+BASE = (os.environ.get("PLOW_CHAT_BASE_URL") or os.environ.get("PLOW_API_BASE") or "https://api.plow.co").rstrip("/")
+INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME") or Path.home() / "mypeople")
 STATE_DIR = Path(os.environ.get("PLOW_CHAT_STATE_DIR") or INSTALL / "state" / "plow-chat")
-CREDS = STATE_DIR / "creds.json"          # {"token": ..., "chat_uid": ..., "base_url"?: ...}
+CREDS = STATE_DIR / "creds.json"  # {"token": ..., "chat_uid": ..., "base_url"?: ...}
 # A saved login may name its own server: the second bridge supervise.sh runs for a WhatsApp lab
 # (whatsapp-linq-api) learns where the lab is from this one file, so a cloud VM needs nothing else.
 try:
@@ -71,9 +70,9 @@ try:
 except (OSError, ValueError, AttributeError):
     pass
 ACTIVATION = STATE_DIR / "activation.json"
-ATTACHMENTS = STATE_DIR / "attachments"   # inbound photos/files, for the Boss to open
-STATE = STATE_DIR / "state.json"          # {"marks": {chat: [created_at, uid]}, "seeded_chats": [...]}
-INBOX_DB = STATE_DIR / "inbox.sqlite3"    # durable inbound dispatch records; marks only pane-accepted handoffs
+ATTACHMENTS = STATE_DIR / "attachments"  # inbound photos/files, for the Boss to open
+STATE = STATE_DIR / "state.json"  # {"marks": {chat: [created_at, uid]}, "seeded_chats": [...]}
+INBOX_DB = STATE_DIR / "inbox.sqlite3"  # durable inbound dispatch records; marks only pane-accepted handoffs
 INBOX_LOCK_DIR = STATE_DIR / "inbox-locks"
 # How every reply looks, in one file the owner or the Boss edits (Daniel 10-18: "the style of how to reply should be
 # part of the message package"). It rides in every message package; "{name}" becomes the agent that gets the text.
@@ -88,14 +87,18 @@ ROUTER = os.environ.get("PLOW_CHAT_ROUTER", "")
 JEV_URL = os.environ.get("TYPESAFE_URL") or "https://api.typesafe.ai/v1/systemone"
 # Tuned on 23 multi-turn conversations (74/74) and 12 hard cases x3 (36/36): follow-ups, topic switches, vague lines,
 # agents named mid-chat or in a greeting, and requests that refer back to another agent's answer.
-ROUTE_ASK = ("A person texts one WhatsApp chat answered by several AI agents, as in a group chat. Which agent should get "
-             "this message? If it calls an agent by name, even in a greeting (hey coach, chef?, Mailer, ...), pick that "
-             "agent. If it asks for one agent's kind of work (an email, a recipe, a workout), pick that agent, even "
-             "mid-conversation and even when it refers back to what another agent just said. If it asks about this "
-             "system, which agents exist, or making, changing or retiring an agent, pick Boss. Only if it has no topic of "
-             "its own and names no agent (a greeting, ok, thanks, yes, and?, more, why?, what can you do?): pick the agent "
-             "who answered in the last few minutes, or Boss when none did.")
-FOLLOW_MINUTES = float(os.environ.get("PLOW_CHAT_FOLLOW_MINUTES", "30"))  # an older answer no longer counts as the conversation
+ROUTE_ASK = (
+    "A person texts one WhatsApp chat answered by several AI agents, as in a group chat. Which agent should get "
+    "this message? If it calls an agent by name, even in a greeting (hey coach, chef?, Mailer, ...), pick that "
+    "agent. If it asks for one agent's kind of work (an email, a recipe, a workout), pick that agent, even "
+    "mid-conversation and even when it refers back to what another agent just said. If it asks about this "
+    "system, which agents exist, or making, changing or retiring an agent, pick Boss. Only if it has no topic of "
+    "its own and names no agent (a greeting, ok, thanks, yes, and?, more, why?, what can you do?): pick the agent "
+    "who answered in the last few minutes, or Boss when none did."
+)
+FOLLOW_MINUTES = float(
+    os.environ.get("PLOW_CHAT_FOLLOW_MINUTES", "30")
+)  # an older answer no longer counts as the conversation
 # A voice note is heard before it is routed, so the router and the agent get words, not only a file (Daniel 10-20). The
 # server at PLOW_CHAT_STT_URL takes the audio as multipart "audio" and answers {"text": ...} (the homelab's stt-api
 # /transcribe/fast). Unset, down or slow: the file still arrives, with a note that the transcript is missing.
@@ -109,6 +112,8 @@ SPEAKER = re.compile(r"(?:\n|^)~([A-Z][A-Za-z0-9]{1,19})\s*$")
 def signed_by(body: str) -> str:
     named = SPEAKER.search(body or "")
     return named.group(1) if named else ""
+
+
 # A pass over every chat runs on each (re)connect, every SWEEP_SECONDS on a live socket (Plow's
 # events are best-effort, so a frame can go missing), and every POLL_SECONDS while the socket is
 # down or a text waits on the Boss.
@@ -119,8 +124,12 @@ SELF = str(Path(__file__).resolve())
 # How the Boss runs this plugin. A second bridge, on another Plow account or another Plow-shaped
 # server (a WhatsApp number's whatsapp-linq-api), runs with its own state dir and base URL; the
 # commands it hands the Boss carry both, or a reply goes out under the wrong login or to the wrong server.
-RUN = "".join(f"{k}={shlex.quote(os.environ[k])} " for k in ("PLOW_CHAT_STATE_DIR", "PLOW_CHAT_BASE_URL")
-              if os.environ.get(k)) + f"python3 {SELF}"
+RUN = (
+    "".join(
+        f"{k}={shlex.quote(os.environ[k])} " for k in ("PLOW_CHAT_STATE_DIR", "PLOW_CHAT_BASE_URL") if os.environ.get(k)
+    )
+    + f"python3 {SELF}"
+)
 STATE_LOCK = threading.Lock()
 ROUTE_LOCKS_GUARD = threading.Lock()
 ROUTE_LOCKS = {}
@@ -131,8 +140,7 @@ def log(msg: str):
     # Router data is private message content. Callers must emit metadata only; this
     # final guard also strips filesystem paths and bearer-like values from errors.
     msg = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[redacted]", str(msg))
-    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] plow-chat: {msg}",
-          flush=True)
+    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] plow-chat: {msg}", flush=True)
 
 
 READER = []  # this process's one kept-alive connection for reads
@@ -200,8 +208,7 @@ def write_json(p: Path, obj):
 
 
 def listing(data) -> list:
-    return data.get("data") or data.get("messages") or data.get("chats") or [] \
-        if isinstance(data, dict) else data
+    return data.get("data") or data.get("messages") or data.get("chats") or [] if isinstance(data, dict) else data
 
 
 # --- Boss ---
@@ -209,32 +216,55 @@ def listing(data) -> list:
 # "You hold" comes first, because an agent that only hears about reply/react told the owner "I can't create threads" (10-15): it holds
 # this line's login, and with it the whole API.
 STAMP = "[plowchat] from {sender} in {chat}:"
-TEMPLATE = ("{seen_line}" + STAMP + " {their_message}{attachments}{context}\n"
-            "{owner_line}"
-            "(You hold this line's Plow login and with it the whole Plow API (docs: {api_docs}). "
-            "Any call: {plow} api METHOD /v1/PATH ['JSON body']; e.g. {plow} api GET /v1/agents/me "
-            "(this line and its chats), or {plow} api POST /v1/chats '{\"line_uid\": \"ln_...\", "
-            "\"members\": [\"+1...\"], \"body\": \"first text\", \"idempotency_key\": \"any-unique-id\"}' "
-            "to start a new thread or group. Do what the person asks with it; never answer that you "
-            "can't without trying. This is the owner's Plow messages line. The owner texts here, and so "
-            "does anyone they added to this thread. To answer, run: {reply_command} — it goes back to that "
-            "same thread, which may be a group. Plain text only, no markdown. To send "
-            "photos or files, add --file PATH before the text, up to 4.{tapback})"
-            "{style}")
+TEMPLATE = (
+    "{seen_line}" + STAMP + " {their_message}{attachments}{context}\n"
+    "{owner_line}"
+    "(You hold this line's Plow login and with it the whole Plow API (docs: {api_docs}). "
+    "Any call: {plow} api METHOD /v1/PATH ['JSON body']; e.g. {plow} api GET /v1/agents/me "
+    '(this line and its chats), or {plow} api POST /v1/chats \'{"line_uid": "ln_...", '
+    '"members": ["+1..."], "body": "first text", "idempotency_key": "any-unique-id"}\' '
+    "to start a new thread or group. Do what the person asks with it; never answer that you "
+    "can't without trying. This is the owner's Plow messages line. The owner texts here, and so "
+    "does anyone they added to this thread. To answer, run: {reply_command} — it goes back to that "
+    "same thread, which may be a group. Plain text only, no markdown. To send "
+    "photos or files, add --file PATH before the text, up to 4.{tapback})"
+    "{style}"
+)
 
 
-def envelope(who: str, text: str, chat_uid: str, files=(), context=(), mid: str = "", agent: str = "", owner: bool = False,
-            delivery_id: str = "") -> str:
+def envelope(
+    who: str,
+    text: str,
+    chat_uid: str,
+    files=(),
+    context=(),
+    mid: str = "",
+    agent: str = "",
+    owner: bool = False,
+    delivery_id: str = "",
+) -> str:
     # Plow seats whoever the carrier reports in the thread, so the Boss is told
     # who actually spoke and which thread — in a group these differ per message.
     sent = "".join(f"\n[attached, open it: {f}]" for f in files)
     said = "".join(f"\n({c})" for c in context)
-    tap = (f" To tapback this message, run: {RUN} react {chat_uid} {mid} like "
-           f"(or love, laugh, emphasize, question, dislike, or one emoji).") if mid else ""
+    tap = (
+        (
+            f" To tapback this message, run: {RUN} react {chat_uid} {mid} like "
+            f"(or love, laugh, emphasize, question, dislike, or one emoji)."
+        )
+        if mid
+        else ""
+    )
     # The owner's ask: feedback the moment an agent sees his text, not after the slow turn. It is
     # the first line, so it is the first command run, not one noticed mid-work (Boss, 10-05).
-    seen = (f"FIRST, before reading on: {RUN} react {chat_uid} {mid} 👀"
-            f"  (marks this text seen for the sender; then read, work and reply)") if mid else ""
+    seen = (
+        (
+            f"FIRST, before reading on: {RUN} react {chat_uid} {mid} 👀"
+            f"  (marks this text seen for the sender; then read, work and reply)"
+        )
+        if mid
+        else ""
+    )
     if seen and delivery_id:
         seen += f" [stable delivery id: {delivery_id}; repeated ID means same inbound event]"
     if seen:
@@ -243,16 +273,38 @@ def envelope(who: str, text: str, chat_uid: str, files=(), context=(), mid: str 
         style = " ".join(STYLE.read_text().split()).replace("{name}", agent or BOSS_AGENT.rsplit(":", 1)[1])
     except OSError:
         style = ""
-    return plugin_text("plow-chat", TEMPLATE, {
-        "seen_line": seen, "sender": who, "chat": chat_uid, "their_message": text, "attachments": sent, "context": said,
-        "owner_line": f"(This is the owner. {OWNER_RULE})\n" if owner else "", "api_docs": f"{BASE}/openapi.json", "plow": RUN,
-        "reply_command": f'{RUN} reply {chat_uid} "your reply"', "tapback": tap, "style": f"\n(Reply style: {style})" if style else ""})
+    return plugin_text(
+        "plow-chat",
+        TEMPLATE,
+        {
+            "seen_line": seen,
+            "sender": who,
+            "chat": chat_uid,
+            "their_message": text,
+            "attachments": sent,
+            "context": said,
+            "owner_line": f"(This is the owner. {OWNER_RULE})\n" if owner else "",
+            "api_docs": f"{BASE}/openapi.json",
+            "plow": RUN,
+            "reply_command": f'{RUN} reply {chat_uid} "your reply"',
+            "tapback": tap,
+            "style": f"\n(Reply style: {style})" if style else "",
+        },
+    )
 
 
-OWNER_RULE = ("When the owner addresses you, it is a task: carry it to the end unless they say otherwise. Never treat it as "
-              "just conversation. Absolute rule.")
-TAPBACKS = {"love": "loved", "like": "liked", "dislike": "disliked", "laugh": "laughed at",
-            "emphasize": "emphasized", "question": "questioned"}
+OWNER_RULE = (
+    "When the owner addresses you, it is a task: carry it to the end unless they say otherwise. Never treat it as "
+    "just conversation. Absolute rule."
+)
+TAPBACKS = {
+    "love": "loved",
+    "like": "liked",
+    "dislike": "disliked",
+    "laugh": "laughed at",
+    "emphasize": "emphasized",
+    "question": "questioned",
+}
 
 
 def speaker(sender: dict) -> str:
@@ -267,7 +319,7 @@ def whose(m: dict) -> str:
     text = " ".join((m.get("body") or "").split())
     text = (text[:500] + "…" if len(text) > 500 else text) or "(a photo or file)"
     owner = "your" if who == "you" else f"{who}'s"
-    return f"{owner} message {m.get('uid')}: \"{text}\""
+    return f'{owner} message {m.get("uid")}: "{text}"'
 
 
 def context(message: dict) -> list:
@@ -275,8 +327,7 @@ def context(message: dict) -> list:
     lines = []
     if (message.get("reply_to") or {}).get("message"):
         lines.append(f"in reply to {whose(message['reply_to']['message'])}")
-    tags = [("you" if t.get("is_me") else t.get("handle") or "someone")
-            for t in message.get("mentions") or []]
+    tags = [("you" if t.get("is_me") else t.get("handle") or "someone") for t in message.get("mentions") or []]
     if tags:
         lines.append("mentions: " + ", ".join(dict.fromkeys(tags)))
     return lines
@@ -303,8 +354,9 @@ def note_tapbacks(msgs: list, chat_uid: str, seed: bool = True):
             key = f"{r.get('uid')}:{r.get('type')}:{r.get('custom_emoji') or ''}"
             # It only ever rides along with a real text, so it must not read as a verdict on that text:
             # "not a new message" under Patrick's "8*5" made the Boss skip a real question (10-06).
-            live[key] = (f"earlier tapback in {chat_uid}, separate from the new text above: "
-                         f"{speaker(actor)} {verb} {whose(m)}")
+            live[key] = (
+                f"earlier tapback in {chat_uid}, separate from the new text above: {speaker(actor)} {verb} {whose(m)}"
+            )
     with STATE_LOCK:
         st = read_json(STATE, {})
         # Per chat, exactly the tapbacks on its page now: one window shared by every chat let a
@@ -340,8 +392,11 @@ def role_about(role: str) -> str:
 def live_agents() -> dict:
     """{name: (agent id, what it does)} for this host's live agents: the router's candidates. Created = in, retired = out."""
     out = subprocess.run([sys.executable, MP_BIN, "status"], capture_output=True, text=True, timeout=15).stdout
-    return {aid.rsplit(":", 1)[1]: (aid, role_about(role))
-            for aid, role in re.findall(r"^(\S+:\S+)\s+\[alive\s*\]\s+(\S+)", out, re.M) if aid.startswith(f"{HOST_ID}/")}
+    return {
+        aid.rsplit(":", 1)[1]: (aid, role_about(role))
+        for aid, role in re.findall(r"^(\S+:\S+)\s+\[alive\s*\]\s+(\S+)", out, re.M)
+        if aid.startswith(f"{HOST_ID}/")
+    }
 
 
 def pick_agent(text: str, message: dict, last: str = "", minutes=None, last_reply: str = "") -> str:
@@ -352,7 +407,9 @@ def pick_agent(text: str, message: dict, last: str = "", minutes=None, last_repl
         return BOSS_AGENT
     try:
         agents = live_agents()
-        if not text:  # a photo, or a voice note nobody could hear, has nothing to classify: it stays with whoever had the chat
+        if (
+            not text
+        ):  # a photo, or a voice note nobody could hear, has nothing to classify: it stays with whoever had the chat
             return agents[last][0] if last in agents else BOSS_AGENT
         if len(agents) < 2:
             return BOSS_AGENT
@@ -366,8 +423,17 @@ def pick_agent(text: str, message: dict, last: str = "", minutes=None, last_repl
         quoted = ((message.get("reply_to") or {}).get("message") or {}).get("body")
         if quoted:
             state["replying_to"] = quoted[:500]
-        body = {"state": state, "model": "jev-latest", "questions": {"agent": {
-            "type": "choice", "instructions": ROUTE_ASK, "criteria": {n: about or n for n, (_, about) in agents.items()}}}}
+        body = {
+            "state": state,
+            "model": "jev-latest",
+            "questions": {
+                "agent": {
+                    "type": "choice",
+                    "instructions": ROUTE_ASK,
+                    "criteria": {n: about or n for n, (_, about) in agents.items()},
+                }
+            },
+        }
         headers = {"Content-Type": "application/json"}
         if os.environ.get("TYPESAFE_API_KEY"):
             headers["Authorization"] = "Bearer " + os.environ["TYPESAFE_API_KEY"]
@@ -384,8 +450,9 @@ def send_to_agent(message: str, agent: str = BOSS_AGENT):
     """True: `mp send` reported pane handoff, not agent-read/completion. False: explicit refusal.
     None: unknown; it may have reached the pane, so recovery reuses its stable delivery ID."""
     try:
-        r = subprocess.run([sys.executable, MP_BIN, "send", agent, message],
-                           capture_output=True, text=True, timeout=SEND_TIMEOUT)
+        r = subprocess.run(
+            [sys.executable, MP_BIN, "send", agent, message], capture_output=True, text=True, timeout=SEND_TIMEOUT
+        )
     except (OSError, subprocess.TimeoutExpired) as e:
         log(f"ERROR mp send ({type(e).__name__})")
         return None
@@ -402,20 +469,30 @@ NOT_YET = {
     "es": "Tu mensaje llegó, pero todavía no pude pasárselo al equipo. Lo intento de nuevo; no se perdió nada.",
 }
 # Words only one of these languages uses a lot. Short texts often carry none of them: then English.
-WORDS = {"pt": set("não nao você voce vc tá tô eu meu minha minhas meus cadê cade aqui isso esse essa tem obrigado "
-                   "obrigada oi olá também tambem consegue quero onde agora então entao pra pro né nós".split()),
-         "es": set("qué cómo dónde usted tú está estoy gracias hola sí muy pero también puedes quiero aquí eso esto "
-                   "ahora entonces nosotros".split())}
+WORDS = {
+    "pt": set(
+        "não nao você voce vc tá tô eu meu minha minhas meus cadê cade aqui isso esse essa tem obrigado "
+        "obrigada oi olá também tambem consegue quero onde agora então entao pra pro né nós".split()
+    ),
+    "es": set(
+        "qué cómo dónde usted tú está estoy gracias hola sí muy pero también puedes quiero aquí eso esto "
+        "ahora entonces nosotros".split()
+    ),
+}
 
 
 def language(text: str) -> str:
     """The language a sender wrote in, of the ones there is a reply for: pt, es, or en."""
     low = text.lower()
     words = re.findall(r"[^\W\d_]+", low)
-    score = {lang: sum(w in ws for w in words) + 2 * bool(re.search(marks, low))
-             for lang, ws, marks in (("pt", WORDS["pt"], "[ãõç]"), ("es", WORDS["es"], "[ñ¿¡]"))}
+    score = {
+        lang: sum(w in ws for w in words) + 2 * bool(re.search(marks, low))
+        for lang, ws, marks in (("pt", WORDS["pt"], "[ãõç]"), ("es", WORDS["es"], "[ñ¿¡]"))
+    }
     best = max(score, key=score.get)
     return best if score[best] else "en"
+
+
 STARTED = time.time()  # a bridge that just started (a reboot, an update) gives the Boss WARN_AFTER too
 
 
@@ -435,8 +512,9 @@ def order(message: dict) -> list:
     differ (api.plow.co sends microseconds, whatsapp-linq-api milliseconds)."""
     ts = message.get("created_at") or ""
     try:
-        ts = (datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
-              .strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        ts = (
+            datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
     except ValueError:
         pass
     return [ts, message.get("uid") or ""]
@@ -556,7 +634,9 @@ def _migrate_v3_attachments(db):
     # v3 cleanup jobs came from a prefix scan and may name another message's file.
     # Drop those untrusted jobs; preserve all files as safe orphans.
     db.execute("DELETE FROM attachment_cleanup")
-    rows = db.execute("SELECT chat_uid,message_uid,message_json FROM inbound_delivery WHERE message_json!=''").fetchall()
+    rows = db.execute(
+        "SELECT chat_uid,message_uid,message_json FROM inbound_delivery WHERE message_json!=''"
+    ).fetchall()
     refs = {}
     message_uids = {}
     for chat_uid, message_uid, payload in rows:
@@ -570,8 +650,12 @@ def _migrate_v3_attachments(db):
                 owner = (chat_uid, message_uid, str(item["uid"]))
                 refs.setdefault(legacy, []).append(owner)
                 message_uids.setdefault((chat_uid, message_uid), []).append(str(item["uid"]))
-    duplicate_owners = {owner for owners in refs.values() for owner in owners
-                        if message_uids.get((owner[0], owner[1]), []).count(owner[2]) > 1}
+    duplicate_owners = {
+        owner
+        for owners in refs.values()
+        for owner in owners
+        if message_uids.get((owner[0], owner[1]), []).count(owner[2]) > 1
+    }
     try:
         _preflight_attachment_dir(create=False)
     except FileNotFoundError:
@@ -585,7 +669,10 @@ def _migrate_v3_attachments(db):
         except FileNotFoundError:
             continue
         if stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and st.st_nlink == 1:
-            db.execute("INSERT INTO attachment_manifest(chat_uid,message_uid,attachment_uid,path) VALUES(?,?,?,?)", (*owners[0], path))
+            db.execute(
+                "INSERT INTO attachment_manifest(chat_uid,message_uid,attachment_uid,path) VALUES(?,?,?,?)",
+                (*owners[0], path),
+            )
     accepted = db.execute("SELECT chat_uid,message_uid FROM inbound_delivery WHERE state='handoff_accepted'").fetchall()
     for chat_uid, message_uid in accepted:
         _queue_attachment_cleanup(db, chat_uid, message_uid)
@@ -629,8 +716,12 @@ def _inbox_connect_locked():
         db.execute("PRAGMA secure_delete=ON")
         db.execute("BEGIN IMMEDIATE")
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-        extras = db.execute("SELECT type,name FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND type IN ('view','index','trigger')").fetchall()
+        tables = {
+            r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        }
+        extras = db.execute(
+            "SELECT type,name FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND type IN ('view','index','trigger')"
+        ).fetchall()
         if extras:
             raise sqlite3.DatabaseError("inbox schema contains unknown views, indexes, or triggers")
         if version > INBOX_SCHEMA_VERSION:
@@ -652,7 +743,19 @@ def _inbox_connect_locked():
                 raise sqlite3.DatabaseError("unknown or partial inbox prototype schema")
             cols = [(r[1], r[2].upper(), r[3], r[5]) for r in db.execute("PRAGMA table_info(inbound_delivery)")]
             names = [c[0] for c in cols]
-            required = ["chat_uid", "message_uid", "order_ts", "order_uid", "delivery_id", "attempt_id", "attempt_count", "state", "last_error", "created_at", "updated_at"]
+            required = [
+                "chat_uid",
+                "message_uid",
+                "order_ts",
+                "order_uid",
+                "delivery_id",
+                "attempt_id",
+                "attempt_count",
+                "state",
+                "last_error",
+                "created_at",
+                "updated_at",
+            ]
             if names not in (required, ["chat_uid", "message_uid", "message_json"] + required[2:]):
                 raise sqlite3.DatabaseError("unknown or partial inbox prototype schema")
             if "delivery_id" not in names or cols[0][3] != 1 or cols[1][3] != 2:
@@ -681,15 +784,22 @@ def _inbox_connect_locked():
             _migrate_accepted_cleanup(db)
             _migrate_v3_attachments(db)
         elif version == 3 and tables == {"inbound_delivery", "attachment_cleanup"}:
-            if (_inbox_schema_sql(db) != _schema_normalize(_inbox_ddl()) or
-                    _cleanup_schema_sql(db) != _schema_normalize(_cleanup_ddl())):
+            if _inbox_schema_sql(db) != _schema_normalize(_inbox_ddl()) or _cleanup_schema_sql(db) != _schema_normalize(
+                _cleanup_ddl()
+            ):
                 raise sqlite3.DatabaseError("inbox schema signature mismatch")
             _create_manifest_table(db)
             _migrate_v3_attachments(db)
-        elif version == INBOX_SCHEMA_VERSION and tables == {"inbound_delivery", "attachment_cleanup", "attachment_manifest"}:
-            if (_inbox_schema_sql(db) != _schema_normalize(_inbox_ddl()) or
-                    _cleanup_schema_sql(db) != _schema_normalize(_cleanup_ddl()) or
-                    _manifest_schema_sql(db) != _schema_normalize(_manifest_ddl())):
+        elif version == INBOX_SCHEMA_VERSION and tables == {
+            "inbound_delivery",
+            "attachment_cleanup",
+            "attachment_manifest",
+        }:
+            if (
+                _inbox_schema_sql(db) != _schema_normalize(_inbox_ddl())
+                or _cleanup_schema_sql(db) != _schema_normalize(_cleanup_ddl())
+                or _manifest_schema_sql(db) != _schema_normalize(_manifest_ddl())
+            ):
                 raise sqlite3.DatabaseError("inbox schema signature mismatch")
         else:
             raise sqlite3.DatabaseError("unsupported inbox schema")
@@ -754,8 +864,12 @@ def _validate_schema_readonly(db):
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version > INBOX_SCHEMA_VERSION:
         raise sqlite3.DatabaseError(f"inbox schema version {version} is newer than supported")
-    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-    extras = db.execute("SELECT 1 FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND type IN ('view','index','trigger') LIMIT 1").fetchone()
+    tables = {
+        r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    }
+    extras = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND type IN ('view','index','trigger') LIMIT 1"
+    ).fetchone()
     if extras:
         raise sqlite3.DatabaseError("unknown inbox schema objects")
     if not tables and version == 0:
@@ -763,14 +877,17 @@ def _validate_schema_readonly(db):
     if version == INBOX_SCHEMA_VERSION:
         if tables != {"inbound_delivery", "attachment_cleanup", "attachment_manifest"}:
             raise sqlite3.DatabaseError("unknown inbox schema")
-        if (_inbox_schema_sql(db) != _schema_normalize(_inbox_ddl()) or
-                    _cleanup_schema_sql(db) != _schema_normalize(_cleanup_ddl()) or
-                    _manifest_schema_sql(db) != _schema_normalize(_manifest_ddl())):
+        if (
+            _inbox_schema_sql(db) != _schema_normalize(_inbox_ddl())
+            or _cleanup_schema_sql(db) != _schema_normalize(_cleanup_ddl())
+            or _manifest_schema_sql(db) != _schema_normalize(_manifest_ddl())
+        ):
             raise sqlite3.DatabaseError("inbox schema signature mismatch")
         return
     if version == 3 and tables == {"inbound_delivery", "attachment_cleanup"}:
-        if (_inbox_schema_sql(db) != _schema_normalize(_inbox_ddl()) or
-                _cleanup_schema_sql(db) != _schema_normalize(_cleanup_ddl())):
+        if _inbox_schema_sql(db) != _schema_normalize(_inbox_ddl()) or _cleanup_schema_sql(db) != _schema_normalize(
+            _cleanup_ddl()
+        ):
             raise sqlite3.DatabaseError("inbox schema signature mismatch")
         return
     if tables != {"inbound_delivery"}:
@@ -783,7 +900,19 @@ def _validate_schema_readonly(db):
     if version != 0 or schema not in (_schema_normalize(_inbox_ddl("{}")), _schema_normalize(_inbox_ddl(None))):
         raise sqlite3.DatabaseError("unknown or newer inbox schema")
     cols = [r[1] for r in db.execute("PRAGMA table_info(inbound_delivery)")]
-    required = ["chat_uid", "message_uid", "order_ts", "order_uid", "delivery_id", "attempt_id", "attempt_count", "state", "last_error", "created_at", "updated_at"]
+    required = [
+        "chat_uid",
+        "message_uid",
+        "order_ts",
+        "order_uid",
+        "delivery_id",
+        "attempt_id",
+        "attempt_count",
+        "state",
+        "last_error",
+        "created_at",
+        "updated_at",
+    ]
     if cols not in (required, ["chat_uid", "message_uid", "message_json"] + required[2:]):
         raise sqlite3.DatabaseError("unknown inbox prototype columns")
 
@@ -793,36 +922,55 @@ def inbox_prepare(chat_uid: str, message_uid: str, key: list, message: dict):
     db = inbox_connect()
     try:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT delivery_id,state,order_ts,order_uid FROM inbound_delivery "
-                         "WHERE chat_uid=? AND message_uid=?", (chat_uid, message_uid)).fetchone()
+        row = db.execute(
+            "SELECT delivery_id,state,order_ts,order_uid FROM inbound_delivery WHERE chat_uid=? AND message_uid=?",
+            (chat_uid, message_uid),
+        ).fetchone()
         if row is None:
             delivery_id = uuid.uuid4().hex
             now = time.time()
             saved_message = dict(message)
             saved_message.setdefault("chat_uid", chat_uid)
-            db.execute("INSERT INTO inbound_delivery(chat_uid,message_uid,message_json,order_ts,order_uid,delivery_id,state,created_at,updated_at) "
-                       "VALUES(?,?,?,?,?,?,'pending',?,?)",
-                       (chat_uid, message_uid, json.dumps(saved_message, ensure_ascii=False), key[0], key[1], delivery_id, now, now))
+            db.execute(
+                "INSERT INTO inbound_delivery(chat_uid,message_uid,message_json,order_ts,order_uid,delivery_id,state,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,'pending',?,?)",
+                (
+                    chat_uid,
+                    message_uid,
+                    json.dumps(saved_message, ensure_ascii=False),
+                    key[0],
+                    key[1],
+                    delivery_id,
+                    now,
+                    now,
+                ),
+            )
             row = (delivery_id, "pending", key[0], key[1])
         else:
             saved_message = dict(message)
             saved_message.setdefault("chat_uid", chat_uid)
             # An earlier development schema tracked state without retaining payloads. Upgrade
             # retryable rows when their message is present on Plow's current page.
-            db.execute("UPDATE inbound_delivery SET message_json=? WHERE chat_uid=? AND message_uid=? "
-                       "AND message_json IN ('{}','') AND state!='handoff_accepted'",
-                       (json.dumps(saved_message, ensure_ascii=False), chat_uid, message_uid))
+            db.execute(
+                "UPDATE inbound_delivery SET message_json=? WHERE chat_uid=? AND message_uid=? "
+                "AND message_json IN ('{}','') AND state!='handoff_accepted'",
+                (json.dumps(saved_message, ensure_ascii=False), chat_uid, message_uid),
+            )
             # A persisted dispatching row means process died or lost its acknowledgment. Do not
             # call it successful: retry with the same stable delivery ID, accepting duplicate risk.
             if row[1] == "dispatching":
-                db.execute("UPDATE inbound_delivery SET state='ambiguous', last_error=?, updated_at=? "
-                           "WHERE chat_uid=? AND message_uid=?",
-                           ("previous process ended during dispatch; outcome unknown", time.time(), chat_uid, message_uid))
+                db.execute(
+                    "UPDATE inbound_delivery SET state='ambiguous', last_error=?, updated_at=? "
+                    "WHERE chat_uid=? AND message_uid=?",
+                    ("previous process ended during dispatch; outcome unknown", time.time(), chat_uid, message_uid),
+                )
                 row = (row[0], "ambiguous", row[2], row[3])
-        older = db.execute("SELECT message_uid,state FROM inbound_delivery WHERE chat_uid=? "
-                           "AND (order_ts < ? OR (order_ts = ? AND order_uid < ?)) "
-                           "AND state != 'handoff_accepted' ORDER BY order_ts,order_uid LIMIT 1",
-                           (chat_uid, key[0], key[0], key[1])).fetchone()
+        older = db.execute(
+            "SELECT message_uid,state FROM inbound_delivery WHERE chat_uid=? "
+            "AND (order_ts < ? OR (order_ts = ? AND order_uid < ?)) "
+            "AND state != 'handoff_accepted' ORDER BY order_ts,order_uid LIMIT 1",
+            (chat_uid, key[0], key[0], key[1]),
+        ).fetchone()
         db.execute("COMMIT")
         return row[0], row[1], older
     except BaseException:
@@ -838,16 +986,20 @@ def inbox_begin_attempt(chat_uid: str, message_uid: str) -> tuple:
     db = inbox_connect()
     try:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT delivery_id,state,attempt_count FROM inbound_delivery "
-                         "WHERE chat_uid=? AND message_uid=?", (chat_uid, message_uid)).fetchone()
+        row = db.execute(
+            "SELECT delivery_id,state,attempt_count FROM inbound_delivery WHERE chat_uid=? AND message_uid=?",
+            (chat_uid, message_uid),
+        ).fetchone()
         if row is None:
             raise sqlite3.OperationalError("inbound delivery row disappeared")
         if row[1] == "handoff_accepted":
             db.execute("COMMIT")
             return row[0], "", row[2], row[1]
-        db.execute("UPDATE inbound_delivery SET state='dispatching',attempt_id=?,attempt_count=attempt_count+1,"
-                   "last_error='',updated_at=? WHERE chat_uid=? AND message_uid=?",
-                   (attempt_id, time.time(), chat_uid, message_uid))
+        db.execute(
+            "UPDATE inbound_delivery SET state='dispatching',attempt_id=?,attempt_count=attempt_count+1,"
+            "last_error='',updated_at=? WHERE chat_uid=? AND message_uid=?",
+            (attempt_id, time.time(), chat_uid, message_uid),
+        )
         db.execute("COMMIT")
         return row[0], attempt_id, row[2] + 1, "dispatching"
     except BaseException:
@@ -873,21 +1025,28 @@ def _scoped_attachment_name(chat_uid, message_uid, attachment_uid, filename):
 
 
 def _attachment_names_for(db, chat_uid, message_uid):
-    return {row[0] for row in db.execute(
-        "SELECT path FROM attachment_manifest WHERE chat_uid=? AND message_uid=?",
-        (chat_uid, message_uid)).fetchall()}
+    return {
+        row[0]
+        for row in db.execute(
+            "SELECT path FROM attachment_manifest WHERE chat_uid=? AND message_uid=?", (chat_uid, message_uid)
+        ).fetchall()
+    }
 
 
 def _record_attachment(db, chat_uid, message_uid, attachment_uid, path):
     name = os.path.basename(path)
-    existing = db.execute("SELECT path FROM attachment_manifest WHERE chat_uid=? AND message_uid=? AND attachment_uid=?",
-                          (str(chat_uid), str(message_uid), str(attachment_uid))).fetchone()
+    existing = db.execute(
+        "SELECT path FROM attachment_manifest WHERE chat_uid=? AND message_uid=? AND attachment_uid=?",
+        (str(chat_uid), str(message_uid), str(attachment_uid)),
+    ).fetchone()
     if existing:
         if existing[0] != name:
             raise ValueError("attachment manifest conflict")
         return
-    db.execute("INSERT INTO attachment_manifest(chat_uid,message_uid,attachment_uid,path) VALUES(?,?,?,?)",
-               (str(chat_uid), str(message_uid), str(attachment_uid), name))
+    db.execute(
+        "INSERT INTO attachment_manifest(chat_uid,message_uid,attachment_uid,path) VALUES(?,?,?,?)",
+        (str(chat_uid), str(message_uid), str(attachment_uid), name),
+    )
 
 
 def _attachment_manifest_matches(chat_uid, message_uid, atts):
@@ -896,8 +1055,10 @@ def _attachment_manifest_matches(chat_uid, message_uid, atts):
         for item in atts:
             uid = str(item.get("uid") or "att")
             expected = _scoped_attachment_name(chat_uid, message_uid, uid, item.get("filename") or "file")
-            row = db.execute("SELECT path FROM attachment_manifest WHERE chat_uid=? AND message_uid=? AND attachment_uid=?",
-                             (str(chat_uid), str(message_uid), uid)).fetchone()
+            row = db.execute(
+                "SELECT path FROM attachment_manifest WHERE chat_uid=? AND message_uid=? AND attachment_uid=?",
+                (str(chat_uid), str(message_uid), uid),
+            ).fetchone()
             if row and row[0] != expected:
                 return False
         return True
@@ -915,8 +1076,7 @@ def _preflight_attachment_dir(create=False):
     if create:
         ATTACHMENTS.mkdir(parents=True, exist_ok=True, mode=0o700)
     st = ATTACHMENTS.lstat()
-    if (not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode) or
-            st.st_uid != os.getuid() or st.st_mode & 0o077):
+    if not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
         raise OSError("unsafe private attachment directory")
 
 
@@ -934,14 +1094,19 @@ def _replay_attachment_cleanup(db):
     except sqlite3.Error:
         return
     for (name,) in rows:
-        if (not isinstance(name, str) or not name or name in (".", "..") or
-                "/" in name or "\\" in name or os.path.basename(name) != name):
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in (".", "..")
+            or "/" in name
+            or "\\" in name
+            or os.path.basename(name) != name
+        ):
             continue
         dfd = None
         try:
             _preflight_attachment_dir(create=False)
-            dfd = os.open(ATTACHMENTS, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
-                          getattr(os, "O_NOFOLLOW", 0))
+            dfd = os.open(ATTACHMENTS, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
             dst = os.fstat(dfd)
             if not stat.S_ISDIR(dst.st_mode) or dst.st_uid != os.getuid() or dst.st_mode & 0o077:
                 raise OSError("unsafe private attachment directory")
@@ -981,9 +1146,11 @@ def inbox_finish(chat_uid: str, message_uid: str, state: str, error: str = ""):
             _queue_attachment_cleanup(db, chat_uid, message_uid)
         # One transaction changes durable acceptance and erases serialized content.
         # Stable IDs/order/state remain as a dedupe and high-water tombstone.
-        cur = db.execute("UPDATE inbound_delivery SET state=?,message_json=CASE WHEN ?='handoff_accepted' THEN '' ELSE message_json END,last_error=?,updated_at=? "
-                         "WHERE chat_uid=? AND message_uid=?",
-                         (state, state, error[:500], time.time(), chat_uid, message_uid))
+        cur = db.execute(
+            "UPDATE inbound_delivery SET state=?,message_json=CASE WHEN ?='handoff_accepted' THEN '' ELSE message_json END,last_error=?,updated_at=? "
+            "WHERE chat_uid=? AND message_uid=?",
+            (state, state, error[:500], time.time(), chat_uid, message_uid),
+        )
         if cur.rowcount != 1:
             raise sqlite3.OperationalError("inbound delivery row disappeared before acknowledgment")
         db.execute("COMMIT")
@@ -1011,8 +1178,11 @@ def _checkpoint_wal_best_effort(db):
 def inbox_status(chat_uid: str, message_uid: str):
     db = inbox_connect()
     try:
-        return db.execute("SELECT delivery_id,attempt_id,attempt_count,state,last_error FROM inbound_delivery "
-                          "WHERE chat_uid=? AND message_uid=?", (chat_uid, message_uid)).fetchone()
+        return db.execute(
+            "SELECT delivery_id,attempt_id,attempt_count,state,last_error FROM inbound_delivery "
+            "WHERE chat_uid=? AND message_uid=?",
+            (chat_uid, message_uid),
+        ).fetchone()
     finally:
         db.close()
 
@@ -1021,15 +1191,20 @@ def inbox_pending_messages(chat_uid: str) -> list:
     """Return durable unaccepted events so recovery does not depend on API page retention."""
     db = inbox_connect()
     try:
-        rows = db.execute("SELECT message_uid,message_json,created_at,state FROM inbound_delivery WHERE chat_uid=? "
-                          "AND state!='handoff_accepted' ORDER BY order_ts,order_uid", (chat_uid,)).fetchall()
+        rows = db.execute(
+            "SELECT message_uid,message_json,created_at,state FROM inbound_delivery WHERE chat_uid=? "
+            "AND state!='handoff_accepted' ORDER BY order_ts,order_uid",
+            (chat_uid,),
+        ).fetchall()
         pending = []
         for message_uid, payload, created_at, state in rows:
             age = max(0, int(time.time() - created_at))
             if age >= 86400:
                 ident = (chat_uid, message_uid)
                 if ident not in STALE_ALERTED:
-                    result = send_to_agent(f"MyPlow privacy alert: unresolved inbound message older than 24h; chat={chat_uid}; message={message_uid}; state={state}. No content included. Resolve explicitly: {shlex.quote(sys.executable)} {shlex.quote(SELF)} resolve-pending {shlex.quote(chat_uid)} {shlex.quote(message_uid)} retry|discard")
+                    result = send_to_agent(
+                        f"MyPlow privacy alert: unresolved inbound message older than 24h; chat={chat_uid}; message={message_uid}; state={state}. No content included. Resolve explicitly: {shlex.quote(sys.executable)} {shlex.quote(SELF)} resolve-pending {shlex.quote(chat_uid)} {shlex.quote(message_uid)} retry|discard"
+                    )
                     if result:
                         STALE_ALERTED.add(ident)
             if not payload or payload == "{}":
@@ -1051,13 +1226,17 @@ def inbox_resolve_pending(chat_uid: str, message_uid: str, action: str):
     db = inbox_connect()
     try:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT message_json,state FROM inbound_delivery WHERE chat_uid=? AND message_uid=?",
-                         (chat_uid, message_uid)).fetchone()
+        row = db.execute(
+            "SELECT message_json,state FROM inbound_delivery WHERE chat_uid=? AND message_uid=?",
+            (chat_uid, message_uid),
+        ).fetchone()
         if row is None or row[1] == "handoff_accepted":
             raise ValueError("no unresolved pending row")
         if action == "retry":
-            db.execute("UPDATE inbound_delivery SET state='pending',last_error='explicitly resolved for retry',updated_at=? WHERE chat_uid=? AND message_uid=?",
-                       (time.time(), chat_uid, message_uid))
+            db.execute(
+                "UPDATE inbound_delivery SET state='pending',last_error='explicitly resolved for retry',updated_at=? WHERE chat_uid=? AND message_uid=?",
+                (time.time(), chat_uid, message_uid),
+            )
         else:
             try:
                 _queue_attachment_cleanup(db, chat_uid, message_uid)
@@ -1203,9 +1382,20 @@ def _route_message_locked(message: dict, chat: str = "", last: tuple = ()) -> st
         advance_mark(chat, key)
         return "skip: already routed"
     try:
-        sent = send_to_agent(envelope(who, text, chat_uid, files, notes + context(message) + taps,
-                                      mid, target.rsplit(":", 1)[1],
-                                      owner=is_owner(message.get("sender") or {}), delivery_id=delivery_id), target)
+        sent = send_to_agent(
+            envelope(
+                who,
+                text,
+                chat_uid,
+                files,
+                notes + context(message) + taps,
+                mid,
+                target.rsplit(":", 1)[1],
+                owner=is_owner(message.get("sender") or {}),
+                delivery_id=delivery_id,
+            ),
+            target,
+        )
     except Exception as e:
         # Treat unexpected transport exceptions as ambiguous; no high-water advance. BaseException
         # is deliberately not caught so a process-crash test leaves the durable dispatching row.
@@ -1265,8 +1455,7 @@ def load_creds() -> dict:
     """A saved login wins; otherwise a cloud agent's environment is the login."""
     creds = read_json(CREDS, {})
     if not creds.get("token") and os.environ.get("PLOW_API_BASE"):
-        creds = {"token": os.environ.get("PLOW_AGENT_TOKEN") or "proxied",
-                 "chat_uid": "", "cloud": True}
+        creds = {"token": os.environ.get("PLOW_AGENT_TOKEN") or "proxied", "chat_uid": "", "cloud": True}
     return creds
 
 
@@ -1278,8 +1467,7 @@ def download(att: dict, chat_uid: str = "", message_uid: str = "") -> str:
     _preflight_state_dir()
     ATTACHMENTS.mkdir(parents=True, exist_ok=True, mode=0o700)
     _preflight_attachment_dir(create=False)
-    dfd = os.open(ATTACHMENTS, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
-                  getattr(os, "O_NOFOLLOW", 0))
+    dfd = os.open(ATTACHMENTS, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
     try:
         dirst = os.fstat(dfd)
         if not stat.S_ISDIR(dirst.st_mode) or dirst.st_uid != os.getuid() or dirst.st_mode & 0o077:
@@ -1290,15 +1478,23 @@ def download(att: dict, chat_uid: str = "", message_uid: str = "") -> str:
         except FileNotFoundError:
             lst = None
         if lst is not None:
-            if (not stat.S_ISREG(lst.st_mode) or lst.st_uid != os.getuid() or
-                    lst.st_nlink != 1 or stat.S_IMODE(lst.st_mode) != 0o600):
+            if (
+                not stat.S_ISREG(lst.st_mode)
+                or lst.st_uid != os.getuid()
+                or lst.st_nlink != 1
+                or stat.S_IMODE(lst.st_mode) != 0o600
+            ):
                 raise OSError("unsafe existing attachment")
             fd = os.open(leaf, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=dfd)
             try:
                 opened = os.fstat(fd)
-                if ((opened.st_dev, opened.st_ino) != (lst.st_dev, lst.st_ino) or
-                        not stat.S_ISREG(opened.st_mode) or opened.st_uid != os.getuid() or
-                        opened.st_nlink != 1 or stat.S_IMODE(opened.st_mode) != 0o600):
+                if (
+                    (opened.st_dev, opened.st_ino) != (lst.st_dev, lst.st_ino)
+                    or not stat.S_ISREG(opened.st_mode)
+                    or opened.st_uid != os.getuid()
+                    or opened.st_nlink != 1
+                    or stat.S_IMODE(opened.st_mode) != 0o600
+                ):
                     raise OSError("unsafe existing attachment")
             finally:
                 os.close(fd)
@@ -1313,11 +1509,11 @@ def download(att: dict, chat_uid: str = "", message_uid: str = "") -> str:
         # Not forwarded on a redirect: a signed storage URL refuses a second credential.
         req.add_unredirected_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req, timeout=60) as r:
-        dfd = os.open(ATTACHMENTS, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
-                      getattr(os, "O_NOFOLLOW", 0))
+        dfd = os.open(ATTACHMENTS, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
         try:
-            fd = os.open(dest.name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0),
-                         0o600, dir_fd=dfd)
+            fd = os.open(
+                dest.name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=dfd
+            )
             with os.fdopen(fd, "wb") as out:
                 out.write(r.read())
         finally:
@@ -1331,8 +1527,14 @@ def transcribe(path: str) -> str:
         raise OSError("no STT server set (PLOW_CHAT_STT_URL)")
     suffix = Path(path).suffix if Path(path).suffix[1:].isalnum() else ""  # the server reads the format from it
     edge = os.urandom(16).hex()
-    data = (f'--{edge}\r\nContent-Disposition: form-data; name="audio"; filename="voice{suffix}"\r\n'
-            f"Content-Type: application/octet-stream\r\n\r\n").encode() + Path(path).read_bytes() + f"\r\n--{edge}--\r\n".encode()
+    data = (
+        (
+            f'--{edge}\r\nContent-Disposition: form-data; name="audio"; filename="voice{suffix}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode()
+        + Path(path).read_bytes()
+        + f"\r\n--{edge}--\r\n".encode()
+    )
     # To the name's IPv4 address when it has one, the name kept as Host (a proxy routes on it): a VPN exit node can take
     # the IPv6 one, and Daniel's first voice note on Mac 1 died on "No route to host" for server.local (10-20).
     u, url = urllib.parse.urlsplit(STT_URL), STT_URL
@@ -1342,8 +1544,12 @@ def transcribe(path: str) -> str:
             url = u._replace(netloc=f"{ip}:{u.port}" if u.port else ip).geturl()
         except OSError:
             pass  # no IPv4 address: the name as given
-    req = urllib.request.Request(url, data=data, method="POST",
-                                 headers={"Host": u.netloc, "Content-Type": f"multipart/form-data; boundary={edge}"})
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={"Host": u.netloc, "Content-Type": f"multipart/form-data; boundary={edge}"},
+    )
     with urllib.request.urlopen(req, timeout=STT_SECONDS) as r:
         heard = " ".join((json.load(r).get("text") or "").split())
     if not heard:
@@ -1355,18 +1561,21 @@ def upload(path: str, chat_uid: str, creds: dict) -> str:
     """Declare one outbound file on the chat, PUT its bytes, return its attachment uid."""
     data = Path(path).read_bytes()
     ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
-    status, a = api("POST", f"/v1/chats/{chat_uid}/attachments",
-                    {"filename": os.path.basename(path), "content_type": ctype,
-                     "size_bytes": len(data)}, token=creds["token"])
+    status, a = api(
+        "POST",
+        f"/v1/chats/{chat_uid}/attachments",
+        {"filename": os.path.basename(path), "content_type": ctype, "size_bytes": len(data)},
+        token=creds["token"],
+    )
     if status >= 400:
         raise SystemExit(f"attachment refused {status}: {json.dumps(a)[:200]}")
-    req = urllib.request.Request(a["upload_url"], data=data, method="PUT",
-                                 headers=a.get("upload_headers") or {})
+    req = urllib.request.Request(a["upload_url"], data=data, method="PUT", headers=a.get("upload_headers") or {})
     urllib.request.urlopen(req, timeout=300).close()
     return a["uid"]
 
 
 # --- Outbound ---
+
 
 def send_message(text: str, chat_uid: str = "", creds=None, files=()) -> dict:
     creds = creds or load_creds()
@@ -1395,11 +1604,9 @@ def react(chat_uid: str, message_uid: str, kind: str, creds=None) -> dict:
     else:
         body = None
     if not (body and chat_uid.startswith("cht_") and message_uid.startswith("msg_")):
-        raise SystemExit(f"usage: {SELF} react cht_x msg_y "
-                         f"{'|'.join(TAPBACKS)}|EMOJI|remove")
+        raise SystemExit(f"usage: {SELF} react cht_x msg_y {'|'.join(TAPBACKS)}|EMOJI|remove")
     creds = creds or load_creds()
-    status, data = api("POST", f"/v1/chats/{chat_uid}/messages/{message_uid}/reactions",
-                       body, token=creds["token"])
+    status, data = api("POST", f"/v1/chats/{chat_uid}/messages/{message_uid}/reactions", body, token=creds["token"])
     if status >= 400:
         raise SystemExit(f"tapback failed {status}: {json.dumps(data)[:200]}")
     return data
@@ -1407,9 +1614,9 @@ def react(chat_uid: str, message_uid: str, kind: str, creds=None) -> dict:
 
 # --- Activation ---
 
+
 def mint_activation() -> dict:
-    status, data = api("POST", "/v1/auth/activate",
-                       {"name": "MyPeople Boss", "provision_chat": False})
+    status, data = api("POST", "/v1/auth/activate", {"name": "MyPeople Boss", "provision_chat": False})
     if status >= 400 or "activation_secret" not in data:
         raise RuntimeError(f"activate failed {status}: {json.dumps(data)[:200]}")
     write_json(ACTIVATION, data)
@@ -1445,8 +1652,7 @@ def activation_loop() -> dict:
     if not a.get("activation_secret"):
         a = mint_activation()
     while True:
-        status, data = api("POST", "/v1/auth/activate/redeem",
-                           {"activation_secret": a["activation_secret"]})
+        status, data = api("POST", "/v1/auth/activate/redeem", {"activation_secret": a["activation_secret"]})
         if status == 410 or data.get("status") == "expired":
             log("activation code expired, minting a fresh one")
             a = mint_activation()
@@ -1461,6 +1667,7 @@ def activation_loop() -> dict:
 
 
 # --- Bridge ---
+
 
 def list_chats(creds: dict) -> list:
     if creds.get("cloud"):
@@ -1587,8 +1794,7 @@ def listen(creds: dict, ws: WebSocket, due: float):
             event = json.loads(raw)
             chat = event.get("chat_id")
             # Delivery receipts of the Boss's own replies change nothing to route.
-            if chat and event.get("event_type") != "message_status_updated" \
-                    and poll_chat(creds, chat, False) < 0:
+            if chat and event.get("event_type") != "message_status_updated" and poll_chat(creds, chat, False) < 0:
                 due = min(due, time.time() + POLL_SECONDS)
         now = time.time()
         if now >= due:
@@ -1612,7 +1818,7 @@ def bridge_loop(creds: dict):
                 log("websocket connected")
             except (OSError, ValueError) as e:
                 fails += 1
-                retry_at = time.time() + min(POLL_SECONDS * 2 ** fails, 300)
+                retry_at = time.time() + min(POLL_SECONDS * 2**fails, 300)
                 log(f"websocket down ({type(e).__name__}); polling every {POLL_SECONDS:g}s")
         try:
             # After connecting, so a text sent during this catch-up also comes as a frame (the marks
@@ -1643,7 +1849,7 @@ def main():
     if cmd in HELP or (args and args[0] in HELP):
         print(__doc__.strip())
         return
-    if cmd == "message":   # the board's Plugins page shows this
+    if cmd == "message":  # the board's Plugins page shows this
         print(TEMPLATE)
         return
     if cmd == "resolve-pending":
@@ -1660,12 +1866,14 @@ def main():
                 print(__doc__.strip())
                 return
             if args[0] != "--file" or len(args) < 2:
-                raise SystemExit(f"{args[0]!r} is not an option of reply, nothing sent. "
-                                 f"usage: {SELF} reply [cht_x] [--file PATH ...] \"text\"")
+                raise SystemExit(
+                    f"{args[0]!r} is not an option of reply, nothing sent. "
+                    f'usage: {SELF} reply [cht_x] [--file PATH ...] "text"'
+                )
             files.append(args[1])
             args = args[2:]
         if not args and not files:
-            raise SystemExit(f"usage: {SELF} reply [cht_x] [--file PATH ...] \"text\"")
+            raise SystemExit(f'usage: {SELF} reply [cht_x] [--file PATH ...] "text"')
         print(json.dumps(send_message(" ".join(args), chat_uid, files=files)))
     elif cmd == "react":
         flag = next((a for a in args if a in HELP or a.startswith("--")), None)
@@ -1673,28 +1881,36 @@ def main():
             print(__doc__.strip())
             return
         if flag:
-            raise SystemExit(f"{flag!r} is not an option of react, nothing sent. "
-                             f"usage: {SELF} react cht_x msg_y like|love|...|EMOJI|remove")
+            raise SystemExit(
+                f"{flag!r} is not an option of react, nothing sent. "
+                f"usage: {SELF} react cht_x msg_y like|love|...|EMOJI|remove"
+            )
         args = args + ["", "", ""]
         print(json.dumps(react(*args[:3])))
     elif cmd == "api":
         if len(args) < 2 or not args[1].startswith("/v1/"):
             raise SystemExit(f"usage: {SELF} api GET|POST|PUT|PATCH|DELETE /v1/PATH ['JSON body']")
-        status, data = api(args[0].upper(), args[1], json.loads(args[2]) if len(args) > 2 else None,
-                           token=load_creds().get("token"))
+        status, data = api(
+            args[0].upper(), args[1], json.loads(args[2]) if len(args) > 2 else None, token=load_creds().get("token")
+        )
         print(json.dumps(data, indent=2))
         if status >= 400:
             raise SystemExit(f"HTTP {status}")
     elif cmd == "status":
         creds, act = load_creds(), read_json(ACTIVATION, {})
-        print(json.dumps({
-            "activated": bool(creds.get("token")),
-            "cloud": bool(creds.get("cloud")),
-            "chat_uid": creds.get("chat_uid"),
-            "text_this": f"Plow Activate: {act['display_code']}" if act.get("display_code") else None,
-            "to": act.get("send_to"),
-            "seeded_chats": read_json(STATE, {}).get("seeded_chats"),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "activated": bool(creds.get("token")),
+                    "cloud": bool(creds.get("cloud")),
+                    "chat_uid": creds.get("chat_uid"),
+                    "text_this": f"Plow Activate: {act['display_code']}" if act.get("display_code") else None,
+                    "to": act.get("send_to"),
+                    "seeded_chats": read_json(STATE, {}).get("seeded_chats"),
+                },
+                indent=2,
+            )
+        )
     elif cmd == "serve":
         creds = load_creds()
         creds = creds if creds.get("token") else activation_loop()

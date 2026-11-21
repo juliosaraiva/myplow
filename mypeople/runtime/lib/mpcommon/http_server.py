@@ -84,10 +84,10 @@ class JSONHandler(BaseHTTPRequestHandler):
         # and a token minted before expiry was signed cannot be extended by editing Max-Age.
         ttl = session_ttl()
         return {
-            "Set-Cookie": "mp_session=%s; HttpOnly; Path=/; SameSite=Lax; Max-Age=%d" % (
-                mint_session(), ttl),
+            "Set-Cookie": "mp_session=%s; HttpOnly; Path=/; SameSite=Lax; Max-Age=%d" % (mint_session(), ttl),
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache", "Expires": "0",
+            "Pragma": "no-cache",
+            "Expires": "0",
         }
 
 
@@ -141,7 +141,8 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
                 b"HTTP/1.1 503 Service Unavailable\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: %d\r\n"
-                b"Connection: close\r\n\r\n" % len(body) + body)
+                b"Connection: close\r\n\r\n" % len(body) + body
+            )
         except Exception:
             pass
         finally:

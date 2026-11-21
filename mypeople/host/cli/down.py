@@ -17,8 +17,16 @@ def cmd_down(args):
         except OSError:
             pass
     bindir = os.path.join(install, "bin")
-    for pat in ("supervise.sh", "queue-server.py", "todo-server.py", "queue-client.py",
-                "board-exporter.py", "boss-supervisor.sh", "mp cron serve", "mp tcc serve"):
+    for pat in (
+        "supervise.sh",
+        "queue-server.py",
+        "todo-server.py",
+        "queue-client.py",
+        "board-exporter.py",
+        "boss-supervisor.sh",
+        "mp cron serve",
+        "mp tcc serve",
+    ):
         subprocess.run(["pkill", "-f", os.path.join(bindir, pat)], capture_output=True)
     # Every plugin, not a named few: one `down` forgot kept serving its old code after an upgrade
     # while run/serving.version claimed the new release (latch-reconnect, 10-03).
@@ -35,5 +43,3 @@ def cmd_down(args):
     subprocess.run(["pkill", "-f", "ttyd -a -p %s" % ro], capture_output=True)
     print("[myplow] stopped (board/roster kept on disk in %s)" % install)
     return 0
-
-

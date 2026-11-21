@@ -21,5 +21,3 @@ def mp_send(agent, message):
 
 def ping_boss(message):
     threading.Thread(target=mp_send, args=(BOSS_AGENT, message), daemon=True).start()
-
-

@@ -8,6 +8,7 @@
 `verify` does a full round-trip through a throwaway DB and deep-compares against the original,
 reporting task / comment / proof / ownerHistory counts and any diff. Exit 0 iff lossless.
 stdlib only."""
+
 import os
 import sys
 import json
@@ -29,8 +30,14 @@ def _counts(board):
         c += len(t.get("comments", []) or [])
         p += len(t.get("proofs", []) or [])
         h += len(t.get("ownerHistory", []) or [])
-    return {"tasks": len(tasks), "comments": c, "proofs": p, "ownerHistory": h,
-            "order": len(board.get("order", [])), "pinSeq": board.get("pinSeq")}
+    return {
+        "tasks": len(tasks),
+        "comments": c,
+        "proofs": p,
+        "ownerHistory": h,
+        "order": len(board.get("order", [])),
+        "pinSeq": board.get("pinSeq"),
+    }
 
 
 def to_sqlite(json_path, db_path, fresh=True):
@@ -91,7 +98,7 @@ def verify(json_path):
     print("roundtrip:", json.dumps(rc))
     diffs = list(_diff_paths(original, restored))
     # strict deep equality (dict key order ignored, list order enforced)
-    deep_equal = (original == restored)
+    deep_equal = original == restored
     if diffs:
         print("DIFFS (first 40):")
         for d in diffs[:40]:

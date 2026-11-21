@@ -4,6 +4,7 @@ These lock the command surface, the shared helpers, and the files an install
 must still be able to launch. They do not care which source file a function
 lives in.
 """
+
 import importlib.util
 import os
 from pathlib import Path
@@ -14,14 +15,40 @@ import sandbox
 
 ROOT = Path(__file__).resolve().parents[2]
 VERBS = {
-    "status", "spawn", "send", "peek", "kill", "answer", "revive",
-    "ensure-boss", "reconcile", "stop-recorders", "board", "card",
-    "comment", "proof", "owner", "cron", "tcc", "pair", "access", "plugins",
+    "status",
+    "spawn",
+    "send",
+    "peek",
+    "kill",
+    "answer",
+    "revive",
+    "ensure-boss",
+    "reconcile",
+    "stop-recorders",
+    "board",
+    "card",
+    "comment",
+    "proof",
+    "owner",
+    "cron",
+    "tcc",
+    "pair",
+    "access",
+    "plugins",
 }
 ENTRYPOINTS = (
-    "mp", "todo-server.py", "queue-server.py", "queue-client.py",
-    "board-exporter.py", "mpcommon.py", "boardstore.py", "authcheck.py",
-    "mpplugins.py", "mprole.py", "supervise.sh", "boss-supervisor.sh",
+    "mp",
+    "todo-server.py",
+    "queue-server.py",
+    "queue-client.py",
+    "board-exporter.py",
+    "mpcommon.py",
+    "boardstore.py",
+    "authcheck.py",
+    "mpplugins.py",
+    "mprole.py",
+    "supervise.sh",
+    "boss-supervisor.sh",
     "board-restore",
 )
 
@@ -61,8 +88,10 @@ class SharedHelperTests(unittest.TestCase):
 class InstallLayoutTests(unittest.TestCase):
     def test_materialize_leaves_launchable_entrypoints(self):
         import sys
+
         sys.path.insert(0, str(ROOT))
         from mypeople import firstrun
+
         with tempfile.TemporaryDirectory() as td:
             install = os.path.join(td, "install")
             firstrun.materialize(install)

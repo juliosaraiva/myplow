@@ -5,8 +5,9 @@ def _another_home(install):
         return False
     try:
         import pwd
+
         own = pwd.getpwuid(os.getuid()).pw_dir
-    except (ImportError, KeyError):     # a host with no passwd (the Windows port): HOME is all it has
+    except (ImportError, KeyError):  # a host with no passwd (the Windows port): HOME is all it has
         return False
     home = os.path.realpath(os.path.expanduser("~"))
     return home != os.path.realpath(own) and not os.path.realpath(install).startswith(home + os.sep)
@@ -33,8 +34,7 @@ def cmd_auth_check(args):
         # A clean-room check: HOME points elsewhere while MYPEOPLE_HOME, which every agent's shell carries, names a real install.
         # The answer is about that HOME. Published, it told the owner's board he was logged out when he was not (11-05).
         return 0 if ok else 1
-    firstrun.write_auth_state(install, ok, backend if ok else None, msg,
-                              requested or "")
+    firstrun.write_auth_state(install, ok, backend if ok else None, msg, requested or "")
     if ok:
         # Persist the backend the login actually landed on, so every later spawn agrees with it.
         if (load_cfg().get("DEFAULT_BACKEND") or "") != backend:
@@ -54,5 +54,3 @@ def cmd_auth_check(args):
     if "--quiet" not in args:
         print("[myplow] %s" % msg, file=sys.stderr)
     return 1
-
-

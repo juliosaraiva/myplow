@@ -13,7 +13,12 @@ Missing/unknown/escaping/corrupt content is `unavailable`, never a degraded gene
 
 Python 3 stdlib only. No QUEUE_SECRET or auth bytes ever land in a role file / attestation / env.
 """
-import os, re, io, json, hashlib
+
+import os
+import re
+import io
+import json
+import hashlib
 
 BOSS_DOCTRINE_URI = "mypeople://boss-doctrine"
 # MCP servers a claude agent never starts. 1Password's MCP opens 1Password's app-group container,
@@ -25,6 +30,7 @@ CLAUDE_DENIED_MCP = [{"serverName": "1password"}]
 
 class RoleError(ValueError):
     """Fail-closed preflight/lock/materialize error (a ValueError so callers can catch either)."""
+
     pass
 
 
@@ -100,8 +106,9 @@ def resolve_role(role, backend, role_dir, boss_doc, locked_role_ref=None):
     if locked_role_ref:
         want = "profiles/%s.json" % locked_role_ref.replace("@", "/")
         if want != profile_ref:
-            raise RoleError("locked role drift: recorded %s but registry now points to %s"
-                            % (locked_role_ref, profile_ref))
+            raise RoleError(
+                "locked role drift: recorded %s but registry now points to %s" % (locked_role_ref, profile_ref)
+            )
     prof_b, profile = _read_json(_store_path(role_dir, profile_ref, "role profile"), "role profile")
     if profile.get("kind") != "RoleProfile":
         raise RoleError("%s is not a RoleProfile (unavailable)" % profile_ref)
@@ -133,15 +140,23 @@ def resolve_role(role, backend, role_dir, boss_doc, locked_role_ref=None):
     pers_digest = _sha256(pers_b)
 
     skills, seen = [], {}
-    for s in (spec.get("skills") or []):
+    for s in spec.get("skills") or []:
         ref = s.get("ref", "")
         sb = _read_bytes(_store_path(role_dir, ref, "skill"), "skill")
         nm = _skill_name(sb, ref)
         if nm in seen:
             raise RoleError("duplicate skill name %r (%s, %s) unavailable" % (nm, seen[nm], ref))
         seen[nm] = ref
-        skills.append({"name": nm, "ref": ref, "bytes": sb, "sha256": _sha256(nm, sb),
-                       "load": s.get("load", "startup"), "required": bool(s.get("required"))})
+        skills.append(
+            {
+                "name": nm,
+                "ref": ref,
+                "bytes": sb,
+                "sha256": _sha256(nm, sb),
+                "load": s.get("load", "startup"),
+                "required": bool(s.get("required")),
+            }
+        )
     # Renamed mypeople-system -> mp-system. Profiles pinned by a still-running agent name the old
     # one, so either satisfies the mandate; a profile carrying neither is still refused.
     if not seen.keys() & {"mp-system", "mypeople-system"}:
@@ -162,18 +177,27 @@ def resolve_role(role, backend, role_dir, boss_doc, locked_role_ref=None):
         policy_digest = _sha256(spec["policyRef"], pb)
 
     # one lock over the role IDENTITY -- adapter EXCLUDED so both adapters reproduce the same digest
-    skill_lock = "".join("%s:%s" % (x["name"], x["sha256"]) for x in
-                         sorted(skills, key=lambda k: k["name"]))
-    digest = _sha256(role_ref, prof_b, pers_src, pers_digest, skill_lock,
-                     "".join(sorted(hook_digests)), tool_digest, policy_digest)
+    skill_lock = "".join("%s:%s" % (x["name"], x["sha256"]) for x in sorted(skills, key=lambda k: k["name"]))
+    digest = _sha256(
+        role_ref, prof_b, pers_src, pers_digest, skill_lock, "".join(sorted(hook_digests)), tool_digest, policy_digest
+    )
     return {
-        "role": role, "role_ref": role_ref, "backend": backend, "digest": digest,
-        "profile": profile, "profile_bytes": prof_b,
-        "personality_bytes": pers_b, "personality_source": pers_src,
-        "personality_digest": pers_digest, "skills": skills,
-        "hook_refs": hook_refs, "hookset_digests": hook_digests,
-        "toolset_digest": tool_digest, "policy_digest": policy_digest,
-        "adapter": adapter, "adapter_version": adapter.get("version", ""),
+        "role": role,
+        "role_ref": role_ref,
+        "backend": backend,
+        "digest": digest,
+        "profile": profile,
+        "profile_bytes": prof_b,
+        "personality_bytes": pers_b,
+        "personality_source": pers_src,
+        "personality_digest": pers_digest,
+        "skills": skills,
+        "hook_refs": hook_refs,
+        "hookset_digests": hook_digests,
+        "toolset_digest": tool_digest,
+        "policy_digest": policy_digest,
+        "adapter": adapter,
+        "adapter_version": adapter.get("version", ""),
         "role_dir": role_dir,
     }
 
@@ -183,9 +207,18 @@ def resolve_role(role, backend, role_dir, boss_doc, locked_role_ref=None):
 # working grok home. auth.json is the load-bearing one (a bare home is unauthenticated); the rest
 # restore trust, resume, and grok's own bundled skills (probed: 102 skills without `bundled`, 118
 # with it -- i.e. the 117 baseline plus the mounted role skill).
-_GROK_HOME_LINKS = ("auth.json", "sessions", "trusted_folders.toml", "bundled", "version.json",
-                    ".metadata_version", "models_cache.json", "agent_id", "installed-plugins",
-                    "marketplace-cache")
+_GROK_HOME_LINKS = (
+    "auth.json",
+    "sessions",
+    "trusted_folders.toml",
+    "bundled",
+    "version.json",
+    ".metadata_version",
+    "models_cache.json",
+    "agent_id",
+    "installed-plugins",
+    "marketplace-cache",
+)
 
 
 def _grok_config_toml():
@@ -203,11 +236,11 @@ def _grok_config_toml():
                 s = f.read()
         except OSError:
             s = ""
-    m = re.search(r'^\[hints\][ \t]*$', s, re.M)
-    if re.search(r'^[ \t]*project_picker_disabled\s*=\s*true', s, re.M):
+    m = re.search(r"^\[hints\][ \t]*$", s, re.M)
+    if re.search(r"^[ \t]*project_picker_disabled\s*=\s*true", s, re.M):
         return s
     if m:
-        return s[:m.end()] + "\nproject_picker_disabled = true" + s[m.end():]
+        return s[: m.end()] + "\nproject_picker_disabled = true" + s[m.end() :]
     # a bare key must precede the first [section] header
     return "[hints]\nproject_picker_disabled = true\n\n" + s
 
@@ -241,6 +274,7 @@ def _link_home_entry(home, name, cli):
                 os.makedirs(os.path.dirname(src) or ".", exist_ok=True)
                 tmp = src + ".mypeople-promote-%d" % os.getpid()
                 import shutil
+
                 shutil.copy2(dst, tmp)
                 os.chmod(tmp, 0o600)
                 os.replace(tmp, src)
@@ -258,7 +292,8 @@ def _link_home_entry(home, name, cli):
         if name == "auth.json":
             raise RoleError(
                 "operator ~/.%s/auth.json missing — run `%s` once outside MyPlow and "
-                "complete login, then re-spawn the agent" % (cli, cli))
+                "complete login, then re-spawn the agent" % (cli, cli)
+            )
         return
     try:
         os.symlink(src, dst)
@@ -268,8 +303,7 @@ def _link_home_entry(home, name, cli):
         return
     if name == "auth.json":
         if not os.path.islink(dst) or not os.path.samefile(dst, src):
-            raise RoleError("%s/auth.json is not a live symlink to ~/.%s/auth.json after mount"
-                            % (home, cli))
+            raise RoleError("%s/auth.json is not a live symlink to ~/.%s/auth.json after mount" % (home, cli))
 
 
 def _write_ro(path, data):
@@ -318,13 +352,13 @@ def materialize_role(item, aid, backend, bundle_root):
         try:
             with open(os.path.join(item["role_dir"], hr)) as f:
                 hs = json.load(f)
-            events += hs.get("events", []); handler = hs.get("handler", handler)
+            events += hs.get("events", [])
+            handler = hs.get("handler", handler)
         except Exception:
             pass
     events = sorted(set(events))
     handler_abs = os.path.join(os.path.dirname(item["role_dir"]), handler)
-    hooks = {ev: [{"hooks": [{"type": "command", "command": "%s %s" % (handler_abs, ev)}]}]
-             for ev in events}
+    hooks = {ev: [{"hooks": [{"type": "command", "command": "%s %s" % (handler_abs, ev)}]}] for ev in events}
 
     plugin_path = os.path.join(bp, "claude", "plugin")
     settings_path = None
@@ -332,10 +366,17 @@ def materialize_role(item, aid, backend, bundle_root):
     grok_home = os.path.join(bp, "grok", "home")
 
     if backend == "claude":
-        _write_ro(os.path.join(plugin_path, ".claude-plugin", "plugin.json"),
-                  json.dumps({"name": "mypeople-role-%s" % item["role"], "version": "1.0.0",
-                              "description": "MyPlow %s role skills (locked %s)"
-                              % (item["role"], item["digest"][:12])}, indent=2))
+        _write_ro(
+            os.path.join(plugin_path, ".claude-plugin", "plugin.json"),
+            json.dumps(
+                {
+                    "name": "mypeople-role-%s" % item["role"],
+                    "version": "1.0.0",
+                    "description": "MyPlow %s role skills (locked %s)" % (item["role"], item["digest"][:12]),
+                },
+                indent=2,
+            ),
+        )
         for s in item["skills"]:
             _write_ro(os.path.join(plugin_path, "skills", s["name"], "SKILL.md"), s["bytes"])
         settings_path = os.path.join(bp, "claude", "settings.json")
@@ -343,8 +384,7 @@ def materialize_role(item, aid, backend, bundle_root):
         # ORs skipDangerousModePermissionPrompt across user/local/flag/policy settings before it
         # decides whether to block on the Bypass Permissions modal, so declaring it here makes a
         # role-mounted spawn self-sufficient even if ~/.claude was never seeded (card 293fc81898).
-        overlay = {"skipDangerousModePermissionPrompt": True, "deniedMcpServers": CLAUDE_DENIED_MCP,
-                   "hooks": hooks}
+        overlay = {"skipDangerousModePermissionPrompt": True, "deniedMcpServers": CLAUDE_DENIED_MCP, "hooks": hooks}
         _write_ro(settings_path, json.dumps(overlay, indent=2))
     elif backend == "codex":
         for s in item["skills"]:
@@ -363,8 +403,9 @@ def materialize_role(item, aid, backend, bundle_root):
         settings_path = os.path.join(codex_home, "config.toml")
         # A JSON string is a valid TOML basic string, so any backslash or quote in a role doc is
         # escaped; a raw one would be a TOML error that stops codex at launch.
-        toml = ('# additive; never a replacement model_instructions_file\n'
-                'developer_instructions = %s\n' % json.dumps(startup_text, ensure_ascii=False))
+        toml = "# additive; never a replacement model_instructions_file\ndeveloper_instructions = %s\n" % json.dumps(
+            startup_text, ensure_ascii=False
+        )
         _write_ro(settings_path, toml)
     elif backend == "grok":
         # grok has no per-agent personality/skills FLAGS; it keys everything off GROK_HOME, so the
@@ -379,8 +420,9 @@ def materialize_role(item, aid, backend, bundle_root):
         _write_ro(os.path.join(grok_home, "AGENTS.md"), startup_text)
         for s in item["skills"]:
             _write_ro(os.path.join(grok_home, "skills", s["name"], "SKILL.md"), s["bytes"])
-        _write_ro(os.path.join(grok_home, "hooks.json"),
-                  json.dumps({"events": events, "handler": handler_abs}, indent=2))
+        _write_ro(
+            os.path.join(grok_home, "hooks.json"), json.dumps({"events": events, "handler": handler_abs}, indent=2)
+        )
         # GROK_HOME is grok's WHOLE home, not an overlay: a bare one is UNAUTHENTICATED
         # ("You are not authenticated") and would strand the agent on a login prompt, and it also
         # loses grok's bundled skills and trust. Reference the user's real home for each of these
@@ -398,24 +440,39 @@ def materialize_role(item, aid, backend, bundle_root):
         raise RoleError("unsupported backend %r" % backend)
 
     attestation = {
-        "agent_id": aid, "role": item["role"], "role_ref": item["role_ref"], "backend": backend,
-        "adapter_version": item["adapter_version"], "role_digest": item["digest"],
-        "personality_source": item["personality_source"], "personality_digest": item["personality_digest"],
+        "agent_id": aid,
+        "role": item["role"],
+        "role_ref": item["role_ref"],
+        "backend": backend,
+        "adapter_version": item["adapter_version"],
+        "role_digest": item["digest"],
+        "personality_source": item["personality_source"],
+        "personality_digest": item["personality_digest"],
         "skill_digests": {s["name"]: s["sha256"] for s in item["skills"]},
-        "hookset_digests": item["hookset_digests"], "toolset_digest": item["toolset_digest"],
-        "policy_digest": item["policy_digest"], "startup_digest": startup_digest, "bundle_path": bp,
+        "hookset_digests": item["hookset_digests"],
+        "toolset_digest": item["toolset_digest"],
+        "policy_digest": item["policy_digest"],
+        "startup_digest": startup_digest,
+        "bundle_path": bp,
     }
     _write_ro(os.path.join(bp, "attestation.json"), json.dumps(attestation, indent=2))
 
     return {
-        "role": item["role"], "role_ref": item["role_ref"], "backend": backend,
-        "digest": item["digest"], "personality_digest": item["personality_digest"],
+        "role": item["role"],
+        "role_ref": item["role_ref"],
+        "backend": backend,
+        "digest": item["digest"],
+        "personality_digest": item["personality_digest"],
         "skills": [{"name": s["name"], "sha256": s["sha256"]} for s in item["skills"]],
-        "bundle_path": bp, "startup_path": startup_path, "personality_path": personality_path,
-        "plugin_path": plugin_path, "settings_path": settings_path,
+        "bundle_path": bp,
+        "startup_path": startup_path,
+        "personality_path": personality_path,
+        "plugin_path": plugin_path,
+        "settings_path": settings_path,
         "codex_home": codex_home,
         "grok_home": grok_home,
-        "startup_digest": startup_digest, "adapter_version": item["adapter_version"],
+        "startup_digest": startup_digest,
+        "adapter_version": item["adapter_version"],
     }
 
 

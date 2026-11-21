@@ -11,6 +11,7 @@ These tests pin the three halves of the fix: the container comes up degraded ins
 every page says what is missing, and the Boss starts on its own once the login lands -- while a
 native install keeps refusing cleanly, which was never the bug.
 """
+
 import json
 import os
 from pathlib import Path
@@ -26,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from mypeople import firstrun  # noqa: E402
-from sandbox import load_mpcommon_standalone as load_mpcommon
+from sandbox import load_mpcommon_standalone as load_mpcommon  # noqa: E402
 
 BIN = ROOT / "mypeople" / "runtime" / "bin"
 
@@ -80,8 +81,9 @@ class EnsureWithoutLoginTests(unittest.TestCase):
             install, host, backend = firstrun.ensure()
         self.assertIsNone(backend, "no login means no backend to spawn against...")
         self.assertTrue(host, "...but the node still has an identity and must come up")
-        self.assertTrue(os.path.exists(firstrun.CONFIG_PATH),
-                        "the daemons need QUEUE_SECRET/HOST_ID even with nobody logged in")
+        self.assertTrue(
+            os.path.exists(firstrun.CONFIG_PATH), "the daemons need QUEUE_SECRET/HOST_ID even with nobody logged in"
+        )
 
     def test_desktop_app_comes_up_and_names_a_terminal_that_exists(self):
         """A double-clicked .app has no terminal to refuse into: exiting is a window that never
@@ -95,7 +97,11 @@ class EnsureWithoutLoginTests(unittest.TestCase):
         self.assertTrue(any("auth login" in line for line in howto))
         self.assertFalse(any("docker" in line for line in howto), howto)
         self.assertEqual("claude auth login", howto[0], "the banner says where: the app has no terminal tab")
-        self.assertEqual("or, for Codex: codex login", howto[1], "the one-liner installs the chosen AI's CLI itself: only its login is left")
+        self.assertEqual(
+            "or, for Codex: codex login",
+            howto[1],
+            "the one-liner installs the chosen AI's CLI itself: only its login is left",
+        )
 
     def test_no_way_of_running_names_a_terminal_tab(self):
         for env in ({"MYPEOPLE_DESKTOP": "1"}, {"MYPEOPLE_CONTAINER": "1"}, {}):
@@ -105,14 +111,19 @@ class EnsureWithoutLoginTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_with_no_login_the_boss_card_says_so_and_offers_nothing(self):
         html = (Path(firstrun.__file__).parent / "runtime" / "bin" / "todos.html").read_text()
-        fn = html[html.index("function renderBoss(boss){"):html.index("function bossMsg(")]
-        js = """const els={};const el=i=>els[i]||(els[i]={dataset:{},textContent:"",disabled:false});
+        fn = html[html.index("function renderBoss(boss){") : html.index("function bossMsg(")]
+        js = (
+            """const els={};const el=i=>els[i]||(els[i]={dataset:{},textContent:"",disabled:false});
 let banner;const document={getElementById:i=>i==="mp-login-banner"?banner:el(i),querySelector:i=>el(i)};const $=el;
 const ENGINE_NAMES={claude:"Claude"},BOSS_ENGINES=[["new","claude"]];let bossBusy=false;
 %s
 const see=()=>[el("bossState").textContent,el(".boss-down").textContent,el("bossRevive").disabled,el("new").disabled,el("bossKill").disabled];
-const out=[];banner={};renderBoss(null);out.push(see());renderBoss({backend:"claude"});out.push(see());banner=null;renderBoss(null);out.push(see());console.log(JSON.stringify(out))""" % fn
-        no, on, down = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30, check=True).stdout)
+const out=[];banner={};renderBoss(null);out.push(see());renderBoss({backend:"claude"});out.push(see());banner=null;renderBoss(null);out.push(see());console.log(JSON.stringify(out))"""
+            % fn
+        )
+        no, on, down = json.loads(
+            subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30, check=True).stdout
+        )
         self.assertEqual(no, ["Waiting for your login", "It starts by itself once you log in.", True, True, True])
         self.assertEqual(on[0], "Claude · online", "once it is up the banner no longer matters")
         self.assertEqual(down, ["Down", "Revive it to resume its memory, or start a new one.", False, False, True])
@@ -149,6 +160,7 @@ const out=[];banner={};renderBoss(null);out.push(see());renderBoss({backend:"cla
     def test_a_later_login_is_picked_up_without_restarting(self):
         """up (no login) -> user logs in -> auth-check flips the node, no down/up in between."""
         from mypeople import cli
+
         with with_auth(), mock.patch.dict(os.environ, {"MYPEOPLE_CONTAINER": "1"}):
             firstrun.ensure()
         self.assertFalse(self._state()["authenticated"])
@@ -161,6 +173,7 @@ const out=[];banner={};renderBoss(null);out.push(see());renderBoss({backend:"cla
     def test_auth_check_honours_a_login_on_a_different_backend(self):
         """The user is not forced into `claude` just because it is the default config value."""
         from mypeople import cli
+
         with with_auth(), mock.patch.dict(os.environ, {"MYPEOPLE_CONTAINER": "1"}):
             firstrun.ensure()
         with with_auth("grok"):
@@ -169,6 +182,7 @@ const out=[];banner={};renderBoss(null);out.push(see());renderBoss({backend:"cla
 
     def test_auth_check_reports_still_blocked(self):
         from mypeople import cli
+
         with with_auth(), mock.patch.dict(os.environ, {"MYPEOPLE_CONTAINER": "1"}):
             firstrun.ensure()
         with with_auth():
@@ -201,8 +215,7 @@ class LoginBannerTests(unittest.TestCase):
     def test_no_banner_once_authenticated(self):
         self._write_state(authenticated=True, backend="claude")
         C = load_mpcommon(self.install)
-        out = C.render_page(open(os.path.join(self.install, "bin", "todos.html"),
-                                 encoding="utf-8").read())
+        out = C.render_page(open(os.path.join(self.install, "bin", "todos.html"), encoding="utf-8").read())
         self.assertNotIn('id="mp-login-banner"', out)
 
     def test_no_banner_when_the_state_file_is_absent(self):
@@ -225,8 +238,7 @@ class LoginBannerTests(unittest.TestCase):
     def test_version_badge_still_renders_alongside_it(self):
         self._write_state(authenticated=False)
         C = load_mpcommon(self.install)
-        out = C.render_page(open(os.path.join(self.install, "bin", "todos.html"),
-                                 encoding="utf-8").read())
+        out = C.render_page(open(os.path.join(self.install, "bin", "todos.html"), encoding="utf-8").read())
         self.assertIn("mp-version-badge", out)
         self.assertNotIn("__MP_LOGIN_STEPS__", out, "no placeholder may reach the browser")
 
@@ -263,14 +275,20 @@ class BossSupervisorGateTests(unittest.TestCase):
         # `mypeople auth-check` is the gate; `mp ensure-boss` is what must not happen early.
         self._stub("mypeople", "exit %d" % (0 if authenticated else 1))
         self._stub("mp", 'if [ "$1" = ensure-boss ]; then touch %s; fi; exit 0' % self.marker)
-        self._stub("tmux", "exit 1")          # no Boss window exists
+        self._stub("tmux", "exit 1")  # no Boss window exists
         self._stub("hostname", "echo testnode")
-        env = dict(os.environ, PATH=self.stub + os.pathsep + os.environ["PATH"],
-                   HOME=self.home, INSTALL_DIR=self.install, HOST_ID="testnode",
-                   MYPEOPLE_CONFIG_PATH=os.path.join(self.install, "config", "queue.env"))
+        env = dict(
+            os.environ,
+            PATH=self.stub + os.pathsep + os.environ["PATH"],
+            HOME=self.home,
+            INSTALL_DIR=self.install,
+            HOST_ID="testnode",
+            MYPEOPLE_CONFIG_PATH=os.path.join(self.install, "config", "queue.env"),
+        )
         env.pop("TMUX", None)
-        proc = subprocess.Popen(["bash", str(BIN / "boss-supervisor.sh")], env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(
+            ["bash", str(BIN / "boss-supervisor.sh")], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         try:
             deadline = time.time() + seconds
             while time.time() < deadline:
@@ -284,13 +302,13 @@ class BossSupervisorGateTests(unittest.TestCase):
 
     def test_no_boss_is_spawned_while_the_node_has_no_login(self):
         """Spawning against a backend that cannot answer is what makes a node look alive and lie."""
-        self.assertFalse(self._run(authenticated=False),
-                         "an unauthenticated node must not start a Boss")
+        self.assertFalse(self._run(authenticated=False), "an unauthenticated node must not start a Boss")
 
     def test_boss_starts_as_soon_as_the_login_lands(self):
         # returns the moment ensure-boss runs; 3s was too tight for bash startup on a loaded Mac
-        self.assertTrue(self._run(authenticated=True, seconds=15),
-                        "after login the Boss must come up without a container restart")
+        self.assertTrue(
+            self._run(authenticated=True, seconds=15), "after login the Boss must come up without a container restart"
+        )
 
 
 if __name__ == "__main__":

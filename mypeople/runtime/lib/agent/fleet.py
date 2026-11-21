@@ -10,8 +10,7 @@ def do_ensure_boss(argv):
     Only a death the system itself observed (ACCIDENTAL_REASONS) is auto-recovered; a deliberate
     stop is restored only by an on-purpose `mp spawn`, which clears the intent itself.
     """
-    aid_arg = next((x for x in argv if not x.startswith("--") and x not in VALID_BACKENDS),
-                   "%s/main:Boss" % HOST_ID)
+    aid_arg = next((x for x in argv if not x.startswith("--") and x not in VALID_BACKENDS), "%s/main:Boss" % HOST_ID)
     backend = DEFAULT_BACKEND
     if "--backend" in argv:
         idx = argv.index("--backend")
@@ -135,7 +134,9 @@ def reap_birth_zombie(aid, rr):
             C.tmux_target(aid),
             "Recovered after birth-zombie (empty session_id / stuck starting). "
             "Read owner task %s on the TODO board, post a concise recovery status, "
-            "and continue from the card context." % latest["owner_task_id"], 60)
+            "and continue from the card context." % latest["owner_task_id"],
+            60,
+        )
     return True, "respawned session_id=%s reaps=%d" % (sid or "(pending-prompt)", reaps + 1)
 
 
@@ -252,21 +253,22 @@ def do_reconcile(argv):
         if rc != 0:
             latest = load_roster().get(aid, rr)
             rc = do_spawn(spawn_args_from_record(aid, latest))
-            fresh = (rc == 0)
+            fresh = rc == 0
         if rc == 0:
             recovered.append(aid)
             if fresh and rr.get("owner_task_id"):
                 # A resumed agent still has its context; a FRESH one lost it, so only that one
                 # needs pointing back at its card. readiness is already gated inside do_spawn.
-                C.send_when_ready(C.tmux_target(aid),
+                C.send_when_ready(
+                    C.tmux_target(aid),
                     "Recovered after a tmux crash. Read owner task %s on the TODO board, post a "
-                    "concise recovery status, and continue from the card context." %
-                    rr["owner_task_id"], 60)
+                    "concise recovery status, and continue from the card context." % rr["owner_task_id"],
+                    60,
+                )
         else:
             failed.append(aid)
         roster = load_roster()
-    print("reconciled recovered=%d failed=%d zombies=%d" %
-          (len(recovered), len(failed), len(zombies)))
+    print("reconciled recovered=%d failed=%d zombies=%d" % (len(recovered), len(failed), len(zombies)))
     for aid in recovered:
         print("recovered %s" % aid)
     for z in zombies:
@@ -294,7 +296,8 @@ def live_run(aid, rr):
     """
     _, sess, tab = C.parse_agent_id(aid)
     sid = (C.read_json(os.path.join(STATUS_DIR, "mc-%s" % sess, "%s.json" % tab), {}) or {}).get(
-        "session_id") or rr.get("session_id")
+        "session_id"
+    ) or rr.get("session_id")
     paths = session_files("claude", sid) if sid else []
     if not paths:
         return None, None
@@ -311,5 +314,3 @@ def live_run(aid, rr):
         if d.get("type") == "assistant" and not d.get("isSidechain") and not str(m.get("model", "<")).startswith("<"):
             return m["model"], d.get("effort")
     return None, None
-
-

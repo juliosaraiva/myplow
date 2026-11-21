@@ -40,9 +40,7 @@ class Speaker:
                 words = words[35:]
         chunks = []
         rate = 24000
-        for result in self.model.generate(
-            "\n".join(segments), voice="pm_santa", lang_code="p", speed=speed
-        ):
+        for result in self.model.generate("\n".join(segments), voice="pm_santa", lang_code="p", speed=speed):
             chunks.append(np.asarray(result.audio, dtype=np.float32).reshape(-1))
             rate = result.sample_rate
         if not chunks:
@@ -60,9 +58,7 @@ async def serve(port: int) -> None:
     speaker = await loop.run_in_executor(executor, Speaker)
 
     async def health(_request: web.Request) -> web.Response:
-        return web.json_response(
-            {"ready": True, "model": MODEL, "voice": "pm_santa", "device": "Metal"}
-        )
+        return web.json_response({"ready": True, "model": MODEL, "voice": "pm_santa", "device": "Metal"})
 
     async def synthesize(request: web.Request) -> web.Response:
         if request.headers.get("Origin"):
@@ -70,15 +66,11 @@ async def serve(port: int) -> None:
         try:
             data = await request.json()
             text = str(data.get("text", "")).strip()
-            speed = float(
-                data.get("speed", os.environ.get("TTS_SPEED", settings.tts_speed))
-            )
+            speed = float(data.get("speed", os.environ.get("TTS_SPEED", settings.tts_speed)))
         except (ValueError, TypeError, AttributeError) as exc:
             raise web.HTTPBadRequest(text="Texto ou velocidade inválida.") from exc
         if not text or len(text) > 8000 or not 0.5 <= speed <= 2:
-            raise web.HTTPBadRequest(
-                text="Envie até 8000 caracteres e velocidade entre 0.5 e 2."
-            )
+            raise web.HTTPBadRequest(text="Envie até 8000 caracteres e velocidade entre 0.5 e 2.")
         audio = await loop.run_in_executor(executor, speaker.synthesize, text, speed)
         return web.Response(body=audio, content_type="audio/wav")
 
@@ -100,9 +92,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=load_settings().tts_port)
     args = parser.parse_args()
-    logging.basicConfig(
-        level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
     LOG.setLevel(logging.INFO)
     try:
         asyncio.run(serve(args.port))

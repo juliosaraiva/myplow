@@ -3,6 +3,7 @@
 Runs the SHIPPED matches()/visible() from todos.html in node, and checks the page wires the
 shortcut, so a refactor that drops either shows up here.
 """
+
 from pathlib import Path
 import json
 import shutil
@@ -49,10 +50,12 @@ class BoardSearchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import os
+
         queries = ["", "grok", "GROK 4.7".lower(), "eng-855", "labels", "c3", "grok labels", "zzz"]
         env = {**os.environ, "QUERIES": json.dumps(queries)}
-        res = subprocess.run(["node", "-e", HARNESS % block("visible")], capture_output=True,
-                             text=True, timeout=30, env=env)
+        res = subprocess.run(
+            ["node", "-e", HARNESS % block("visible")], capture_output=True, text=True, timeout=30, env=env
+        )
         assert res.returncode == 0, res.stderr
         cls.out = json.loads(res.stdout)
 
@@ -79,12 +82,10 @@ class BoardSearchTests(unittest.TestCase):
 
     def test_active_cards_always_come_first_in_board_order(self):
         # every live card above every finished one; each group keeps its own (pins-first) order
-        self.assertEqual(["pin-live", "n2-live", "n4-live", "pin-done", "n1-cancelled", "n3-done"],
-                         self.out["__order"])
+        self.assertEqual(["pin-live", "n2-live", "n4-live", "pin-done", "n1-cancelled", "n3-done"], self.out["__order"])
 
     def test_a_search_lists_active_matches_before_finished_ones(self):
-        self.assertIn("activeFirst([...pins.filter(visible), ...normal.filter(visible)])",
-                      HTML)
+        self.assertIn("activeFirst([...pins.filter(visible), ...normal.filter(visible)])", HTML)
 
     def test_no_match_is_empty(self):
         self.assertEqual([], self.out["zzz"])

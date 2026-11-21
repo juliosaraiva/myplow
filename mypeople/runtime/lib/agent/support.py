@@ -7,7 +7,16 @@ stop-recorders, board, card, comment, proof, owner, cron, tcc, pair, access,
 plugins. Role resolution is delegated to mprole; this file does the tmux and
 roster work.
 """
-import os, re, sys, json, time, shlex, subprocess, shutil, urllib.parse
+
+import os
+import re
+import sys
+import json
+import time
+import shlex
+import subprocess
+import shutil
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -33,26 +42,28 @@ VALID_BACKENDS = ("claude", "codex", "grok")
 # other reason is a deliberate stop and is never auto-restarted -- not by reconcile, and (since
 # card 0cc0bde980) not by ensure-boss either. roster.json is the single durable store of that
 # intent: no second flag file exists that could disagree with it.
-ACCIDENTAL_REASONS = frozenset({"died-no-window", "tmux-server-crash", "window-missing",
-                                "boss-window-missing", "zombie-no-session"})
+ACCIDENTAL_REASONS = frozenset(
+    {"died-no-window", "tmux-server-crash", "window-missing", "boss-window-missing", "zombie-no-session"}
+)
 ROSTER_PATH = os.path.join(INSTALL_DIR, "run", "roster.json")
 STATUS_DIR = os.path.join(INSTALL_DIR, "status")
 BOSS_DOC = os.path.join(INSTALL_DIR, "mp-boss-doctrine.md")
-ROLE_DIR = os.path.join(INSTALL_DIR, "roles")            # canonical read-only role store
+ROLE_DIR = os.path.join(INSTALL_DIR, "roles")  # canonical read-only role store
 ROLE_BUNDLE_DIR = os.path.join(INSTALL_DIR, "run", "role-bundles")  # derived per-agent views
 HDR = {"X-Queue-Secret": SECRET}
 TODO_URL = "http://127.0.0.1:%s" % CFG.get("TODO_PORT", "9933")  # board/todo-server origin
-DOCTRINE_SUMMARY = ("Boss onboarded: plan-gate before engineering, drive the team autonomously "
-                    "off the board via the mp queue (fire-and-forget), verify every result.")
+DOCTRINE_SUMMARY = (
+    "Boss onboarded: plan-gate before engineering, drive the team autonomously "
+    "off the board via the mp queue (fire-and-forget), verify every result."
+)
 # Spawn readiness: SessionStart hook writes session_id. Under memory pressure Claude can take
 # much longer than a few seconds; default 45s balances false zombies vs blocking Boss.
-SPAWN_READY_SEC = float(os.environ.get("MYPEOPLE_SPAWN_READY_SEC")
-                        or CFG.get("MYPEOPLE_SPAWN_READY_SEC") or 45)
+SPAWN_READY_SEC = float(os.environ.get("MYPEOPLE_SPAWN_READY_SEC") or CFG.get("MYPEOPLE_SPAWN_READY_SEC") or 45)
 # Birth-zombie: window+PID exist, status stuck at starting, session_id never written.
-ZOMBIE_STARTING_SEC = float(os.environ.get("MYPEOPLE_ZOMBIE_STARTING_SEC")
-                            or CFG.get("MYPEOPLE_ZOMBIE_STARTING_SEC") or 90)
-ZOMBIE_REAP_MAX = int(os.environ.get("MYPEOPLE_ZOMBIE_REAP_MAX")
-                      or CFG.get("MYPEOPLE_ZOMBIE_REAP_MAX") or 3)
+ZOMBIE_STARTING_SEC = float(
+    os.environ.get("MYPEOPLE_ZOMBIE_STARTING_SEC") or CFG.get("MYPEOPLE_ZOMBIE_STARTING_SEC") or 90
+)
+ZOMBIE_REAP_MAX = int(os.environ.get("MYPEOPLE_ZOMBIE_REAP_MAX") or CFG.get("MYPEOPLE_ZOMBIE_REAP_MAX") or 3)
 
 
 def resolve_role(role, backend, locked_role_ref=None):
@@ -81,9 +92,9 @@ def is_local(aid):
 
 def remote_task(typ, aid, payload=None, timeout=150):
     """Submit a cross-host command through the queue and wait for its result."""
-    code, out = C.http_json("POST", QUEUE_URL + "/task/submit",
-                            {"type": typ, "target_agent": aid, "payload": payload or {}},
-                            HDR, timeout=8)
+    code, out = C.http_json(
+        "POST", QUEUE_URL + "/task/submit", {"type": typ, "target_agent": aid, "payload": payload or {}}, HDR, timeout=8
+    )
     if code != 200 or not isinstance(out, dict) or not out.get("task_id"):
         return False, "queue submit failed (HTTP %s)" % code
     tid = out["task_id"]
@@ -137,8 +148,7 @@ def claude_consent_settings():
     path = os.path.join(INSTALL_DIR, "run", "claude-consent.settings.json")
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        C.write_json(path, {"skipDangerousModePermissionPrompt": True,
-                            "deniedMcpServers": mprole.CLAUDE_DENIED_MCP})
+        C.write_json(path, {"skipDangerousModePermissionPrompt": True, "deniedMcpServers": mprole.CLAUDE_DENIED_MCP})
         return path
     except OSError:
         return None
@@ -173,6 +183,7 @@ def grok_pretrust():
     per-agent GROK_HOME config by mprole._grok_config_toml.
     """
     import re
+
     root = os.environ.get("GROK_HOME") or os.path.expanduser("~/.grok")
     p = os.path.join(root, "config.toml")
     s = ""
@@ -182,28 +193,27 @@ def grok_pretrust():
                 s = f.read()
         except Exception:
             return
-    m = re.search(r'^hints\s*=\s*\{([^}]*)\}[ \t]*$', s, re.M)
+    m = re.search(r"^hints\s*=\s*\{([^}]*)\}[ \t]*$", s, re.M)
     if m:
         inner = m.group(1)
-        if re.search(r'project_picker_disabled\s*=\s*true', inner):
+        if re.search(r"project_picker_disabled\s*=\s*true", inner):
             return
         if "project_picker_disabled" in inner:
-            inner = re.sub(r'project_picker_disabled\s*=\s*\w+',
-                           'project_picker_disabled = true', inner)
+            inner = re.sub(r"project_picker_disabled\s*=\s*\w+", "project_picker_disabled = true", inner)
         else:
             head = inner.strip().rstrip(",")
             inner = (head + ", " if head else " ") + "project_picker_disabled = true "
-        out = s[:m.start()] + "hints = {%s}" % inner + s[m.end():]
-    elif re.search(r'^[ \t]*\[hints\][ \t]*$', s, re.M):
-        if re.search(r'^[ \t]*project_picker_disabled\s*=', s, re.M):
+        out = s[: m.start()] + "hints = {%s}" % inner + s[m.end() :]
+    elif re.search(r"^[ \t]*\[hints\][ \t]*$", s, re.M):
+        if re.search(r"^[ \t]*project_picker_disabled\s*=", s, re.M):
             return
-        out = re.sub(r'^([ \t]*\[hints\][ \t]*\n)', r'\1project_picker_disabled = true\n',
-                     s, count=1, flags=re.M)
+        out = re.sub(r"^([ \t]*\[hints\][ \t]*\n)", r"\1project_picker_disabled = true\n", s, count=1, flags=re.M)
     else:
         # a bare key must precede the first [section] header
         out = "hints = { project_picker_disabled = true }\n" + s
     try:
         import tomllib
+
         parsed = tomllib.loads(out)
         if not parsed.get("hints", {}).get("project_picker_disabled"):
             return
@@ -223,8 +233,7 @@ def write_status(aid, status, backend, summary=None, locked=False, drop_session=
     cur = C.read_json(p, {}) or {}
     if drop_session:
         cur.pop("session_id", None)
-    cur.update({"status": status, "timestamp": time.time(),
-                "backend": backend})
+    cur.update({"status": status, "timestamp": time.time(), "backend": backend})
     if summary is not None:
         cur["summary"] = summary
     if locked:
@@ -254,9 +263,16 @@ def pane_looks_ready(aid):
     if not (pane or "").strip():
         return False
     low = pane.lower()
-    markers = ("welcome back", "bypass permissions", "claude code",
-               "esc to interrupt", "ctrl+c:cancel", "codex", "grok build",
-               "shift+tab")
+    markers = (
+        "welcome back",
+        "bypass permissions",
+        "claude code",
+        "esc to interrupt",
+        "ctrl+c:cancel",
+        "codex",
+        "grok build",
+        "shift+tab",
+    )
     # bare composer prompt alone is weak (shell too); require a product marker
     return any(m in low for m in markers)
 
@@ -272,10 +288,16 @@ def pane_looks_working(aid):
     except Exception:
         return False
     low = (pane or "").lower()
-    return ("waiting for response" in low or "esc to interrupt" in low
-            or "ctrl+c:cancel" in low or "tokens" in low
-            or "sign in with chatgpt" in low or "sign in with device code" in low
-            or "one-time code" in low or "select login method" in low)
+    return (
+        "waiting for response" in low
+        or "esc to interrupt" in low
+        or "ctrl+c:cancel" in low
+        or "tokens" in low
+        or "sign in with chatgpt" in low
+        or "sign in with device code" in low
+        or "one-time code" in low
+        or "select login method" in low
+    )
 
 
 def wait_for_backend_ready(aid, timeout=None, interval=0.5):
@@ -369,8 +391,12 @@ def close_agent_window(sess, tab, e):
     that moved to another window through the chooser is still in use and stays.
     """
     group = "mc-%s" % sess
-    listed = subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}\t#{session_group}\t#{window_name}"],
-                            env=e, capture_output=True, text=True).stdout
+    listed = subprocess.run(
+        ["tmux", "list-sessions", "-F", "#{session_name}\t#{session_group}\t#{window_name}"],
+        env=e,
+        capture_output=True,
+        text=True,
+    ).stdout
     for name, grp, window in (l.split("\t") for l in listed.splitlines() if l.count("\t") == 2):
         if name.startswith("_v_%s_" % tab) and grp == group and window == tab:
             subprocess.run(["tmux", "kill-session", "-t", "=" + name], env=e, capture_output=True)
@@ -394,8 +420,9 @@ def _pane_process_tree(sess, tab):
     None is NOT "nothing running": it means tmux or ps could not answer, and callers must not
     destroy a pane on that basis.
     """
-    r = subprocess.run(["tmux", "list-panes", "-t", "mc-%s:%s" % (sess, tab), "-F", "#{pane_pid}"],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        ["tmux", "list-panes", "-t", "mc-%s:%s" % (sess, tab), "-F", "#{pane_pid}"], capture_output=True, text=True
+    )
     if r.returncode != 0:
         return None
     roots = [p for p in r.stdout.split() if p.isdigit()]
@@ -462,9 +489,7 @@ def tmux_env():
 
 def recording_enabled_global():
     """Host-wide opt-in. Default OFF. Truthy: 1/true/yes/on."""
-    v = (os.environ.get("MYPEOPLE_RECORD")
-         or CFG.get("MYPEOPLE_RECORD")
-         or "0").strip().lower()
+    v = (os.environ.get("MYPEOPLE_RECORD") or CFG.get("MYPEOPLE_RECORD") or "0").strip().lower()
     return v in ("1", "true", "yes", "on")
 
 
@@ -502,8 +527,9 @@ def start_recorder(tab, sess, previous=None):
     inner = "TMUX= tmux attach -rt mc-%s:%s" % (sess, tab)
     cmd = "asciinema rec --quiet --append -c %s %s" % (shlex.quote(inner), shlex.quote(cast))
     try:
-        r = subprocess.run(["tmux", "-N", "new-session", "-d", "-s", rec_sess, cmd], env=e,
-                           capture_output=True, timeout=10)
+        r = subprocess.run(
+            ["tmux", "-N", "new-session", "-d", "-s", rec_sess, cmd], env=e, capture_output=True, timeout=10
+        )
         if r.returncode != 0:
             return None
         for _ in range(20):
@@ -523,21 +549,46 @@ def start_recorder(tab, sess, previous=None):
 # tmux pane either. Proven on Mac 2 (card 53991ce89f): gh token, Keychain, queue.env, ~/.claude.json,
 # :9900, ssh and example.com all refused; GitHub clone, commit, format-patch and pip work.
 COMMUNITY_SETTINGS = {
-    "permissions": {"allow": ["Edit(./**)"],
-                    "deny": ["Read(~/.config/**)", "Read(~/.ssh/**)", "Read(~/.claude.json)",
-                             "Read(~/Library/**)", "WebFetch", "WebSearch"]},
-    "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
-                "autoAllowBashIfSandboxed": True,
-                "filesystem": {"denyRead": ["~"], "allowRead": ["."]},
-                "network": {"allowedDomains": ["github.com", "*.github.com", "*.githubusercontent.com",
-                                               "pypi.org", "files.pythonhosted.org", "registry.npmjs.org"],
-                            "strictAllowlist": True}},
+    "permissions": {
+        "allow": ["Edit(./**)"],
+        "deny": [
+            "Read(~/.config/**)",
+            "Read(~/.ssh/**)",
+            "Read(~/.claude.json)",
+            "Read(~/Library/**)",
+            "WebFetch",
+            "WebSearch",
+        ],
+    },
+    "sandbox": {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "allowUnsandboxedCommands": False,
+        "autoAllowBashIfSandboxed": True,
+        "filesystem": {"denyRead": ["~"], "allowRead": ["."]},
+        "network": {
+            "allowedDomains": [
+                "github.com",
+                "*.github.com",
+                "*.githubusercontent.com",
+                "pypi.org",
+                "files.pythonhosted.org",
+                "registry.npmjs.org",
+            ],
+            "strictAllowlist": True,
+        },
+    },
 }
 # The sandbox refuses ~/.gitconfig and any .git/config, so git skips the first and clones with a
 # separate git dir (COMMUNITY_DOC); its commits carry a name that is not the owner's.
-COMMUNITY_GIT = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TEMPLATE_DIR": "/nonexistent",
-                 "GIT_AUTHOR_NAME": "MyPlow community engineer", "GIT_AUTHOR_EMAIL": "noreply@plow.co",
-                 "GIT_COMMITTER_NAME": "MyPlow community engineer", "GIT_COMMITTER_EMAIL": "noreply@plow.co"}
+COMMUNITY_GIT = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_TEMPLATE_DIR": "/nonexistent",
+    "GIT_AUTHOR_NAME": "MyPlow community engineer",
+    "GIT_AUTHOR_EMAIL": "noreply@plow.co",
+    "GIT_COMMITTER_NAME": "MyPlow community engineer",
+    "GIT_COMMITTER_EMAIL": "noreply@plow.co",
+}
 COMMUNITY_DOC = """# You are a community engineer
 
 You work for a developer outside the team, through the Boss. Your shell runs in a sandbox: it reads
@@ -560,14 +611,15 @@ def community_flags(role_flags):
         i = role_flags.index("--settings")
         with open(role_flags[i + 1]) as f:
             settings = json.load(f)
-        role_flags = role_flags[:i] + role_flags[i + 2:]
+        role_flags = role_flags[:i] + role_flags[i + 2 :]
     settings.pop("skipDangerousModePermissionPrompt", None)
     settings.update(COMMUNITY_SETTINGS)
     return role_flags + ["--settings", json.dumps(settings)]
 
 
-def build_launch(aid, cwd, boss_id, is_master, model, backend, resume_session=None,
-                 role_bundle=None, community=False, effort=""):
+def build_launch(
+    aid, cwd, boss_id, is_master, model, backend, resume_session=None, role_bundle=None, community=False, effort=""
+):
     exports = {
         "PATH": "%s/.local/bin:%s/bin:%s" % (os.path.expanduser("~"), INSTALL_DIR, os.environ.get("PATH", "/usr/bin")),
         "AGENT_ID": aid,
@@ -590,8 +642,9 @@ def build_launch(aid, cwd, boss_id, is_master, model, backend, resume_session=No
         exports.update(mprole.role_env(role_bundle))
         # dispatch explicitly: an else-branch here silently hands one adapter's flags to another
         # backend, which rejects them -- the agent would die at launch with the role "mounted".
-        role_flags = {"claude": mprole.claude_flags, "codex": mprole.codex_flags,
-                      "grok": mprole.grok_flags}[backend](role_bundle)
+        role_flags = {"claude": mprole.claude_flags, "codex": mprole.codex_flags, "grok": mprole.grok_flags}[backend](
+            role_bundle
+        )
     # The window inherits the tmux server's env, where MyPlow.app's PYTHONPATH (its bundled, older
     # `mypeople`) shadows the installed CLI for everything the agent runs (card 70a20b5dcf).
     prefix = "env -u PYTHONPATH"
@@ -603,14 +656,18 @@ def build_launch(aid, cwd, boss_id, is_master, model, backend, resume_session=No
         # None of the tmux server's env (queue.env's secrets, the ssh agent): only what it runs on.
         # Its hooks read the queue secret from queue.env themselves, outside its sandbox.
         prefix = "env -i"
-        exports.update({k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMPDIR")
-                        if os.environ.get(k)})
+        exports.update(
+            {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMPDIR") if os.environ.get(k)}
+        )
         exports.update(COMMUNITY_GIT)
         role_flags = community_flags(role_flags)
     envstr = envq(**exports)
     if backend == "claude":
-        agent = ("claude --permission-mode dontAsk --strict-mcp-config --mcp-config '{\"mcpServers\": {}}'"
-                 if community else "claude --dangerously-skip-permissions")
+        agent = (
+            "claude --permission-mode dontAsk --strict-mcp-config --mcp-config '{\"mcpServers\": {}}'"
+            if community
+            else "claude --dangerously-skip-permissions"
+        )
         if role_flags:
             agent += " " + " ".join(shlex.quote(f) for f in role_flags)
         if "--settings" not in role_flags:
@@ -646,5 +703,3 @@ def build_launch(aid, cwd, boss_id, is_master, model, backend, resume_session=No
     else:
         raise ValueError("unsupported backend: %s" % backend)
     return "%s %s %s" % (prefix, envstr, agent)
-
-

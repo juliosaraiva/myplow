@@ -1,4 +1,5 @@
 """Plugins: supervise.sh's loop, and the switch behind `mp plugins` and the board's Plugins page."""
+
 import http.client
 import http.server
 import json
@@ -39,15 +40,20 @@ WAS = {
 
 def tick(idir, env=""):
     """One pass of the real shell function, with `ensure` stubbed to print what it was asked to keep alive."""
-    r = subprocess.run(["bash", "-c", f'set -u; ensure(){{ echo "$1|$2"; }}; ID={idir}; {env}\n{FN}\nensure_plugins'],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        ["bash", "-c", f'set -u; ensure(){{ echo "$1|$2"; }}; ID={idir}; {env}\n{FN}\nensure_plugins'],
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stderr
     return sorted(r.stdout.splitlines())
 
 
 def was_line(idir, name):
     interp, script = WAS[name][1:]
-    return f"{idir}/plugins/{name}/{script} serve$|MP_PLUGIN='{name}' exec {interp} '{idir}/plugins/{name}/{script}' serve"
+    return (
+        f"{idir}/plugins/{name}/{script} serve$|MP_PLUGIN='{name}' exec {interp} '{idir}/plugins/{name}/{script}' serve"
+    )
 
 
 def write_plugin(root, name, *lines, script="p.py"):
@@ -73,11 +79,12 @@ class Manifests(unittest.TestCase):
 
 class EveryPathCarriesTheOwnersText(unittest.TestCase):
     """mp send adds it. A plugin that hands an agent a message any other way must add it itself, or the page lies."""
+
     def test_a_plugin_that_skips_mp_send_adds_it(self):
         for script in list(PLUGINS.glob("*/*.py")) + list(PLUGINS.glob("*/*.mjs")):
             conf = script.parent / "plugin.conf"
             if not conf.exists() or "message=" not in conf.read_text() or "message=access" in conf.read_text():
-                continue        # it hands an agent nothing the page shows, or Access owns the text, one per person
+                continue  # it hands an agent nothing the page shows, or Access owns the text, one per person
             src = script.read_text()
             with self.subTest(script=script.name):
                 if "paste-buffer" in src:
@@ -133,7 +140,10 @@ class SuperviseLoop(unittest.TestCase):
         write_plugin(d, "one-word", "run=p.py")
         write_plugin(d, "odd-needs", "run=python3 p.py", "needs=disk:full")
         Path(write_plugin(d, "no-newline", script="p.py"), "plugin.conf").write_text("run=python3 p.py")
-        self.assertEqual([f"{d}/no-newline/p.py serve$|MP_PLUGIN='no-newline' exec python3 '{d}/no-newline/p.py' serve"], tick(self.idir))
+        self.assertEqual(
+            [f"{d}/no-newline/p.py serve$|MP_PLUGIN='no-newline' exec python3 '{d}/no-newline/p.py' serve"],
+            tick(self.idir),
+        )
 
     def test_installed_plugins_run_from_plugins_d(self):
         d = f"{self.idir}/plugins.d"
@@ -146,7 +156,7 @@ class SuperviseLoop(unittest.TestCase):
 
     def test_the_loop_calls_it_and_keeps_the_lab_bridge(self):
         text = (BIN / "supervise.sh").read_text()
-        loop = text[text.index("while true; do"):]
+        loop = text[text.index("while true; do") :]
         self.assertIn("ensure_plugins\n", loop)
         self.assertIn("plow-chat-lab/creds.json", loop)
         self.assertNotIn("plugins/voice", loop)
@@ -205,6 +215,7 @@ class Switch(unittest.TestCase):
 
         def refused(text, words):
             raise self.m.PluginError("not sent")
+
         with self.assertRaises(self.m.PluginError):
             self.m.rule_ask("p", "x", refused)
         self.assertFalse(self.row("p")["asking"])
@@ -221,6 +232,7 @@ class Switch(unittest.TestCase):
         def give(session):
             self.assertTrue(self.m.C.give_rule("p", session, lambda t: said.append(t) or True))
             return said.pop() if said else ""
+
         self.assertEqual("", give("cli1"))
         self.m.save_rule("p", "Only English.")
         self.assertIn("Only English.", give("cli1"))
@@ -235,11 +247,14 @@ class Switch(unittest.TestCase):
     def test_a_rule_that_did_not_go_in_is_not_told_and_goes_again(self):
         write_plugin(self.plugins, "p", "run=python3 p.py")
         self.m.save_rule("p", "Only English.")
-        self.assertFalse(self.m.C.give_rule("p", "cli1", lambda t: False), "the caller must hold the stranger's message")
-        with self.assertRaises(RuntimeError):      # docker's way of saying the same
+        self.assertFalse(
+            self.m.C.give_rule("p", "cli1", lambda t: False), "the caller must hold the stranger's message"
+        )
+        with self.assertRaises(RuntimeError):  # docker's way of saying the same
 
             def boom(t):
                 raise RuntimeError("docker exec failed")
+
             self.m.C.give_rule("p", "cli1", boom)
         again = []
         self.assertTrue(self.m.C.give_rule("p", "cli1", lambda t: again.append(t) or True))
@@ -266,6 +281,7 @@ class Switch(unittest.TestCase):
                     return s
                 __import__("time").sleep(0.1)
             self.fail("no child seen")
+
         first = session()
         self.assertEqual(first, session(), "steady while the CLI runs")
         os.kill(int(first.split()[0]), 9)
@@ -283,7 +299,11 @@ class Switch(unittest.TestCase):
 
     def test_off_really_stops_the_daemon_and_nothing_else_and_on_clears_the_switch(self):
         d = write_plugin(self.plugins, "p", "run=python3 p.py")
-        main, bridge, oneshot = self.daemon(d / "p.py", "serve"), self.daemon(d / "p.py", "serve", "whatsapp"), self.daemon(d / "p.py", "reply", "x")
+        main, bridge, oneshot = (
+            self.daemon(d / "p.py", "serve"),
+            self.daemon(d / "p.py", "serve", "whatsapp"),
+            self.daemon(d / "p.py", "reply", "x"),
+        )
         self.assertEqual("running", self.row("p")["state"])
         self.assertEqual(["whatsapp"], self.row("p")["also"])
         self.m.set_on("p", False)
@@ -313,45 +333,95 @@ class Switch(unittest.TestCase):
             self.assertEqual("down", self.row("needs-env")["state"])
 
     def test_messages_come_from_the_plugins_that_declare_one_and_a_broken_one_is_left_out(self):
-        write_plugin(self.plugins, "says", "run=python3 p.py", "message=yes").joinpath("p.py").write_text("print('[says] <text>')")
+        write_plugin(self.plugins, "says", "run=python3 p.py", "message=yes").joinpath("p.py").write_text(
+            "print('[says] <text>')"
+        )
         write_plugin(self.plugins, "silent", "run=python3 p.py").joinpath("p.py").write_text("print('never asked')")
-        write_plugin(self.plugins, "broken", "run=python3 p.py", "message=yes").joinpath("p.py").write_text("raise SystemExit(2)")
-        self.assertEqual({"says": {"kind": "yes", "default": "[says] <text>", "text": "[says] <text>", "required": [], "warned": [], "identity": []}}, self.m.messages())
+        write_plugin(self.plugins, "broken", "run=python3 p.py", "message=yes").joinpath("p.py").write_text(
+            "raise SystemExit(2)"
+        )
+        self.assertEqual(
+            {
+                "says": {
+                    "kind": "yes",
+                    "default": "[says] <text>",
+                    "text": "[says] <text>",
+                    "required": [],
+                    "warned": [],
+                    "identity": [],
+                }
+            },
+            self.m.messages(),
+        )
 
     def template_plugin(self, name="t"):
         write_plugin(self.plugins, name, "run=python3 p.py", "message=template").joinpath("p.py").write_text(
-            "print('[t] from {sender}: {their_message}\\nRun {reply_command}. {safety_line} {other}')")
+            "print('[t] from {sender}: {their_message}\\nRun {reply_command}. {safety_line} {other}')"
+        )
         return "[t] from {sender}: {their_message}\nRun {reply_command}. {safety_line} {other}"
 
     def test_a_message_cannot_lose_a_variable_by_any_way_in_and_its_own_words_store_nothing(self):
         words, C = self.template_plugin(), self.m.C
-        values = {"sender": "Ana", "their_message": "{reply_command} and {other}", "reply_command": "mp say", "safety_line": "Careful.", "other": "x"}
-        self.assertEqual(C.plugin_text("t", words, values), "[t] from Ana: {reply_command} and {other}\nRun mp say. Careful. x", "what they said is never read as a variable")
+        values = {
+            "sender": "Ana",
+            "their_message": "{reply_command} and {other}",
+            "reply_command": "mp say",
+            "safety_line": "Careful.",
+            "other": "x",
+        }
+        self.assertEqual(
+            C.plugin_text("t", words, values),
+            "[t] from Ana: {reply_command} and {other}\nRun mp say. Careful. x",
+            "what they said is never read as a variable",
+        )
         row = self.m.messages()["t"]
         self.assertEqual((row["kind"], row["text"]), ("template", words))
-        self.assertEqual((row["required"], row["warned"]), (["their_message", "sender", "reply_command"], ["safety_line"]))
+        self.assertEqual(
+            (row["required"], row["warned"]), (["their_message", "sender", "reply_command"], ["safety_line"])
+        )
         self.assertEqual(row["identity"], ["sender"])
         for lost in ("{their_message}", "{sender}", "{reply_command}"):
             with self.assertRaises(self.m.PluginError):
                 self.m.save_rule("t", words.replace(lost, ""))
         with self.assertRaises(self.m.PluginError):
-            self.m.save_rule("t", "{their_message} " + words.replace("{their_message}", ""))   # first, they could read like MyPlow's own words
+            self.m.save_rule(
+                "t", "{their_message} " + words.replace("{their_message}", "")
+            )  # first, they could read like MyPlow's own words
         self.assertEqual("", C.saved_template("t"), "nothing was written")
-        self.m.save_rule("t", words.replace("[t] from {sender}:", "Sent by {sender}:"))     # the words around it are the owner's
+        self.m.save_rule(
+            "t", words.replace("[t] from {sender}:", "Sent by {sender}:")
+        )  # the words around it are the owner's
         self.assertIn("Sent by Ana:", C.plugin_text("t", words, values))
-        C.atomic_write(os.path.join(self.m.INSTALL, "state", "t", "template.txt"), b"{trust_stamp} {their_message}")   # saved on 5.22.167
+        C.atomic_write(
+            os.path.join(self.m.INSTALL, "state", "t", "template.txt"), b"{trust_stamp} {their_message}"
+        )  # saved on 5.22.167
         self.assertEqual("[t] from Ana: {reply_command} and {other}", C.plugin_text("t", words, values))
-        self.assertEqual("[t] from {sender}: {their_message}", self.m.messages()["t"]["text"], "the page reads it in today's words")
+        self.assertEqual(
+            "[t] from {sender}: {their_message}", self.m.messages()["t"]["text"], "the page reads it in today's words"
+        )
         self.assertEqual("[t] from {sender}: {their_message}", self.m.saved_text("t"), "and so does mp plugins wrap")
-        self.assertEqual("[g] by {sender}: {their_message}", C.without_old_name("{trust_stamp}: {their_message}", "[g] by {sender}: {their_message}"))
-        self.assertEqual('[c] {sender}: "{their_message}"', C.without_old_name('{trust_stamp} "{their_message}"', '[c] {sender}: "{their_message}"\n(x)'))
-        self.assertEqual("[p] {sender}: {their_message}", C.without_old_name("{trust_stamp} {their_message}", "{seen_line}[p] {sender}: {their_message}"))
+        self.assertEqual(
+            "[g] by {sender}: {their_message}",
+            C.without_old_name("{trust_stamp}: {their_message}", "[g] by {sender}: {their_message}"),
+        )
+        self.assertEqual(
+            '[c] {sender}: "{their_message}"',
+            C.without_old_name('{trust_stamp} "{their_message}"', '[c] {sender}: "{their_message}"\n(x)'),
+        )
+        self.assertEqual(
+            "[p] {sender}: {their_message}",
+            C.without_old_name("{trust_stamp} {their_message}", "{seen_line}[p] {sender}: {their_message}"),
+        )
         both = "[s] {sender}: {their_message} {owner_line}{safety_line}"
         self.assertEqual(both, C.without_old_name(both, both), "a message with both lines keeps both")
-        self.m.save_rule("t", words.replace("{safety_line} ", "Keep it short. "))   # only warned about, in the page
-        self.assertEqual(C.plugin_text("t", words, values), "[t] from Ana: {reply_command} and {other}\nRun mp say. Keep it short. x", "applies to the next message")
+        self.m.save_rule("t", words.replace("{safety_line} ", "Keep it short. "))  # only warned about, in the page
+        self.assertEqual(
+            C.plugin_text("t", words, values),
+            "[t] from Ana: {reply_command} and {other}\nRun mp say. Keep it short. x",
+            "applies to the next message",
+        )
         self.assertEqual(self.row("t")["custom"], C.saved_template("t"))
-        self.m.save_rule("t", words)                                                 # today's words again
+        self.m.save_rule("t", words)  # today's words again
         self.assertEqual("", C.saved_template("t"))
 
     def test_an_agents_rewrite_needs_the_ask_keeps_the_variables_and_applies_at_once(self):
@@ -379,10 +449,14 @@ class Switch(unittest.TestCase):
         self.assertIn("Only English.", self.m.C.saved_template("t"))
 
     def test_access_owns_a_peers_message(self):
-        write_plugin(self.plugins, "a", "run=python3 p.py", "message=access").joinpath("p.py").write_text("print('{sender} words')")
+        write_plugin(self.plugins, "a", "run=python3 p.py", "message=access").joinpath("p.py").write_text(
+            "print('{sender} words')"
+        )
         self.assertNotIn("a", self.m.messages(), "not on the Plugins page")
         self.assertEqual([], [r for r in self.m.listing() if r["name"] == "a"])
-        self.assertEqual(["a"], [r["name"] for r in self.m.listing(everything=True) if r["name"] == "a"], "mp plugins still lists it")
+        self.assertEqual(
+            ["a"], [r["name"] for r in self.m.listing(everything=True) if r["name"] == "a"], "mp plugins still lists it"
+        )
         self.m.set_on("a", False)
         self.assertEqual("off", self.m.service_state("a"), "and Access can say so")
         self.m.set_on("a", True)
@@ -395,7 +469,9 @@ class Switch(unittest.TestCase):
         for conf in PLUGINS.glob("*/plugin.conf"):
             if "message=template" not in conf.read_text():
                 continue
-            script = next(p for p in conf.parent.iterdir() if p.suffix in (".py", ".mjs") and p.stem == conf.parent.name)
+            script = next(
+                p for p in conf.parent.iterdir() if p.suffix in (".py", ".mjs") and p.stem == conf.parent.name
+            )
             src = script.read_text()
             with self.subTest(script=script.name):
                 asset = conf.parent / "template.default.txt"
@@ -403,8 +479,10 @@ class Switch(unittest.TestCase):
                 if asset.is_file():
                     self.assertIn(asset.name, src)
                     words = asset.read_text(encoding="utf-8")
-                self.assertTrue("{sender}" in words and "{their_message}" in words and "{trust_stamp}" not in words,
-                                "real words, not one name for them")
+                self.assertTrue(
+                    "{sender}" in words and "{their_message}" in words and "{trust_stamp}" not in words,
+                    "real words, not one name for them",
+                )
                 self.assertLess(words.index("{sender}"), words.index("{their_message}"))
                 self.assertRegex(src, r"print\(TEMPLATE\)|console\.log\(TEMPLATE\)")
                 self.assertTrue("plugin_text(" in src or "template.txt" in src)
@@ -417,18 +495,23 @@ class Switch(unittest.TestCase):
             run = dict(x.split("=", 1) for x in (d / "plugin.conf").read_text().splitlines() if "=" in x)["run"].split()
             if not shutil.which(run[0]):
                 continue
-            r = subprocess.run(run[:-1] + [str(d / run[-1]), "message"], capture_output=True, text=True, timeout=120,
-                               env=dict(os.environ, INSTALL_DIR=self.install_dir, HOST_ID="h"))
+            r = subprocess.run(
+                run[:-1] + [str(d / run[-1]), "message"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=dict(os.environ, INSTALL_DIR=self.install_dir, HOST_ID="h"),
+            )
             self.assertEqual(0, r.returncode, (d.name, r.stderr[-400:]))
             self.assertRegex(r.stdout, "[<{]", d.name)
             if "message=template" in (d / "plugin.conf").read_text():
                 words = r.stdout.strip()
-                self.m.C.checked_template(words, words)   # its own words pass its own rules
+                self.m.C.checked_template(words, words)  # its own words pass its own rules
                 # What 5.22.167 would have saved for it, the stamp under its one old name, reads back as exactly these words.
                 stamp = re.search(r"""STAMP = (["'])(.+?)\1""", (d / run[-1]).read_text()).group(2)
                 self.assertIn(stamp, words, d.name)
                 old = words.replace(stamp, "{trust_stamp}").replace("{sender}", "{who}")
-                if "{safety_line}" not in words:      # Plow Chat's line that says it is the owner had that name on 5.22.167
+                if "{safety_line}" not in words:  # Plow Chat's line that says it is the owner had that name on 5.22.167
                     old = old.replace("{owner_line}", "{safety_line}")
                 self.assertEqual(words, self.m.C.without_old_name(old, words), d.name)
 
@@ -436,17 +519,24 @@ class Switch(unittest.TestCase):
         """11-08: plow-chat gave mp send 30 s. A long text to a stalled Boss took longer, was killed halfway,
         stayed unsent in the Boss's box, was pasted again on the retry, and its sender was told it failed."""
         C = self.m.C
-        worst = 10 + (C.PASTE_WAIT + 5) + C.PASTE_WAIT + 5   # mp's box wait, another sender's turn, the pieces, the Enter
+        worst = (
+            10 + (C.PASTE_WAIT + 5) + C.PASTE_WAIT + 5
+        )  # mp's box wait, another sender's turn, the pieces, the Enter
         self.assertGreater(C.SEND_TIMEOUT, worst)
-        calls = [(f.parent.name, m.group(1)) for f in PLUGINS.glob("*/*.py")
-                 for m in re.finditer(r'MP_BIN, "send".{0,400}?timeout=(\w+)', f.read_text(), re.S)]
+        calls = [
+            (f.parent.name, m.group(1))
+            for f in PLUGINS.glob("*/*.py")
+            for m in re.finditer(r'MP_BIN, "send".{0,400}?timeout=(\w+)', f.read_text(), re.S)
+        ]
         self.assertGreaterEqual(len(calls), 9)
         for name, timeout in calls:
             self.assertTrue(timeout == "SEND_TIMEOUT" or int(timeout) >= C.SEND_TIMEOUT, (name, timeout))
 
     def test_the_owner_rule_is_one_sentence_in_every_plugin_that_carries_it(self):
-        found = {re.search(r'^OWNER_RULE = \((.*?)\)$', (PLUGINS / n / f"{n}.py").read_text(), re.S | re.M).group(1)
-                 for n in ("voice", "plow-chat", "voice-call", "swarm")}
+        found = {
+            re.search(r"^OWNER_RULE = \((.*?)\)$", (PLUGINS / n / f"{n}.py").read_text(), re.S | re.M).group(1)
+            for n in ("voice", "plow-chat", "voice-call", "swarm")
+        }
         self.assertEqual(1, len(found), found)
 
     def test_the_list_never_carries_a_value_from_queue_env(self):
@@ -463,7 +553,9 @@ class Switch(unittest.TestCase):
     def test_a_plugin_with_its_own_switch_keeps_running_and_flips_once(self):
         d = write_plugin(self.plugins, "s", "run=python3 own.py", "switch=yes", script="own.py")
         log = Path(self.tmp.name, "verbs")
-        Path(d, "own.py").write_text(f"import os, sys\nopen({str(log)!r}, 'a').write(sys.argv[1] + '@' + os.environ['HOST_ID'] + chr(10))\n")
+        Path(d, "own.py").write_text(
+            f"import os, sys\nopen({str(log)!r}, 'a').write(sys.argv[1] + '@' + os.environ['HOST_ID'] + chr(10))\n"
+        )
         keeps = self.daemon(d / "own.py", "serve")
         self.m.set_on("s", False)
         self.m.set_on("s", False)
@@ -471,8 +563,11 @@ class Switch(unittest.TestCase):
         self.assertEqual("off", self.row("s")["state"])
         self.m.set_on("s", True)
         self.m.set_on("s", True)
-        self.assertEqual(["off@test-node", "on@test-node"], log.read_text().split(),
-                         "a second press sends no second note, and it knows which Boss is this host's")
+        self.assertEqual(
+            ["off@test-node", "on@test-node"],
+            log.read_text().split(),
+            "a second press sends no second note, and it knows which Boss is this host's",
+        )
         self.assertFalse(self.off_file("s").exists())
 
     def _source(self, name="mine", *lines):
@@ -499,11 +594,13 @@ class Switch(unittest.TestCase):
 
     def test_install_refuses_what_it_cannot_trust(self):
         write_plugin(self.plugins, "taken", "run=python3 p.py")
-        cases = [(self._source("taken"), "already exists"),
-                 (self._source("Bad_Name"), "bad plugin name"),
-                 (self._source("no-conf", "desc=d", "run=python3 other.py"), "needs run="),
-                 (self._source("escapes", "run=python3 ../p.py"), "needs run="),
-                 (self._source("one-word", "run=p.py"), "needs run=")]
+        cases = [
+            (self._source("taken"), "already exists"),
+            (self._source("Bad_Name"), "bad plugin name"),
+            (self._source("no-conf", "desc=d", "run=python3 other.py"), "needs run="),
+            (self._source("escapes", "run=python3 ../p.py"), "needs run="),
+            (self._source("one-word", "run=p.py"), "needs run="),
+        ]
         for src, why in cases:
             with self.assertRaisesRegex(self.m.PluginError, why):
                 self.m.install(str(src))

@@ -30,15 +30,16 @@ its login is expired, because that would be the same crime in the other directio
 stdlib only, and NO `import mypeople`: the runtime daemons are detached from the package, so this
 file has to be importable both as a sibling of mpcommon.py and by firstrun.py via importlib.
 """
+
 import json
 import os
 import shutil
 import subprocess
 import time
 
-LIVE = "live"          # proven able to answer (or credential window open and unprobed)
-DEAD = "dead"          # proven unable to answer -- node is NOT authenticated
-UNKNOWN = "unknown"    # could not tell; never counted as proof either way
+LIVE = "live"  # proven able to answer (or credential window open and unprobed)
+DEAD = "dead"  # proven unable to answer -- node is NOT authenticated
+UNKNOWN = "unknown"  # could not tell; never counted as proof either way
 
 CLAUDE_CREDENTIALS = os.path.join("~", ".claude", ".credentials.json")
 
@@ -103,8 +104,9 @@ def claude_credential_state(path=None, now_ms=None):
     access_exp = _stamp_ms(oauth.get("expiresAt"))
 
     if refresh_exp is not None and refresh_exp <= now:
-        return DEAD, ("OAuth session expired and cannot be refreshed (refresh token expired %s)"
-                      % _ago(now - refresh_exp))
+        return DEAD, (
+            "OAuth session expired and cannot be refreshed (refresh token expired %s)" % _ago(now - refresh_exp)
+        )
     if access_exp is not None and access_exp <= now and refresh_exp is None:
         # Access token is stale and nothing on disk promises the refresh still works. Not proof
         # of death -- the CLI may hold a refresh path we cannot see -- so hand it to the probe.
@@ -126,9 +128,10 @@ def agent_token():
     daemons (supervise.sh's env) may not have it: on Mac 2 the agents ran on such a token while `claude auth` held
     another account, so the probe judged, and billed, that other account every 15 min. Never logged."""
     try:
-        r = subprocess.run(["tmux", "show-environment", "-g", "CLAUDE_CODE_OAUTH_TOKEN"], capture_output=True,
-                           text=True, timeout=10)
-        name, _, value = r.stdout.strip().partition("=")     # "-NAME" when tmux has it unset
+        r = subprocess.run(
+            ["tmux", "show-environment", "-g", "CLAUDE_CODE_OAUTH_TOKEN"], capture_output=True, text=True, timeout=10
+        )
+        name, _, value = r.stdout.strip().partition("=")  # "-NAME" when tmux has it unset
     except (OSError, subprocess.SubprocessError):
         name = value = ""
     return value if name == "CLAUDE_CODE_OAUTH_TOKEN" and value else os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
@@ -147,8 +150,13 @@ def claude_probe(timeout=90, runner=None, token=""):
     # No MCP servers: a PONG needs none, and the operator's 1Password MCP under MyPlow is one macOS
     # "would like to access data from other apps" prompt per probe, every 15 min (card 70a20b5dcf).
     try:
-        r = run(["claude", "-p", PROBE_PROMPT, "--strict-mcp-config", "--mcp-config", '{"mcpServers": {}}'],
-                capture_output=True, text=True, timeout=timeout, env=env)
+        r = run(
+            ["claude", "-p", PROBE_PROMPT, "--strict-mcp-config", "--mcp-config", '{"mcpServers": {}}'],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
     except subprocess.TimeoutExpired:
         return UNKNOWN, "auth probe timed out after %ss" % timeout
     except OSError as exc:
@@ -171,8 +179,11 @@ def claude_verdict(probe=True, timeout=90, path=None, now_ms=None, runner=None):
     """
     token = agent_token()
     # With a token the credential file is another account's, so it proves nothing either way.
-    state, detail = ((UNKNOWN, "agents run on a CLAUDE_CODE_OAUTH_TOKEN") if token else
-                     claude_credential_state(path=path, now_ms=now_ms))
+    state, detail = (
+        (UNKNOWN, "agents run on a CLAUDE_CODE_OAUTH_TOKEN")
+        if token
+        else claude_credential_state(path=path, now_ms=now_ms)
+    )
     if state == DEAD or not probe:
         return state, detail
     pstate, pdetail = claude_probe(timeout=timeout, runner=runner, token=token)
@@ -189,8 +200,7 @@ def claude_verdict(probe=True, timeout=90, path=None, now_ms=None, runner=None):
 HEALTH_FILE = os.path.join("run", "auth-health.json")
 
 
-def node_auth_health(install_dir, backend="claude", probe_ttl=900, timeout=90, now=None,
-                     verdict=None):
+def node_auth_health(install_dir, backend="claude", probe_ttl=900, timeout=90, now=None, verdict=None):
     """Auth health for a long-running daemon, cheap enough to call every heartbeat.
 
     The structural check runs EVERY call (it is a single file read and it catches the exact
@@ -212,12 +222,16 @@ def node_auth_health(install_dir, backend="claude", probe_ttl=900, timeout=90, n
         cached = {}
 
     if backend != "claude":
-        return {"backend": backend, "state": UNKNOWN, "detail": "not validated for %s" % backend,
-                "ts": now, "probed_ts": 0}
+        return {
+            "backend": backend,
+            "state": UNKNOWN,
+            "detail": "not validated for %s" % backend,
+            "ts": now,
+            "probed_ts": 0,
+        }
 
     call = verdict or claude_verdict
-    fresh_probe = (cached.get("backend") == backend
-                   and now - float(cached.get("probed_ts") or 0) < probe_ttl)
+    fresh_probe = cached.get("backend") == backend and now - float(cached.get("probed_ts") or 0) < probe_ttl
     state, detail = call(probe=not fresh_probe, timeout=timeout)
 
     if state != DEAD and fresh_probe and cached.get("state") == DEAD:
@@ -225,8 +239,13 @@ def node_auth_health(install_dir, backend="claude", probe_ttl=900, timeout=90, n
         # real probe was refused (revoked token). Keep the refusal until a probe earns the green back.
         state, detail = DEAD, cached.get("detail") or "backend refused the credential"
 
-    out = {"backend": backend, "state": state, "detail": detail, "ts": now,
-           "probed_ts": (float(cached.get("probed_ts") or 0) if fresh_probe else now)}
+    out = {
+        "backend": backend,
+        "state": state,
+        "detail": detail,
+        "ts": now,
+        "probed_ts": (float(cached.get("probed_ts") or 0) if fresh_probe else now),
+    }
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"

@@ -11,13 +11,15 @@ CRON_LOG = os.path.join(INSTALL_DIR, "logs", "cron.log")
 CRON_RETRY_MIN = 10
 CRON_ALIASES = {"@hourly": "0 * * * *", "@daily": "0 0 * * *", "@weekly": "0 0 * * 0"}
 CRON_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
-CRON_USAGE = ('usage: mp cron add "<minute hour day month weekday>" <session:agent> "<task>" '
-              '[--for <name>] [--reply "<reply command>"]\n'
-              '         (standard cron or @hourly/@daily/@weekly, in this machine\'s local time;\n'
-              '          --for is who asked, --reply how to answer them in the channel they asked from)\n'
-              '       mp cron set <id> [--for <name>] [--reply "<reply command>"]\n'
-              '       mp cron ls\n'
-              '       mp cron rm <id>')
+CRON_USAGE = (
+    'usage: mp cron add "<minute hour day month weekday>" <session:agent> "<task>" '
+    '[--for <name>] [--reply "<reply command>"]\n'
+    "         (standard cron or @hourly/@daily/@weekly, in this machine's local time;\n"
+    "          --for is who asked, --reply how to answer them in the channel they asked from)\n"
+    '       mp cron set <id> [--for <name>] [--reply "<reply command>"]\n'
+    "       mp cron ls\n"
+    "       mp cron rm <id>"
+)
 
 
 def cron_parse(expr):
@@ -60,6 +62,7 @@ def cron_match(parsed, t):
 def cron_due(parsed, created, now):
     """The latest scheduled minute in the retry window that is not older than the schedule, or None."""
     from datetime import timedelta
+
     now = now.replace(second=0, microsecond=0)
     for back in range(CRON_RETRY_MIN):
         m = now - timedelta(minutes=back)
@@ -84,9 +87,14 @@ def cron_fire(s):
     env = dict(os.environ)
     env.pop("AGENT_ID", None)
     try:
-        r = subprocess.run([sys.executable, os.path.abspath(__file__), "send", s["agent"]],
-                           input=cron_package(s), capture_output=True, text=True, timeout=180,
-                           env=env)
+        r = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "send", s["agent"]],
+            input=cron_package(s),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=env,
+        )
         return r.returncode, (r.stdout.strip() or r.stderr.strip())[-200:]
     except subprocess.TimeoutExpired:
         return 124, "timed out"
@@ -99,7 +107,7 @@ def _cron_flags(rest):
         if flag in rest:
             i = rest.index(flag)
             got[field] = rest[i + 1] if i + 1 < len(rest) else ""
-            rest = rest[:i] + rest[i + 2:]
+            rest = rest[:i] + rest[i + 2 :]
     return got, rest
 
 
@@ -123,8 +131,10 @@ def cron_tick(now):
         changed.add(sid)
         os.makedirs(os.path.dirname(CRON_LOG), exist_ok=True)
         with open(CRON_LOG, "a") as f:
-            f.write("%s cron %s (%s) -> mp send %s: %s\n"
-                    % (time.strftime("%Y-%m-%d %H:%M:%S %Z"), sid, key, s["agent"], out))
+            f.write(
+                "%s cron %s (%s) -> mp send %s: %s\n"
+                % (time.strftime("%Y-%m-%d %H:%M:%S %Z"), sid, key, s["agent"], out)
+            )
     if changed:
         C.write_json(CRON_STATE_PATH, {k: v for k, v in state.items() if k in schedules})
 
@@ -132,6 +142,7 @@ def cron_tick(now):
 def do_cron(argv):
     """mp cron add|set|ls|rm|serve — schedules that each run one `mp send` (card 0176b7cafd)."""
     from datetime import datetime
+
     sub, rest = (argv[0], argv[1:]) if argv else ("", [])
     flags, rest = _cron_flags(rest)
     if sub == "add" and len(rest) >= 3:
@@ -139,25 +150,35 @@ def do_cron(argv):
         try:
             cron_parse(when)
         except ValueError as e:
-            print("ERROR: bad schedule %r: %s" % (when, e), file=sys.stderr); return 2
+            print("ERROR: bad schedule %r: %s" % (when, e), file=sys.stderr)
+            return 2
         # A bare name resolves to no pane, so the schedule would fail every time it fired.
         if ":" not in agent:
-            print("ERROR: name the agent as session:name, e.g. main:%s (as mp status shows it)"
-                  % agent, file=sys.stderr); return 2
+            print(
+                "ERROR: name the agent as session:name, e.g. main:%s (as mp status shows it)" % agent, file=sys.stderr
+            )
+            return 2
         if not msg:
-            print(CRON_USAGE, file=sys.stderr); return 2
+            print(CRON_USAGE, file=sys.stderr)
+            return 2
         sid = os.urandom(4).hex()
         schedules = C.read_json_tracked(CRON_PATH, {}) or {}
-        schedules[sid] = dict(flags, when=when, agent=agent, message=msg, created=time.time(),
-                              by=os.environ.get("AGENT_ID", "").strip() or "CEO")
+        schedules[sid] = dict(
+            flags,
+            when=when,
+            agent=agent,
+            message=msg,
+            created=time.time(),
+            by=os.environ.get("AGENT_ID", "").strip() or "CEO",
+        )
         C.write_json_merged(CRON_PATH, schedules)
-        print("cron %s: %s -> mp send %s %s"
-              % (sid, when, agent, shlex.quote(cron_package(schedules[sid]))))
+        print("cron %s: %s -> mp send %s %s" % (sid, when, agent, shlex.quote(cron_package(schedules[sid]))))
         return 0
     if sub == "set" and len(rest) == 1 and flags:
         schedules = C.read_json_tracked(CRON_PATH, {}) or {}
         if rest[0] not in schedules:
-            print("ERROR: no schedule %s (mp cron ls)" % rest[0], file=sys.stderr); return 1
+            print("ERROR: no schedule %s (mp cron ls)" % rest[0], file=sys.stderr)
+            return 1
         schedules[rest[0]] = dict(schedules[rest[0]], **flags)
         C.write_json_merged(CRON_PATH, schedules)
         print("cron %s now sends: %s" % (rest[0], shlex.quote(cron_package(schedules[rest[0]]))))
@@ -165,7 +186,8 @@ def do_cron(argv):
     if sub == "rm" and len(rest) == 1:
         schedules = C.read_json_tracked(CRON_PATH, {}) or {}
         if schedules.pop(rest[0], None) is None:
-            print("ERROR: no schedule %s (mp cron ls)" % rest[0], file=sys.stderr); return 1
+            print("ERROR: no schedule %s (mp cron ls)" % rest[0], file=sys.stderr)
+            return 1
         C.write_json_merged(CRON_PATH, schedules)
         print("removed %s" % rest[0])
         return 0
@@ -173,17 +195,28 @@ def do_cron(argv):
         state = C.read_json(CRON_STATE_PATH, {}) or {}
         for sid, s in sorted((C.read_json(CRON_PATH, {}) or {}).items()):
             rec = state.get(sid) or {}
-            print("%s  %-14s %-16s last: %s %s  by %s\n          %s"
-                  % (sid, s["when"], s["agent"], rec.get("last", "never"), rec.get("result", ""),
-                     s.get("by", ""), shlex.quote(cron_package(s))))
+            print(
+                "%s  %-14s %-16s last: %s %s  by %s\n          %s"
+                % (
+                    sid,
+                    s["when"],
+                    s["agent"],
+                    rec.get("last", "never"),
+                    rec.get("result", ""),
+                    s.get("by", ""),
+                    shlex.quote(cron_package(s)),
+                )
+            )
         return 0
     if sub == "serve" and not rest:
         import fcntl
+
         lock = open(os.path.join(INSTALL_DIR, "run", "cron.lock"), "a+")
         try:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            print("mp cron serve is already running", file=sys.stderr); return 0
+            print("mp cron serve is already running", file=sys.stderr)
+            return 0
         while True:
             try:
                 cron_tick(datetime.now())
@@ -192,5 +225,3 @@ def do_cron(argv):
             time.sleep(15 - time.time() % 15)  # ticks on :00 :15 :30 :45, so a fire lands at :00
     print(CRON_USAGE, file=sys.stderr)
     return 2
-
-

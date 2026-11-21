@@ -6,7 +6,12 @@ Helpers above Handler own the roster file, per-agent status, and the reaper.
 Handler serves /health, the HUD, /agents, /clients, /roster, /heartbeat, and
 /task/*, and proxies board routes to the todo server.
 """
-import os, sys, time, threading, uuid
+
+import os
+import sys
+import time
+import threading
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -24,9 +29,9 @@ DASHBOARD_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashb
 
 START = time.time()
 LOCK = threading.RLock()
-CLIENTS = {}     # hostname -> record
-AGENTS = {}      # agent_id -> record
-TASKS = {}       # task_id -> record
+CLIENTS = {}  # hostname -> record
+AGENTS = {}  # agent_id -> record
+TASKS = {}  # task_id -> record
 # A client's attach_base is now operator-authoritative (set via TTYD_PUBLIC_URL; there is no
 # auto-derivation). Only reject bind-any / empty addresses that can never be a usable client URL.
 # Loopback (localhost/127.0.0.1) is honored — it is exactly right for the single-host,
@@ -63,6 +68,7 @@ def agent_row(aid, rec, roster=None):
     ab = client.get("attach_base", "") or ""
     # never advertise a non-routable attach_base
     from urllib.parse import urlparse
+
     try:
         h = urlparse(ab).hostname if ab else ""
     except Exception:
@@ -143,22 +149,22 @@ def upsert_agents(host, agents):
             continue
         h, sess, tab = C.parse_agent_id(aid)
         rec = AGENTS.get(aid, {})
-        rec.update({
-            "agent_id": aid,
-            "host": a.get("host") or host or h,
-            "session": a.get("session") or sess,
-            "tab": a.get("tab") or tab,
-            "backend": a.get("backend", rec.get("backend", "claude")),
-            "state": a.get("state", "alive"),
-            "boss_id": a.get("boss_id", rec.get("boss_id", "")),
-            "is_master": a.get("is_master", rec.get("is_master", False)),
-            "auth_detail": a.get("auth_detail", ""),
-            "summary": a.get("summary", rec.get("summary", "")),
-            "spawn_cmd": a.get("spawn_cmd", rec.get("spawn_cmd", "")),
-            "model": a.get("model", rec.get("model", "")),
-            "tmux_target": a.get("tmux_target") or C.tmux_target(aid),
-            "ts": now(),
-        })
+        rec.update(
+            {
+                "agent_id": aid,
+                "host": a.get("host") or host or h,
+                "session": a.get("session") or sess,
+                "tab": a.get("tab") or tab,
+                "backend": a.get("backend", rec.get("backend", "claude")),
+                "state": a.get("state", "alive"),
+                "boss_id": a.get("boss_id", rec.get("boss_id", "")),
+                "is_master": a.get("is_master", rec.get("is_master", False)),
+                "auth_detail": a.get("auth_detail", ""),
+                "summary": a.get("summary", rec.get("summary", "")),
+                "spawn_cmd": a.get("spawn_cmd", rec.get("spawn_cmd", "")),
+                "model": a.get("model", rec.get("model", "")),
+                "tmux_target": a.get("tmux_target") or C.tmux_target(aid),
+                "ts": now(),
+            }
+        )
         AGENTS[aid] = rec
-
-

@@ -5,6 +5,7 @@ stalling keep-alive responses, idle connections pinning threads with no cap, req
 bodies with no size limit, session cookies that never expire, writes that rehash the
 whole board, and board reads holding the global lock while the socket writes.
 """
+
 import json
 import os
 import socket
@@ -40,8 +41,7 @@ class ServerMixin:
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
-        cls.mod = sandbox.load(cls.tmp.name, "todo-server.py",
-                               MYPEOPLE_BOARD_BACKEND="sqlite", **cls.env)
+        cls.mod = sandbox.load(cls.tmp.name, "todo-server.py", MYPEOPLE_BOARD_BACKEND="sqlite", **cls.env)
         server_cls = getattr(cls.mod.C, "BoundedThreadingHTTPServer", None)
         if server_cls is None:
             from http.server import ThreadingHTTPServer as server_cls
@@ -88,8 +88,7 @@ class NagleAndTimeoutTests(ServerMixin, unittest.TestCase):
 
         def setup(handler):
             orig(handler)
-            seen["nodelay"] = handler.connection.getsockopt(
-                socket.IPPROTO_TCP, socket.TCP_NODELAY)
+            seen["nodelay"] = handler.connection.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
             seen["timeout"] = handler.connection.gettimeout()
 
         self.mod.Handler.setup = setup
@@ -145,8 +144,7 @@ class ConnectionCapTests(ServerMixin, unittest.TestCase):
 
 
 class BodyLimitTests(ServerMixin, unittest.TestCase):
-    env = {"MP_MAX_JSON_BYTES": "128", "MP_MAX_UPLOAD_BYTES": "256",
-           "MP_HANDLER_TIMEOUT": "5"}
+    env = {"MP_MAX_JSON_BYTES": "128", "MP_MAX_UPLOAD_BYTES": "256", "MP_HANDLER_TIMEOUT": "5"}
 
     def _raw_post(self, payload, secret=SECRET, content_type="application/json"):
         so = socket.create_connection(("127.0.0.1", self.port))
@@ -174,8 +172,7 @@ class BodyLimitTests(ServerMixin, unittest.TestCase):
         return data.split(b"\r\n", 1)[0].decode()
 
     def test_small_add_still_works(self):
-        status, body, _ = self.request(
-            "POST", "/todo/update", {"op": "add", "text": "ok", "test": True})
+        status, body, _ = self.request("POST", "/todo/update", {"op": "add", "text": "ok", "test": True})
         self.assertEqual(200, status)
         self.assertTrue(body["ok"])
 
@@ -190,8 +187,7 @@ class BodyLimitTests(ServerMixin, unittest.TestCase):
     def test_unauthenticated_oversized_post_is_401_without_reading_the_body(self):
         so = socket.create_connection(("127.0.0.1", self.port))
         so.settimeout(1.5)
-        so.sendall(b"POST /todo/update HTTP/1.1\r\nHost: x\r\n"
-                   b"Content-Length: 8000000\r\n\r\n")
+        so.sendall(b"POST /todo/update HTTP/1.1\r\nHost: x\r\nContent-Length: 8000000\r\n\r\n")
         line = so.recv(200).split(b"\r\n", 1)[0].decode()
         so.close()
         self.assertIn("401", line)
@@ -203,7 +199,8 @@ class BodyLimitTests(ServerMixin, unittest.TestCase):
         so.sendall(
             b"POST /todo/proof HTTP/1.1\r\nHost: x\r\nX-Queue-Secret: secret\r\n"
             b"Content-Type: multipart/form-data; boundary=b\r\n"
-            b"Content-Length: %d\r\n\r\n" % len(payload) + payload)
+            b"Content-Length: %d\r\n\r\n" % len(payload) + payload
+        )
         line = so.recv(300).split(b"\r\n", 1)[0].decode()
         so.close()
         self.assertIn("413", line)
@@ -215,8 +212,7 @@ class SessionCookieTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.mod = sandbox.load(self.tmp.name, "todo-server.py", MYPEOPLE_BOARD_BACKEND="sqlite",
-                                MP_SESSION_TTL="120")
+        self.mod = sandbox.load(self.tmp.name, "todo-server.py", MYPEOPLE_BOARD_BACKEND="sqlite", MP_SESSION_TTL="120")
         server_cls = getattr(self.mod.C, "BoundedThreadingHTTPServer", None)
         if server_cls is None:
             from http.server import ThreadingHTTPServer as server_cls
@@ -257,8 +253,8 @@ class SessionCookieTests(unittest.TestCase):
         token = set_cookie.split(";", 1)[0]
         self.assertTrue(self.mod.C.valid_session(token.split("=", 1)[1]))
         status, body, _ = self._req(
-            "POST", "/todo/update", {"op": "add", "text": "from the page", "test": True},
-            cookie=token)
+            "POST", "/todo/update", {"op": "add", "text": "from the page", "test": True}, cookie=token
+        )
         self.assertEqual(200, status)
         self.assertTrue(body["ok"], "the owner UI still writes with the page session")
 
@@ -266,8 +262,8 @@ class SessionCookieTests(unittest.TestCase):
         stale = self.mod.C.mint_session(ttl=30, now=time.time() - 120)
         self.assertFalse(self.mod.C.valid_session(stale))
         status, body, _ = self._req(
-            "POST", "/todo/update", {"op": "add", "text": "stale", "test": True},
-            cookie="mp_session=" + stale)
+            "POST", "/todo/update", {"op": "add", "text": "stale", "test": True}, cookie="mp_session=" + stale
+        )
         self.assertEqual(401, status)
         nonce, exp, sig = stale.split(".")
         flipped = "%s.%d.%s" % (nonce, int(exp) + 99999, sig)
@@ -296,9 +292,16 @@ class WriteScalingTests(ServerMixin, unittest.TestCase):
         for i in range(n):
             tid = "c%03d" % i
             board["tasks"][tid] = {
-                "id": tid, "text": "seed %d" % i, "state": "working", "assignee": "",
+                "id": tid,
+                "text": "seed %d" % i,
+                "state": "working",
+                "assignee": "",
                 "comments": [{"id": "k%d" % i, "by": "CEO", "body": "c" * 80, "ts": now}],
-                "proofs": [], "test": True, "created": now, "updated": now}
+                "proofs": [],
+                "test": True,
+                "created": now,
+                "updated": now,
+            }
             board["order"].append(tid)
         self.mod.save_board(board)
         # Drop the in-process snapshot so the request reloads from disk, as a restart would.
@@ -317,31 +320,36 @@ class WriteScalingTests(ServerMixin, unittest.TestCase):
 
         self.mod.BS.task_hash = counting
         try:
-            status, body, _ = self.request(
-                "POST", "/todo/update", {"op": "add", "text": "just one", "test": True})
+            status, body, _ = self.request("POST", "/todo/update", {"op": "add", "text": "just one", "test": True})
         finally:
             self.mod.BS.task_hash = orig
         self.assertEqual(200, status)
         self.assertTrue(body["ok"])
-        self.assertEqual([body["id"]], hashed,
-                         "save must hash the new card, not all %d" % (40 + len(hashed)))
+        self.assertEqual([body["id"]], hashed, "save must hash the new card, not all %d" % (40 + len(hashed)))
         fresh = self.mod.BS.load_board(self.mod._sqlite_path())
         self.assertEqual("just one", fresh["tasks"][body["id"]]["text"])
         self.assertEqual(41, len(fresh["tasks"]))
-        self.assertEqual("ok", self.mod.BS.connect(self.mod._sqlite_path()).execute(
-            "PRAGMA integrity_check").fetchone()[0])
+        self.assertEqual(
+            "ok", self.mod.BS.connect(self.mod._sqlite_path()).execute("PRAGMA integrity_check").fetchone()[0]
+        )
         con = self.mod.BS.connect(self.mod._sqlite_path())
         try:
-            mode, sync = con.execute("PRAGMA journal_mode").fetchone()[0], \
-                con.execute("PRAGMA synchronous").fetchone()[0]
+            mode, sync = (
+                con.execute("PRAGMA journal_mode").fetchone()[0],
+                con.execute("PRAGMA synchronous").fetchone()[0],
+            )
         finally:
             con.close()
         self.assertEqual("wal", mode)
         self.assertEqual(2, sync)  # FULL
 
     def test_unsaved_mutation_does_not_leak_into_the_next_load(self):
-        board = {"version": 2, "order": ["a1"], "pinSeq": 0,
-                 "tasks": {"a1": {"id": "a1", "text": "original", "state": "working"}}}
+        board = {
+            "version": 2,
+            "order": ["a1"],
+            "pinSeq": 0,
+            "tasks": {"a1": {"id": "a1", "text": "original", "state": "working"}},
+        }
         # Replace whatever an earlier test stored. The shrink guard would refuse this
         # write on a larger board, which is a different contract.
         self.assertTrue(self.mod.BS.save_board(self.mod._sqlite_path(), board, shrink_guard=False))
@@ -366,9 +374,16 @@ class ReadDoesNotBlockWriteTests(ServerMixin, unittest.TestCase):
     env = {"MP_HANDLER_TIMEOUT": "5"}
 
     def test_a_slow_board_read_does_not_hold_the_writer_lock(self):
-        self.mod.save_board({"version": 2, "order": ["a1"], "pinSeq": 0,
-                             "tasks": {"a1": {"id": "a1", "text": "seed", "state": "working",
-                                              "comments": [], "proofs": [], "test": True}}})
+        self.mod.save_board(
+            {
+                "version": 2,
+                "order": ["a1"],
+                "pinSeq": 0,
+                "tasks": {
+                    "a1": {"id": "a1", "text": "seed", "state": "working", "comments": [], "proofs": [], "test": True}
+                },
+            }
+        )
         if hasattr(self.mod, "_SNAP"):
             self.mod._SNAP = None
             self.mod._SNAP_JSON = None
@@ -379,7 +394,8 @@ class ReadDoesNotBlockWriteTests(ServerMixin, unittest.TestCase):
         def slow(handler, code, obj=None, raw=None, **kw):
             blob = raw.encode("utf-8") if isinstance(raw, str) else raw
             boardish = (isinstance(obj, dict) and "tasks" in obj) or (
-                isinstance(blob, (bytes, bytearray)) and b'"tasks"' in blob)
+                isinstance(blob, (bytes, bytearray)) and b'"tasks"' in blob
+            )
             if boardish and code == 200:
                 started.set()
                 release.wait(2)
@@ -387,15 +403,14 @@ class ReadDoesNotBlockWriteTests(ServerMixin, unittest.TestCase):
 
         self.mod.Handler._send = slow
         try:
-            reader = threading.Thread(
-                target=lambda: self.request("GET", "/todo/board", timeout=4), daemon=True)
+            reader = threading.Thread(target=lambda: self.request("GET", "/todo/board", timeout=4), daemon=True)
             reader.start()
             self.assertTrue(started.wait(2), "the board read did not reach the socket write")
             t0 = time.perf_counter()
             try:
                 status, body, _ = self.request(
-                    "POST", "/todo/update", {"op": "add", "text": "while reading", "test": True},
-                    timeout=0.8)
+                    "POST", "/todo/update", {"op": "add", "text": "while reading", "test": True}, timeout=0.8
+                )
             except (socket.timeout, TimeoutError, OSError):
                 status, body = None, None
             elapsed = time.perf_counter() - t0
@@ -413,21 +428,31 @@ class ExternalRestoreTests(ServerMixin, unittest.TestCase):
     env = {"MP_HANDLER_TIMEOUT": "5"}
 
     def test_a_restore_replaces_the_cached_board_and_later_edits_keep_it(self):
-        status, body, _ = self.request(
-            "POST", "/todo/update", {"op": "add", "text": "live", "test": True})
+        status, body, _ = self.request("POST", "/todo/update", {"op": "add", "text": "live", "test": True})
         self.assertEqual(200, status)
         self.assertTrue(body["ok"])
-        restored = {"version": 2, "order": ["r1"], "pinSeq": 0,
-                    "tasks": {"r1": {"id": "r1", "text": "restored-only", "state": "working",
-                                     "comments": [], "proofs": [], "test": True}}}
+        restored = {
+            "version": 2,
+            "order": ["r1"],
+            "pinSeq": 0,
+            "tasks": {
+                "r1": {
+                    "id": "r1",
+                    "text": "restored-only",
+                    "state": "working",
+                    "comments": [],
+                    "proofs": [],
+                    "test": True,
+                }
+            },
+        }
         db = self.mod._sqlite_path()
         self.assertTrue(self.mod.BS.save_board(db, restored, shrink_guard=False))
         self.mod.BS.note_external_write(db)
         status, board, _ = self.request("GET", "/todo/board")
         self.assertEqual(200, status)
         self.assertEqual(["restored-only"], [t.get("text") for t in board["tasks"].values()])
-        status, added, _ = self.request(
-            "POST", "/todo/update", {"op": "add", "text": "after", "test": True})
+        status, added, _ = self.request("POST", "/todo/update", {"op": "add", "text": "after", "test": True})
         self.assertEqual(200, status)
         fresh = self.mod.BS.load_board(db)
         self.assertEqual("restored-only", fresh["tasks"]["r1"]["text"])
@@ -444,8 +469,7 @@ class QueueBodyLimitTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.mod = sandbox.load(self.tmp.name, "queue-server.py", MP_MAX_JSON_BYTES="64",
-                                MP_HANDLER_TIMEOUT="5")
+        self.mod = sandbox.load(self.tmp.name, "queue-server.py", MP_MAX_JSON_BYTES="64", MP_HANDLER_TIMEOUT="5")
         server_cls = getattr(self.mod.C, "BoundedThreadingHTTPServer", None)
         if server_cls is None:
             from http.server import ThreadingHTTPServer as server_cls
@@ -459,8 +483,13 @@ class QueueBodyLimitTests(unittest.TestCase):
     def _post(self, path, payload, secret=SECRET):
         so = socket.create_connection(("127.0.0.1", self.port))
         so.settimeout(3)
-        headers = ["POST %s HTTP/1.1" % path, "Host: x", "Content-Type: application/json",
-                   "Content-Length: %d" % len(payload), "Connection: close"]
+        headers = [
+            "POST %s HTTP/1.1" % path,
+            "Host: x",
+            "Content-Type: application/json",
+            "Content-Length: %d" % len(payload),
+            "Connection: close",
+        ]
         if secret:
             headers.append("X-Queue-Secret: %s" % secret)
         so.sendall(("\r\n".join(headers) + "\r\n\r\n").encode() + payload)
@@ -493,13 +522,17 @@ class QueueBodyLimitTests(unittest.TestCase):
 class BindDefaultTests(unittest.TestCase):
     def test_a_fresh_queue_env_binds_loopback(self):
         import sys
+
         sys.path.insert(0, str(ROOT))
         from mypeople import firstrun
+
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "queue.env"
-            with mock.patch.object(firstrun, "CONFIG_PATH", str(path)), \
-                 mock.patch.object(firstrun, "CONFIG_DIR", td), \
-                 mock.patch.dict(os.environ, {}, clear=False):
+            with (
+                mock.patch.object(firstrun, "CONFIG_PATH", str(path)),
+                mock.patch.object(firstrun, "CONFIG_DIR", td),
+                mock.patch.dict(os.environ, {}, clear=False),
+            ):
                 os.environ.pop("BIND_ADDR", None)
                 firstrun.write_queue_env(str(Path(td) / "state"), "claude")
             text = path.read_text()

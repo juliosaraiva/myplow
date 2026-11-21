@@ -3,6 +3,7 @@
 The Boss is spawned without --model, so cloud/claude-settings.json (re-asserted by run.sh on
 every boot) picks the model; a Claude Code older than that model needs answers every turn with a 400 instead.
 """
+
 import json
 import re
 import unittest

@@ -4,6 +4,7 @@ The failure this guards against is silent: `mp proof` accepted a local path, the
 "proof attached", the card stored it, and the page rendered <img src="file:///...">, which no
 browser will load from an http origin. Every layer said success and the CEO saw nothing.
 """
+
 from pathlib import Path
 import tempfile
 import unittest
@@ -25,8 +26,7 @@ class UnservableProofUrlTests(unittest.TestCase):
 
     def test_file_url_is_rejected_with_guidance(self):
         # The exact shape that broke card 5afa0f090b.
-        why = self.srv.unservable_proof_url(
-            "file:///private/tmp/claude-501/scratchpad/after-board.png")
+        why = self.srv.unservable_proof_url("file:///private/tmp/claude-501/scratchpad/after-board.png")
         self.assertTrue(why, "file:// proof must be rejected")
         self.assertIn("mp proof", why, "rejection must tell the agent what to do instead")
 
@@ -38,15 +38,15 @@ class UnservableProofUrlTests(unittest.TestCase):
         self.assertTrue(self.srv.unservable_proof_url(""))
 
     def test_servable_urls_are_allowed(self):
-        for good in ("/todo/proof-file/abc-shot.png",
-                     "http://localhost:9900/?task=5afa0f090b",
-                     "https://github.com/delattre1/mypeople"):
-            self.assertEqual(self.srv.unservable_proof_url(good), "",
-                             "%s must be allowed" % good)
+        for good in (
+            "/todo/proof-file/abc-shot.png",
+            "http://localhost:9900/?task=5afa0f090b",
+            "https://github.com/delattre1/mypeople",
+        ):
+            self.assertEqual(self.srv.unservable_proof_url(good), "", "%s must be allowed" % good)
 
     def test_uploaded_file_url_is_classified_as_image(self):
-        self.assertEqual(
-            self.srv.classify_kind(url="/todo/proof-file/abc-shot.png"), "image")
+        self.assertEqual(self.srv.classify_kind(url="/todo/proof-file/abc-shot.png"), "image")
 
 
 class MultipartRoundTripTests(unittest.TestCase):
@@ -74,15 +74,16 @@ class MultipartRoundTripTests(unittest.TestCase):
                 captured["data"] = data
                 captured["headers"] = headers or {}
 
-        with mock.patch.object(self.common.urllib.request, "Request", FakeReq), \
-             mock.patch.object(self.common.urllib.request, "urlopen",
-                               side_effect=OSError("no server")):
-            self.common.http_upload("http://x/todo/proof", {"task_id": "t1", "body": "note"},
-                                    str(src))
+        with (
+            mock.patch.object(self.common.urllib.request, "Request", FakeReq),
+            mock.patch.object(self.common.urllib.request, "urlopen", side_effect=OSError("no server")),
+        ):
+            self.common.http_upload("http://x/todo/proof", {"task_id": "t1", "body": "note"}, str(src))
 
         class FakeHandler:
             def __init__(self, body):
                 import io
+
                 self.rfile = io.BytesIO(body)
                 self.headers = {"Content-Length": str(len(body))}
 
@@ -100,8 +101,7 @@ class MultipartRoundTripTests(unittest.TestCase):
     def test_payload_ending_in_newline_is_not_truncated(self):
         payload = b"\x89PNG\r\n\x1a\ndata\r\n\n"
         _, fileobj = self._round_trip(payload)
-        self.assertEqual(fileobj[2], payload,
-                         "trailing CR/LF bytes belong to the file, not the delimiter")
+        self.assertEqual(fileobj[2], payload, "trailing CR/LF bytes belong to the file, not the delimiter")
 
 
 class LocalProofPathTests(unittest.TestCase):
@@ -119,20 +119,18 @@ class LocalProofPathTests(unittest.TestCase):
     def test_file_url_resolves_to_a_path_to_upload(self):
         self.assertEqual(
             self.mp._local_proof_path("file:///private/tmp/scratchpad/after-board.png"),
-            "/private/tmp/scratchpad/after-board.png")
+            "/private/tmp/scratchpad/after-board.png",
+        )
 
     def test_percent_escapes_are_decoded(self):
-        self.assertEqual(self.mp._local_proof_path("file:///tmp/my%20shot.png"),
-                         "/tmp/my shot.png")
+        self.assertEqual(self.mp._local_proof_path("file:///tmp/my%20shot.png"), "/tmp/my shot.png")
 
     def test_plain_path_is_uploaded(self):
         self.assertEqual(self.mp._local_proof_path("/tmp/x/shot.png"), "/tmp/x/shot.png")
 
     def test_http_and_board_urls_stay_links(self):
-        for link in ("http://localhost:9900/?task=1", "https://example.com/a.png",
-                     "/todo/proof-file/abc.png"):
-            self.assertIsNone(self.mp._local_proof_path(link),
-                              "%s must stay a link proof" % link)
+        for link in ("http://localhost:9900/?task=1", "https://example.com/a.png", "/todo/proof-file/abc.png"):
+            self.assertIsNone(self.mp._local_proof_path(link), "%s must stay a link proof" % link)
 
 
 if __name__ == "__main__":

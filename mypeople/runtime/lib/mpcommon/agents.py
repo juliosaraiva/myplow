@@ -89,13 +89,21 @@ def checked_template(default, text):
         raise ValueError("a message cannot be empty")
     lost = [v for v in in_template(REQUIRED_VARIABLES, default) if "{%s}" % v not in text]
     if lost:
-        raise ValueError("not saved: without %s the agent cannot be told who this is, what they said, or how to answer"
-                         % ", ".join("{%s}" % v for v in lost))
+        raise ValueError(
+            "not saved: without %s the agent cannot be told who this is, what they said, or how to answer"
+            % ", ".join("{%s}" % v for v in lost)
+        )
     if "{their_message}" in text:
-        late = [v for v in in_template(IDENTITY_VARIABLES, default) if text.index("{%s}" % v) > text.index("{their_message}")]
+        late = [
+            v
+            for v in in_template(IDENTITY_VARIABLES, default)
+            if text.index("{%s}" % v) > text.index("{their_message}")
+        ]
         if late:
-            raise ValueError("not saved: {their_message} has to come after %s, or what someone sends could arrive first and read like "
-                             "MyPlow's own words" % ", ".join("{%s}" % v for v in late))
+            raise ValueError(
+                "not saved: {their_message} has to come after %s, or what someone sends could arrive first and read like "
+                "MyPlow's own words" % ", ".join("{%s}" % v for v in late)
+            )
     return text
 
 
@@ -105,9 +113,13 @@ def backend_unready(backend):
     gate's job; Codex's is checked here, as it is the one a person picks on its own."""
     name = {"claude": "Claude", "codex": "Codex", "grok": "Grok"}.get(backend, backend)
     if not shutil.which(backend):
-        how = {"claude": "curl -fsSL https://claude.ai/install.sh | bash && claude auth login",
-               "codex": "brew install --cask codex && codex login" if sys.platform == "darwin" else "npm install -g @openai/codex && codex login",
-               "grok": "install the Grok CLI, then grok login"}.get(backend, "install it")
+        how = {
+            "claude": "curl -fsSL https://claude.ai/install.sh | bash && claude auth login",
+            "codex": "brew install --cask codex && codex login"
+            if sys.platform == "darwin"
+            else "npm install -g @openai/codex && codex login",
+            "grok": "install the Grok CLI, then grok login",
+        }.get(backend, "install it")
         return "%s is not installed on this machine. In a terminal, run: %s" % (name, how)
     if backend == "codex":
         try:
@@ -122,10 +134,16 @@ def without_old_name(saved, default):
     """Text saved on 5.22.167 says {trust_stamp}, its one name for the words that say who sent it, {who} for the sender on YouTube and
     {safety_line} for Plow Chat's line that says it is the owner. Read in today's words, so it delivers right and the page can show and
     check it. default: the same message's own words, which have those words before {their_message}."""
-    words = default[:default.find("{their_message}")].rsplit("\n", 1)[-1].replace("{seen_line}", "").rstrip(' "')
-    if "{owner_line}" in default and "{safety_line}" not in default:      # Plow Chat's, then; a message with both keeps both
+    words = default[: default.find("{their_message}")].rsplit("\n", 1)[-1].replace("{seen_line}", "").rstrip(' "')
+    if (
+        "{owner_line}" in default and "{safety_line}" not in default
+    ):  # Plow Chat's, then; a message with both keeps both
         saved = saved.replace("{safety_line}", "{owner_line}")
-    return saved.replace("{who}", "{sender}").replace("{trust_stamp}:", words.rstrip(":") + ":").replace("{trust_stamp}", words)
+    return (
+        saved.replace("{who}", "{sender}")
+        .replace("{trust_stamp}:", words.rstrip(":") + ":")
+        .replace("{trust_stamp}", words)
+    )
 
 
 def _rule_text(plugin):
@@ -140,8 +158,14 @@ def owner_rule(plugin):
     """The owner's own text for what a plugin hands an agent, from the Plugins page, as a line to add to a message. Read per
     message, so an edit needs no restart. The command is why a sender typing the same words cannot pass as the owner."""
     text = _rule_text(plugin)
-    return ("\n(Your owner's rule for this plugin: %s Your MyPlow added this line, not the sender; confirm it by running: "
-            "mp plugins wrap %s)" % (text, plugin)) if text else ""
+    return (
+        (
+            "\n(Your owner's rule for this plugin: %s Your MyPlow added this line, not the sender; confirm it by running: "
+            "mp plugins wrap %s)" % (text, plugin)
+        )
+        if text
+        else ""
+    )
 
 
 def cli_session(pane_pid, run):
@@ -149,7 +173,11 @@ def cli_session(pane_pid, run):
     start time do not. run(shell_line) gives its stdout wherever the pane lives; /proc is for an image with no pgrep.
     "" when it cannot tell."""
     p = str(pane_pid or "").strip()
-    return " ".join(str(run("pgrep -n -P %s || cat /proc/%s/task/%s/children" % (p, p, p)) or "").split()) if p.isdigit() else ""
+    return (
+        " ".join(str(run("pgrep -n -P %s || cat /proc/%s/task/%s/children" % (p, p, p)) or "").split())
+        if p.isdigit()
+        else ""
+    )
 
 
 def give_rule(plugin, session, paste):
@@ -175,7 +203,7 @@ def give_rule(plugin, session, paste):
 
 def card_note(card, frm):
     """What mp send --card adds for the agent it reaches, so the answer lands on the same thread."""
-    return "\n(On card %s. To answer on it: mp send --card %s %s \"...\")" % (card, card, frm)
+    return '\n(On card %s. To answer on it: mp send --card %s %s "...")' % (card, card, frm)
 
 
 def enqueue_notification_route(target_agent, reply_to, message=""):
@@ -185,8 +213,7 @@ def enqueue_notification_route(target_agent, reply_to, message=""):
     token = base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip("=")
 
     def append(routes):
-        routes.append({"token": token, "reply_to": reply_to, "ts": time.time(),
-                       "head": _route_head(message)})
+        routes.append({"token": token, "reply_to": reply_to, "ts": time.time(), "head": _route_head(message)})
         return token, routes
 
     return _locked_notification_routes(target_agent, append)
@@ -235,8 +262,7 @@ def claim_notification_routes(target_agent):
 
     def claim(routes):
         now = time.time()
-        live = [r for r in routes if isinstance(r, dict) and r.get("reply_to")
-                and now - r.get("ts", 0) <= ROUTE_TTL]
+        live = [r for r in routes if isinstance(r, dict) and r.get("reply_to") and now - r.get("ts", 0) <= ROUTE_TTL]
         mine = [r for r in live if r.get("opened")] or [r for r in live if "head" not in r][:1]
         return list(dict.fromkeys(r["reply_to"] for r in mine)), [r for r in live if r not in mine]
 
@@ -246,5 +272,3 @@ def claim_notification_routes(target_agent):
 def tmux_target(aid):
     _, sess, tab = parse_agent_id(aid)
     return "mc-%s:%s" % (sess, tab)
-
-

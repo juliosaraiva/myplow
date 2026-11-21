@@ -8,4 +8,5 @@ agent credential — this package carries none.
 The command is mypeople.cli. The tree it copies onto a machine is mypeople.runtime.
 docs/ARCHITECTURE.md is the map.
 """
+
 __version__ = "5.22.184"

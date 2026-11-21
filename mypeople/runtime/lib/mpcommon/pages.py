@@ -90,6 +90,7 @@ _LOGIN_BANNER_TMPL = """
 </div>
 """
 
+
 def auth_state():
     """This node's login state, as published by the package (firstrun.write_auth_state).
 
@@ -109,8 +110,7 @@ def _login_banner():
     state = auth_state()
     if not state or state.get("authenticated") is not False:
         return ""
-    steps = "".join(
-        "<code>%s</code>" % html.escape(str(line)) for line in (state.get("howto") or []))
+    steps = "".join("<code>%s</code>" % html.escape(str(line)) for line in (state.get("howto") or []))
     return _LOGIN_BANNER_TMPL.replace("__MP_LOGIN_STEPS__", steps)
 
 
@@ -126,7 +126,7 @@ def render_page(html):
     if _FONTS not in html and "</head>" in html:
         html = html.replace("</head>", _FONTS + "</head>", 1)
     banner = _login_banner()
-    if banner and "id=\"mp-login-banner\"" not in html:
+    if banner and 'id="mp-login-banner"' not in html:
         if "<body" in html:
             idx = html.index("<body")
             end = html.index(">", idx) + 1
@@ -134,9 +134,9 @@ def render_page(html):
         else:
             html = banner + html
     chrome = ""
-    if "id=\"mp-nav\"" not in html:
+    if 'id="mp-nav"' not in html:
         chrome += _NAV
-    if "id=\"mp-version-badge\"" not in html:
+    if 'id="mp-version-badge"' not in html:
         chrome += _VERSION_BADGE
     if chrome:
         if "</body>" in html:
@@ -148,5 +148,3 @@ def render_page(html):
     html = html.replace("__TTYD_PORT__", str(CFG["TTYD_BROWSER_PORT"]))
     html = html.replace("__HOST_ID__", CFG["HOST_ID"])
     return html.replace("__MP_VERSION__", "v" + version())
-
-

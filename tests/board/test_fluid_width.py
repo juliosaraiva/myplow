@@ -3,6 +3,7 @@
 A capped column left most of a wide window empty. Reads the shipped stylesheets: a px max-width on a
 page column or on the thread/composer columns brings the fixed width back.
 """
+
 from pathlib import Path
 import re
 import unittest

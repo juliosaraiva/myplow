@@ -3,6 +3,7 @@
 Runs the SHIPPED page script in node against a small DOM and a fake board. It pins what he asked for: "Paired" and never "Verified", no
 separate mark on his own machines, no permission message under You have access to, and Grant, Save, Ask and Revoke reaching the real routes.
 """
+
 import json
 from pathlib import Path
 import re
@@ -14,8 +15,8 @@ import unittest
 BIN = Path(__file__).resolve().parents[2] / "mypeople" / "runtime" / "bin"
 HTML = (BIN / "access.html").read_text()
 BOX = (BIN / "textbox.js").read_text()
-SCRIPT = BOX + HTML[HTML.index("<script>\n") + 9:HTML.rindex("</script>")]
-IDS = re.findall(r'id="([\w-]+)"', HTML[HTML.index("<body"):HTML.index("<script")])
+SCRIPT = BOX + HTML[HTML.index("<script>\n") + 9 : HTML.rindex("</script>")]
+IDS = re.findall(r'id="([\w-]+)"', HTML[HTML.index("<body") : HTML.index("<script")])
 
 DOM = r"""
 class N{constructor(t){this.tagName=t.toUpperCase();this.children=[];this.attrs={};this.dataset={};this.className="";this._text="";this.value="";this.parent=null;this.style={}}
@@ -33,7 +34,9 @@ const ids={};const listeners={};
 const window=globalThis;const document={createTextNode:t=>String(t),createElement:t=>new N(t),getElementById:i=>ids[i]||(ids[i]=new N("div")),activeElement:null,addEventListener:(t,f)=>{listeners[t]=f}};
 for(const i of __IDS__){document.getElementById(i)}if(ids.find)ids.find.tagName="INPUT";
 """
-HARNESS = DOM + r"""const {TextEncoder}=require("util"),crypto=require("crypto");const posts=[];const FAKE=__STATE__;
+HARNESS = (
+    DOM
+    + r"""const {TextEncoder}=require("util"),crypto=require("crypto");const posts=[];const FAKE=__STATE__;
 const fetch=async(u,o)=>{if(o&&o.method==="POST"){const b=JSON.parse(o.body),op=u.split("/").pop();posts.push([op,b]);return{ok:true,status:200,json:async()=>op==="line"?{line:"mp pair mpp-SECRET",minutes:5}:FAKE}}return{ok:true,status:200,json:async()=>FAKE}};
 let copied="";const navigator={clipboard:{writeText:async t=>{copied=t}}};const setInterval=()=>0;
 const all=()=>{const o=[];for(const i of __IDS__)ids[i]&&(o.push(ids[i]),ids[i].walk(c=>o.push(c)));return o};
@@ -76,28 +79,80 @@ __SCRIPT__
  R.qr={short:M("hello"),real:M(__REAL__)};R.tooLong=qrMatrix("x".repeat(1000));
  R.all=page();R.posts=posts;console.log(JSON.stringify(R));process.exit(0)})().catch(e=>{console.error(e);process.exit(1)});
 """
+)
 
-REAL = "mp pair mpp-" + "A" * 228 + "  # asks daniels-MacBook-Pro-2's owner to let this MyPlow message theirs; they grant or decline; undo with: mp pair rm daniels-MacBook-Pro-2"
+REAL = (
+    "mp pair mpp-"
+    + "A" * 228
+    + "  # asks daniels-MacBook-Pro-2's owner to let this MyPlow message theirs; they grant or decline; undo with: mp pair rm daniels-MacBook-Pro-2"
+)
 JORDAN = "[from {sender}, on another MyPlow] {their_message}\n(Jordan's text. Answer with {reply_command}. {safety_line} Confirm: {confirm_command})"
-STATE = {"host": "me",
-         "requests": [{"host": "riley-mbp", "name": "Riley", "say": "I am Riley's agent.", "at": 1}],
-         "granted": [{"host": "jordan-air", "name": "Jordan", "said": "", "waiting": False, "text": "Jordan's text.", "asking": False, "template": JORDAN, "defaults": JORDAN,
-                      "required": ["their_message", "sender", "reply_command"], "warned": ["safety_line", "confirm_command"], "identity": ["sender"], "both": True},
-                     {"host": "lin-1", "name": "lin-1", "said": "", "waiting": False, "text": "", "asking": True, "template": "[from {sender}, on another MyPlow] {their_message}",
-                      "defaults": "[from {sender}, on another MyPlow] {their_message}", "required": ["their_message", "sender"], "warned": [], "identity": ["sender"], "both": False}],
-         "reach": [{"host": "casey-mini", "name": "Casey", "said": "Asking about logs.", "waiting": False, "text": "Hidden text.", "asking": False, "both": True},
-                   {"host": "morgan-box", "name": "Morgan", "said": "Hi.", "waiting": True, "text": "", "asking": False}],
-         "ended": ["taylor-pc"], "service": "off"}
+STATE = {
+    "host": "me",
+    "requests": [{"host": "riley-mbp", "name": "Riley", "say": "I am Riley's agent.", "at": 1}],
+    "granted": [
+        {
+            "host": "jordan-air",
+            "name": "Jordan",
+            "said": "",
+            "waiting": False,
+            "text": "Jordan's text.",
+            "asking": False,
+            "template": JORDAN,
+            "defaults": JORDAN,
+            "required": ["their_message", "sender", "reply_command"],
+            "warned": ["safety_line", "confirm_command"],
+            "identity": ["sender"],
+            "both": True,
+        },
+        {
+            "host": "lin-1",
+            "name": "lin-1",
+            "said": "",
+            "waiting": False,
+            "text": "",
+            "asking": True,
+            "template": "[from {sender}, on another MyPlow] {their_message}",
+            "defaults": "[from {sender}, on another MyPlow] {their_message}",
+            "required": ["their_message", "sender"],
+            "warned": [],
+            "identity": ["sender"],
+            "both": False,
+        },
+    ],
+    "reach": [
+        {
+            "host": "casey-mini",
+            "name": "Casey",
+            "said": "Asking about logs.",
+            "waiting": False,
+            "text": "Hidden text.",
+            "asking": False,
+            "both": True,
+        },
+        {"host": "morgan-box", "name": "Morgan", "said": "Hi.", "waiting": True, "text": "", "asking": False},
+    ],
+    "ended": ["taylor-pc"],
+    "service": "off",
+}
 
 
-PINNED = ("99ccedcf0d82e92a63894c8b42e405a3ac50eafa33ee2ce68fa895813fdcb386", "c1028160c138d9bac909913f1262f9c1870ca52a9e38427d4d4ba192930c42b0")
+PINNED = (
+    "99ccedcf0d82e92a63894c8b42e405a3ac50eafa33ee2ce68fa895813fdcb386",
+    "c1028160c138d9bac909913f1262f9c1870ca52a9e38427d4d4ba192930c42b0",
+)
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
 class AccessTab(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        js = HARNESS.replace("__IDS__", json.dumps(IDS)).replace("__STATE__", json.dumps(STATE)).replace("__REAL__", json.dumps(REAL)).replace("__SCRIPT__", SCRIPT)
+        js = (
+            HARNESS.replace("__IDS__", json.dumps(IDS))
+            .replace("__STATE__", json.dumps(STATE))
+            .replace("__REAL__", json.dumps(REAL))
+            .replace("__SCRIPT__", SCRIPT)
+        )
         with tempfile.NamedTemporaryFile("w", suffix=".js") as f:
             f.write(js)
             f.flush()
@@ -106,7 +161,10 @@ class AccessTab(unittest.TestCase):
         cls.r = json.loads(r.stdout)
 
     def test_tabs_with_counts_open_on_what_waits_for_him(self):
-        self.assertEqual(self.r["firstTabs"], ["Waiting on you 1", "Has access to you 2", "You have access to 2", "Ended 1", "New line"])
+        self.assertEqual(
+            self.r["firstTabs"],
+            ["Waiting on you 1", "Has access to you 2", "You have access to 2", "Ended 1", "New line"],
+        )
         self.assertEqual(self.r["firstOn"], "Waiting on you 1")
         self.assertIn("hot", self.r["hot"])
 
@@ -126,7 +184,9 @@ class AccessTab(unittest.TestCase):
         self.assertTrue(self.r["unchangedHidden"], "Save and Discard appear only when changed")
         self.assertTrue(self.r["lostOff"] and self.r["lostSays"] and self.r["lostBack"] and self.r["backOn"])
         self.assertTrue(self.r["replyOff"])
-        self.assertTrue(self.r["senderOff"] and self.r["senderSays"] and self.r["senderBack"], "who sent it comes back first")
+        self.assertTrue(
+            self.r["senderOff"] and self.r["senderSays"] and self.r["senderBack"], "who sent it comes back first"
+        )
         self.assertTrue(self.r["wordsOn"], "the words around it are the owner's")
         self.assertTrue(self.r["orderOff"] and self.r["orderSays"] and self.r["orderFixed"] and self.r["orderOn"])
         self.assertTrue(self.r["warnOn"] and self.r["warnSays"] and self.r["warnBack"])
@@ -160,7 +220,10 @@ class AccessTab(unittest.TestCase):
         self.assertTrue(self.r["reachRevoke"])
 
     def test_find_narrows_every_count_and_arrows_move_between_people(self):
-        self.assertEqual(self.r["foundTabs"], ["Waiting on you 0", "Has access to you 1", "You have access to 0", "Ended 0", "New line"])
+        self.assertEqual(
+            self.r["foundTabs"],
+            ["Waiting on you 0", "Has access to you 1", "You have access to 0", "Ended 0", "New line"],
+        )
         self.assertEqual((self.r["afterDown"], self.r["afterUp"]), ("lin-1", "Jordan"))
 
     def test_every_action_reaches_its_route_and_revoke_takes_a_second_click(self):

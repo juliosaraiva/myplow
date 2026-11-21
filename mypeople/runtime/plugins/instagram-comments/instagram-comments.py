@@ -34,6 +34,7 @@ Config (env, or the file MYPEOPLE_CONFIG_PATH names, default ~/.config/mypeople/
     instagram-comments.py serve    receive + deliver forever (what supervise.sh / systemd runs)
     instagram-comments.py status   pending spool and whether the agent is up
 """
+
 import hashlib
 import hmac
 import json
@@ -51,23 +52,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bin"))
-INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME")
-               or Path.home() / ".local/share/mypeople")
+INSTALL = Path(
+    os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME") or Path.home() / ".local/share/mypeople"
+)
 STATE_DIR = Path(os.environ.get("INSTAGRAM_COMMENTS_STATE_DIR") or INSTALL / "state" / "instagram-comments")
 SPOOL = STATE_DIR / "spool.jsonl"
 SEEN = STATE_DIR / "seen.json"
 GRAPH = "https://graph.facebook.com/v21.0/"
-RETRY_SECS = 30   # only while something is undelivered; an empty spool waits for the next push
+RETRY_SECS = 30  # only while something is undelivered; an empty spool waits for the next push
 SNIPPET = 400
 AGENT_DIR = Path(__file__).resolve().parent / "agent"
 IMAGE = "mypeople-instagram-agent"
 # The agent's CLI: how it starts, which login it needs, and what its tab shows once it takes input.
 BACKENDS = {
-    "grok": {"cmd": "grok --permission-mode bypassPermissions -m {model}", "model": "grok-4.7",
-             "creds": (".grok/auth.json", "/home/node/.grok/auth.json"), "ready": "always-approve"},
-    "claude": {"cmd": "claude --dangerously-skip-permissions --model {model}", "model": "claude-opus-5-5",
-               "creds": (".claude/.credentials.json", "/home/node/.claude/.credentials.json"),
-               "ready": "bypass permissions on"},
+    "grok": {
+        "cmd": "grok --permission-mode bypassPermissions -m {model}",
+        "model": "grok-4.7",
+        "creds": (".grok/auth.json", "/home/node/.grok/auth.json"),
+        "ready": "always-approve",
+    },
+    "claude": {
+        "cmd": "claude --dangerously-skip-permissions --model {model}",
+        "model": "claude-opus-5-5",
+        "creds": (".claude/.credentials.json", "/home/node/.claude/.credentials.json"),
+        "ready": "bypass permissions on",
+    },
 }
 LOCK = threading.Lock()
 WAKE = threading.Event()
@@ -113,17 +122,27 @@ def comments_in(payload, own_id):
             who = v.get("from") or {}
             if own_id and str(who.get("id")) == str(own_id):
                 continue
-            out.append({"id": str(v["id"]), "text": v.get("text") or "", "user": who.get("username") or "?",
-                        "media": str((v.get("media") or {}).get("id") or "")})
+            out.append(
+                {
+                    "id": str(v["id"]),
+                    "text": v.get("text") or "",
+                    "user": who.get("username") or "?",
+                    "media": str((v.get("media") or {}).get("id") or ""),
+                }
+            )
     return out
 
 
 def format_comment(c, permalink):
     text = " ".join(c["text"].split())
     if len(text) > SNIPPET:
-        text = text[:SNIPPET - 1] + "…"
+        text = text[: SNIPPET - 1] + "…"
     return "[IG REPLY] comment_id=%s user=%s permalink=%s: %s" % (
-        c["id"], c["user"], permalink or "media:" + c["media"], text or "(no text)")
+        c["id"],
+        c["user"],
+        permalink or "media:" + c["media"],
+        text or "(no text)",
+    )
 
 
 # ---------------------------------------------------------------- spool
@@ -164,8 +183,11 @@ def spool_pending():
 
 def spool_drop(ids):
     with LOCK:
-        keep = [l for l in (SPOOL.read_text().splitlines() if SPOOL.exists() else [])
-                if l.strip() and json.loads(l)["id"] not in ids]
+        keep = [
+            l
+            for l in (SPOOL.read_text().splitlines() if SPOOL.exists() else [])
+            if l.strip() and json.loads(l)["id"] not in ids
+        ]
         tmp = SPOOL.with_suffix(".tmp")
         tmp.write_text("".join(l + "\n" for l in keep))
         tmp.replace(SPOOL)
@@ -174,8 +196,9 @@ def spool_drop(ids):
 # ---------------------------------------------------------------- delivery
 def http_json(method, url, body=None, headers=None, timeout=10):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers=dict({"Content-Type": "application/json"}, **(headers or {})))
+    req = urllib.request.Request(
+        url, data=data, method=method, headers=dict({"Content-Type": "application/json"}, **(headers or {}))
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -186,7 +209,7 @@ def permalink(media_id, cache={}):
             q = urllib.parse.urlencode({"fields": "permalink", "access_token": cfg("INSTAGRAM_TOKEN")})
             cache[media_id] = http_json("GET", GRAPH + media_id + "?" + q).get("permalink", "")
         except Exception:
-            return ""   # not cached: the next comment on this post tries again
+            return ""  # not cached: the next comment on this post tries again
     return cache.get(media_id, "")
 
 
@@ -213,11 +236,21 @@ def create_agent(name):
         shutil.copytree(AGENT_DIR, ctx, dirs_exist_ok=True)
         shutil.copy(cfg("INSTAGRAM_AGENT_PERSONA"), Path(ctx) / "persona.md")
         docker("build", "-q", "-t", IMAGE, ctx)
-    docker("create", "--name", name, "--restart", "unless-stopped",
-           "-e", "META_ACCESS_TOKEN=" + cfg("INSTAGRAM_TOKEN"), "-e", "IG_AGENT_CMD=" + b["cmd"], IMAGE)
+    docker(
+        "create",
+        "--name",
+        name,
+        "--restart",
+        "unless-stopped",
+        "-e",
+        "META_ACCESS_TOKEN=" + cfg("INSTAGRAM_TOKEN"),
+        "-e",
+        "IG_AGENT_CMD=" + b["cmd"],
+        IMAGE,
+    )
     host_file, box_file = b["creds"]
     creds = json.loads(Path(cfg("INSTAGRAM_AGENT_CREDENTIALS") or Path.home() / host_file).read_text())
-    if "claudeAiOauth" in creds:   # only the Claude login, not the other OAuth grants that file carries
+    if "claudeAiOauth" in creds:  # only the Claude login, not the other OAuth grants that file carries
         creds = {"claudeAiOauth": creds["claudeAiOauth"]}
     with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
         json.dump(creds, f)
@@ -247,17 +280,23 @@ def deliver(text):
         return False
     name = agent_name()
     import mpcommon as C
-    boot = docker("inspect", "-f", "{{.State.StartedAt}}", name, check=False)   # pids repeat from one container start to the next
-    cli = C.cli_session(docker("exec", name, "tmux", "display-message", "-p", "-t", "ig:agent", "#{pane_pid}", check=False),
-                        lambda line: docker("exec", name, "sh", "-c", line, check=False))
+
+    boot = docker(
+        "inspect", "-f", "{{.State.StartedAt}}", name, check=False
+    )  # pids repeat from one container start to the next
+    cli = C.cli_session(
+        docker("exec", name, "tmux", "display-message", "-p", "-t", "ig:agent", "#{pane_pid}", check=False),
+        lambda line: docker("exec", name, "sh", "-c", line, check=False),
+    )
 
     def paste(one):
         """A step that fails raises, which keeps the comment spooled."""
         docker("exec", "-i", name, "tmux", "load-buffer", "-b", "ig", "-", stdin=one)
         docker("exec", name, "tmux", "paste-buffer", "-d", "-b", "ig", "-t", "ig:agent")
-        time.sleep(0.5)   # let the paste land before Enter, or Claude takes it as a newline
+        time.sleep(0.5)  # let the paste land before Enter, or Claude takes it as a newline
         docker("exec", name, "tmux", "send-keys", "-t", "ig:agent", "Enter")
         return True
+
     return C.give_rule("instagram-comments", cli and str(boot) + " " + cli, paste) and paste(text)
 
 
@@ -272,7 +311,7 @@ def forward_loop():
                     done.add(c["id"])
                 else:
                     break
-            except Exception as e:   # agent not up yet: keep it spooled, retry later
+            except Exception as e:  # agent not up yet: keep it spooled, retry later
                 log("delivery to %s waiting: %s" % (agent, str(e)[:120]))
                 break
         if done:
@@ -298,8 +337,11 @@ class Hook(BaseHTTPRequestHandler):
 
     def do_GET(self):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        ok = (q.get("hub.mode") == ["subscribe"] and cfg("INSTAGRAM_VERIFY_TOKEN")
-              and hmac.compare_digest(q.get("hub.verify_token", [""])[0], cfg("INSTAGRAM_VERIFY_TOKEN")))
+        ok = (
+            q.get("hub.mode") == ["subscribe"]
+            and cfg("INSTAGRAM_VERIFY_TOKEN")
+            and hmac.compare_digest(q.get("hub.verify_token", [""])[0], cfg("INSTAGRAM_VERIFY_TOKEN"))
+        )
         self.reply(200, q["hub.challenge"][0].encode()) if ok and q.get("hub.challenge") else self.reply(403)
 
     def do_POST(self):
@@ -316,8 +358,13 @@ class Hook(BaseHTTPRequestHandler):
         except ValueError:
             return self.reply(400)
         # One line per push proves Meta is reaching us, even for events we do not forward.
-        fields = sorted({ch.get("field") or "messaging" for e in payload.get("entry") or []
-                         for ch in (e.get("changes") or e.get("messaging") or [{}])})
+        fields = sorted(
+            {
+                ch.get("field") or "messaging"
+                for e in payload.get("entry") or []
+                for ch in (e.get("changes") or e.get("messaging") or [{}])
+            }
+        )
         log("push %s %s: %d new comment(s)" % (payload.get("object"), ",".join(fields), len(fresh)))
         if fresh:
             WAKE.set()
@@ -327,23 +374,38 @@ class Hook(BaseHTTPRequestHandler):
 def main(argv):
     # No default: a bare run started a second, unsupervised serve beside supervise.sh's (discord-chat, Mac 2, 10-30).
     cmd = argv[1] if len(argv) > 1 else ""
-    if cmd == "message":   # the board's Plugins page shows this
-        print(format_comment({"id": "<comment id>", "user": "<who>", "text": "<their comment>", "media": ""}, "<post link>"))
+    if cmd == "message":  # the board's Plugins page shows this
+        print(
+            format_comment(
+                {"id": "<comment id>", "user": "<who>", "text": "<their comment>", "media": ""}, "<post link>"
+            )
+        )
         return 0
     if cmd not in ("serve", "status"):
         raise SystemExit(__doc__)
-    missing = [k for k in ("INSTAGRAM_APP_SECRET", "INSTAGRAM_VERIFY_TOKEN", "INSTAGRAM_USER_ID",
-                           "INSTAGRAM_TOKEN", "INSTAGRAM_AGENT_PERSONA") if not cfg(k)]
+    missing = [
+        k
+        for k in (
+            "INSTAGRAM_APP_SECRET",
+            "INSTAGRAM_VERIFY_TOKEN",
+            "INSTAGRAM_USER_ID",
+            "INSTAGRAM_TOKEN",
+            "INSTAGRAM_AGENT_PERSONA",
+        )
+        if not cfg(k)
+    ]
     if missing:
         log("missing config: " + ", ".join(missing))
         return 2
     if cmd == "status":
-        print("%d comment(s) waiting in %s; agent %s (%s) ready: %s"
-              % (len(spool_pending()), SPOOL, agent_name(), backend()["cmd"], ensure_agent()))
+        print(
+            "%d comment(s) waiting in %s; agent %s (%s) ready: %s"
+            % (len(spool_pending()), SPOOL, agent_name(), backend()["cmd"], ensure_agent())
+        )
         return 0
     port = int(cfg("INSTAGRAM_WEBHOOK_PORT", "8796"))
     try:
-        ensure_agent()   # plugin on means its agent is up, before the first comment arrives
+        ensure_agent()  # plugin on means its agent is up, before the first comment arrives
     except Exception as e:
         log("agent not up yet: %s" % e)
     threading.Thread(target=forward_loop, daemon=True).start()

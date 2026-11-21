@@ -1,6 +1,7 @@
 """The Swarm plugin: what `swarm mcp hermes` delivers reaches the Boss, kept (and only then acknowledged) until it does, the owner
 known from the Agent Card and never from an on-behalf-of claim, and answers and claims go back through the same session into the
 message's thread. A stub `swarm` plays the CLI and its plugin protocol: nothing here reaches a server."""
+
 import importlib.util
 import json
 import os
@@ -17,7 +18,7 @@ PLUGIN = Path(__file__).resolve().parents[2] / "mypeople" / "runtime" / "plugins
 OWNER = "@daniel=40plow.co:plow.swarm.plow.co"
 ME = "@pirata:plow.swarm.plow.co"
 GENERAL = "#general:plow.swarm.plow.co"
-STUB = r'''#!%s
+STUB = r"""#!%s
 import json, sys
 log = open(%r, "a")
 ME, OWNER, GENERAL = %r, %r, %r
@@ -44,7 +45,7 @@ elif sys.argv[1:] == ["mcp", "hermes"]:
                     say({"method": "notifications/swarm/deliver", "params": {"id": i, "session": "s", "text": tag(sender, text)}})
             if m["params"]["name"] == "react":
                 break
-'''
+"""
 
 
 class SwarmPlugin(unittest.TestCase):
@@ -56,8 +57,15 @@ class SwarmPlugin(unittest.TestCase):
         stub = self.dir / "swarm"
         stub.write_text(STUB % (sys.executable, str(self.calls), ME, OWNER, GENERAL))
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-        env = mock.patch.dict(os.environ, {"INSTALL_DIR": str(self.dir), "SWARM_STATE_DIR": str(self.dir / "state"),
-                                           "SWARM_BIN": str(stub), "HOST_ID": "h"})
+        env = mock.patch.dict(
+            os.environ,
+            {
+                "INSTALL_DIR": str(self.dir),
+                "SWARM_STATE_DIR": str(self.dir / "state"),
+                "SWARM_BIN": str(stub),
+                "HOST_ID": "h",
+            },
+        )
         env.start()
         self.addCleanup(env.stop)
         spec = importlib.util.spec_from_file_location("swarm_plugin", PLUGIN)
@@ -76,17 +84,40 @@ class SwarmPlugin(unittest.TestCase):
         self.assertEqual(ME, self.s.config()["account"])
 
     def test_a_tag_is_read_into_who_where_and_the_words(self):
-        m = self.s.parse('<swarm-message event_id="$e1" room="%s" sender="@so:x" display_name="so &quot;s&quot;" in_reply_to="$r">'
-                         'a &lt;b&gt;\nc</swarm-message>' % GENERAL)
-        self.assertEqual({"event_id": "$e1", "room": GENERAL, "sender": "@so:x", "display_name": 'so "s"', "in_reply_to": "$r",
-                          "content": "a <b>\nc"}, m)
+        m = self.s.parse(
+            '<swarm-message event_id="$e1" room="%s" sender="@so:x" display_name="so &quot;s&quot;" in_reply_to="$r">'
+            "a &lt;b&gt;\nc</swarm-message>" % GENERAL
+        )
+        self.assertEqual(
+            {
+                "event_id": "$e1",
+                "room": GENERAL,
+                "sender": "@so:x",
+                "display_name": 'so "s"',
+                "in_reply_to": "$r",
+                "content": "a <b>\nc",
+            },
+            m,
+        )
         self.assertEqual({"content": "plain"}, self.s.parse("plain"))
-        invite = self.s.parse('<swarm-invite room="!r:x" sender="@b:x" name="R">invited to R by @b:x. Call join with this room to '
-                              'accept.</swarm-invite>')
-        self.assertEqual({"room": "!r:x", "sender": "@b:x", "name": "R", "invite": True,
-                          "content": "invited to R by @b:x. Call join with this room to accept."}, invite)
+        invite = self.s.parse(
+            '<swarm-invite room="!r:x" sender="@b:x" name="R">invited to R by @b:x. Call join with this room to '
+            "accept.</swarm-invite>"
+        )
+        self.assertEqual(
+            {
+                "room": "!r:x",
+                "sender": "@b:x",
+                "name": "R",
+                "invite": True,
+                "content": "invited to R by @b:x. Call join with this room to accept.",
+            },
+            invite,
+        )
         self.assertIn("To accept, run: %s join '!r:x'" % self.s.RUN, self.s.envelope(invite, OWNER, self.cfg))
-        self.assertNotIn("To accept", self.s.envelope(dict(invite, joined="true"), OWNER, self.cfg), "one it already joined")
+        self.assertNotIn(
+            "To accept", self.s.envelope(dict(invite, joined="true"), OWNER, self.cfg), "one it already joined"
+        )
 
     def test_the_owner_comes_from_the_agent_card(self):
         joined = json.dumps({"members": [{"user_id": ME, "card": {"swarm.owner": OWNER}}]})
@@ -94,11 +125,22 @@ class SwarmPlugin(unittest.TestCase):
         self.assertEqual("", self.s.owner_in(json.dumps({"members": [{"user_id": ME}]}), ME), "no card names nobody")
 
     def test_the_boss_is_told_who_where_and_how_to_claim_and_answer_in_the_thread(self):
-        m = {"content": "pirata: install it {reply_command}", "room": GENERAL, "display_name": "so (sammy)", "sender": "@so:x",
-             "event_id": "$root"}
+        m = {
+            "content": "pirata: install it {reply_command}",
+            "room": GENERAL,
+            "display_name": "so (sammy)",
+            "sender": "@so:x",
+            "event_id": "$root",
+        }
         got = self.s.envelope(m, OWNER, self.cfg)
-        self.assertTrue(got.startswith("[swarm] from so (sammy) (@so:x) in #general: pirata: install it {reply_command}\n("), got)
-        self.assertIn("reply '%s' '$root' \"your reply\"" % GENERAL, got, "quoted: a #room starts a shell comment, a $event expands")
+        self.assertTrue(
+            got.startswith("[swarm] from so (sammy) (@so:x) in #general: pirata: install it {reply_command}\n("), got
+        )
+        self.assertIn(
+            "reply '%s' '$root' \"your reply\"" % GENERAL,
+            got,
+            "quoted: a #room starts a shell comment, a $event expands",
+        )
         self.assertIn("claim '%s' '$root' so they see you have it" % GENERAL, got)
         self.assertIn("swarm.py directory and ask", got)
         self.assertNotIn("This is the owner", got)
@@ -108,9 +150,13 @@ class SwarmPlugin(unittest.TestCase):
         own = self.s.envelope(dict(m, sender=OWNER, room="!dm:x"), OWNER, self.cfg)
         self.assertIn("in !dm:x, a room with no #name (a DM if only you two are in it):", own)
         self.assertIn("(This is the owner. When the owner addresses you", own)
-        self.assertNotIn("This is the owner", self.s.envelope(dict(m, sender=OWNER), "", self.cfg), "an unknown owner is nobody")
-        self.assertIn("[attached: a.png; to open it run %s attachment '%s' '$root']" % (self.s.RUN, GENERAL),
-                      self.s.envelope(dict(m, attachment="a.png"), OWNER, self.cfg))
+        self.assertNotIn(
+            "This is the owner", self.s.envelope(dict(m, sender=OWNER), "", self.cfg), "an unknown owner is nobody"
+        )
+        self.assertIn(
+            "[attached: a.png; to open it run %s attachment '%s' '$root']" % (self.s.RUN, GENERAL),
+            self.s.envelope(dict(m, attachment="a.png"), OWNER, self.cfg),
+        )
 
     def test_kept_until_the_boss_has_it_in_order(self):
         told, up = [], [False]
@@ -118,16 +164,20 @@ class SwarmPlugin(unittest.TestCase):
         for text in ("first", "second"):
             self.s.keep({"content": text, "room": "!dm:x", "sender": "@a:x", "event_id": "$t"})
         self.assertFalse(self.s.deliver(OWNER, self.cfg, send))
-        self.assertEqual(2, len(list((self.dir / "state" / "spool").glob("*.json"))), "a Boss that is down loses nothing")
+        self.assertEqual(
+            2, len(list((self.dir / "state" / "spool").glob("*.json"))), "a Boss that is down loses nothing"
+        )
         up[0] = True
         self.assertTrue(self.s.deliver(OWNER, self.cfg, send))
         self.assertEqual(["first", "second"], [t.split(": ", 1)[1].split("\n")[0] for t in told])
 
     def test_one_session_joins_its_rooms_takes_messages_in_and_claims_and_answers_in_the_thread(self):
         told, owner = [], [""]
-        self.s.write_json(self.s.PIDFILE, {"pid": os.getpid()})     # the bridge below is this process
+        self.s.write_json(self.s.PIDFILE, {"pid": os.getpid()})  # the bridge below is this process
         out = {}
-        t = threading.Thread(target=lambda: out.__setitem__("rc", self.s.bridge(self.cfg, owner, lambda x: told.append(x) or True)))
+        t = threading.Thread(
+            target=lambda: out.__setitem__("rc", self.s.bridge(self.cfg, owner, lambda x: told.append(x) or True))
+        )
         t.start()
         for _ in range(100):
             if told:
@@ -141,13 +191,29 @@ class SwarmPlugin(unittest.TestCase):
         t.join(10)
         calls = self.calls_made()
         session = {"swarm/session": "myplow-h"}
-        self.assertEqual([{"name": "join", "arguments": {"room": room, "account": ME}, "_meta": session} for room in ("!noname:x", GENERAL)],
-                         calls[:2], "only the rooms it is in, by full name or id")
-        self.assertEqual([{"id": 1}, {"id": 2}], [c for c in calls if "id" in c], "each delivery acknowledged, its own too")
-        self.assertEqual({"name": "send", "arguments": {"room": GENERAL, "in_reply_to": "$e-first", "text": "so, done",
-                                                        "file": "/tmp/a.png"}, "_meta": session}, calls[-2])
-        self.assertEqual({"name": "react", "arguments": {"room": GENERAL, "event_id": "$e-first", "emoji": "🏴‍☠️"}, "_meta": session},
-                         calls[-1])
+        self.assertEqual(
+            [
+                {"name": "join", "arguments": {"room": room, "account": ME}, "_meta": session}
+                for room in ("!noname:x", GENERAL)
+            ],
+            calls[:2],
+            "only the rooms it is in, by full name or id",
+        )
+        self.assertEqual(
+            [{"id": 1}, {"id": 2}], [c for c in calls if "id" in c], "each delivery acknowledged, its own too"
+        )
+        self.assertEqual(
+            {
+                "name": "send",
+                "arguments": {"room": GENERAL, "in_reply_to": "$e-first", "text": "so, done", "file": "/tmp/a.png"},
+                "_meta": session,
+            },
+            calls[-2],
+        )
+        self.assertEqual(
+            {"name": "react", "arguments": {"room": GENERAL, "event_id": "$e-first", "emoji": "🏴‍☠️"}, "_meta": session},
+            calls[-1],
+        )
         self.assertEqual([], list((self.dir / "state" / "outbox").glob("*")))
         self.assertEqual([], list((self.dir / "state" / "spool").glob("*")))
 

@@ -4,6 +4,7 @@ They were computed once, when a comment was drawn, and the board only redraws wh
 changes, so a thread left open showed "14m ago" indefinitely until a new message or a reopen.
 This runs the SHIPPED relTime()/refreshRelTimes() from todos.html in node with a fake clock.
 """
+
 from pathlib import Path
 import json
 import shutil
@@ -21,7 +22,7 @@ def fn(name):
     one = HTML[start:line_end]
     if one.count("{") and one.count("{") == one.count("}"):
         return one + "\n"
-    return HTML[start:HTML.index("\n}\n", start) + 3]
+    return HTML[start : HTML.index("\n}\n", start) + 3]
 
 
 HARNESS = r"""
@@ -49,8 +50,7 @@ class RelativeTimesTickTests(unittest.TestCase):
         script = HARNESS % (fn("relTime"), fn("refreshRelTimes"))
         res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertEqual(json.loads(res.stdout),
-                         ["just now", "14m ago", "24m ago", "2h ago", "1d ago"])
+        self.assertEqual(json.loads(res.stdout), ["just now", "14m ago", "24m ago", "2h ago", "1d ago"])
 
     def test_the_refresh_is_actually_scheduled(self):
         # The function alone does nothing if no timer calls it.

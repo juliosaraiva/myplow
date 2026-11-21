@@ -9,6 +9,7 @@ new message, about five minutes in the live run). The login alone is meant to st
 Pinned here: bundle-runtime.sh installs the launcher into bin/, the launcher runs the real CLI out of the bundle's own layout
 (bin/, python/bin/python3, pylib/), and the app puts runtime/bin on the PATH the supervisor inherits.
 """
+
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,7 +29,9 @@ def fake_runtime(tmp):
     (rt / "pylib").mkdir()
     (rt / "pylib" / "mypeople").symlink_to(ROOT / "mypeople")
     py = rt / "python" / "bin" / "python3"
-    py.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')   # a wrapper: the test's own interpreter, whatever its prefix
+    py.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "$@"\n'
+    )  # a wrapper: the test's own interpreter, whatever its prefix
     py.chmod(0o755)
     shutil.copy(SCRIPTS / "mypeople-launcher.sh", rt / "bin" / "mypeople")
     (rt / "bin" / "mypeople").chmod(0o755)
@@ -44,8 +47,14 @@ class BundleLauncherTests(unittest.TestCase):
     def test_launcher_runs_the_real_cli_from_the_bundle_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt = fake_runtime(tmp)
-            env = {"PATH": "/usr/bin:/bin", "HOME": tmp}   # empty environment: no PYTHONPATH, no claude, no login
-            r = subprocess.run([str(rt / "bin" / "mypeople"), "no-such-subcommand"], env=env, capture_output=True, text=True, timeout=60)
+            env = {"PATH": "/usr/bin:/bin", "HOME": tmp}  # empty environment: no PYTHONPATH, no claude, no login
+            r = subprocess.run(
+                [str(rt / "bin" / "mypeople"), "no-such-subcommand"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
             self.assertIn("MyPlow CLI", r.stdout + r.stderr, "the launcher did not reach mypeople.cli")
             self.assertNotIn("Traceback", r.stderr)
 
@@ -53,8 +62,16 @@ class BundleLauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rt = fake_runtime(tmp)
             env = {"PATH": "/usr/bin:/bin", "HOME": tmp}
-            r = subprocess.run([str(rt / "bin" / "mypeople"), "auth-check", "--quiet"], env=env, capture_output=True, text=True, timeout=120)
-            self.assertIn(r.returncode, (0, 1), r.stderr[-300:])   # 0 = logged in, 1 = not: a crash (127, 2, a traceback) would open the gate
+            r = subprocess.run(
+                [str(rt / "bin" / "mypeople"), "auth-check", "--quiet"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertIn(
+                r.returncode, (0, 1), r.stderr[-300:]
+            )  # 0 = logged in, 1 = not: a crash (127, 2, a traceback) would open the gate
             self.assertNotIn("Traceback", r.stderr)
 
     def test_the_app_puts_runtime_bin_on_the_supervisors_path(self):

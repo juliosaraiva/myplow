@@ -25,9 +25,7 @@ def words(text: str) -> set[str]:
 
 async def check() -> None:
     settings = load()
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=180)
-    ) as client:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as client:
         async with client.get(settings.stt_url + "/stats") as response:
             response.raise_for_status()
             before = await response.json()
@@ -38,9 +36,7 @@ async def check() -> None:
             first = await response.content.readline()
             baseline = json.loads(first.decode().removeprefix("data: "))["text"]
         started = time.monotonic()
-        async with client.post(
-            settings.tts_url + "/speak", json={"text": PHRASE}
-        ) as response:
+        async with client.post(settings.tts_url + "/speak", json={"text": PHRASE}) as response:
             response.raise_for_status()
             wav = await response.read()
         tts_seconds = time.monotonic() - started
@@ -73,15 +69,11 @@ async def check() -> None:
         }
         output = Path(settings.logs)
         output.mkdir(parents=True, exist_ok=True)
-        (output / "teste-voz.json").write_text(
-            json.dumps(result, ensure_ascii=False, indent=2) + "\n"
-        )
+        (output / "teste-voz.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
         (output / "teste-voz.wav").write_bytes(wav)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if not result["passed"]:
-            raise RuntimeError(
-                "O reconhecimento da frase ficou abaixo do mínimo do teste."
-            )
+            raise RuntimeError("O reconhecimento da frase ficou abaixo do mínimo do teste.")
 
 
 if __name__ == "__main__":

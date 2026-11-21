@@ -3,6 +3,7 @@
 It writes ~/.claude.json mcpServers (the release's headless browser, and the owner's Mac through
 Plow Latch only while Plow hands out a relay URL) and one marker block in ~/.claude/CLAUDE.md.
 """
+
 import json
 import os
 import re
@@ -14,7 +15,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = (ROOT / "cloud/run.sh").read_text()
-BLOCK = re.search(r'python3 - "\$R/claude-settings.json" "\$R" "\$LATCH_URL" <<\'EOF\'\n(.*?)\nEOF\n', RUN, re.S).group(1)
+BLOCK = re.search(r'python3 - "\$R/claude-settings.json" "\$R" "\$LATCH_URL" <<\'EOF\'\n(.*?)\nEOF\n', RUN, re.S).group(
+    1
+)
 
 
 class CloudTools(unittest.TestCase):
@@ -28,10 +31,17 @@ class CloudTools(unittest.TestCase):
 
     def boot(self, latch):
         env = dict(os.environ, HOME=self.home)
-        subprocess.run([sys.executable, "-", os.path.join(self.rel, "claude-settings.json"), self.rel, latch],
-                       input=BLOCK, text=True, env=env, check=True)
-        return (json.load(open(os.path.join(self.home, ".claude.json"))).get("mcpServers", {}),
-                Path(self.home, ".claude/CLAUDE.md").read_text())
+        subprocess.run(
+            [sys.executable, "-", os.path.join(self.rel, "claude-settings.json"), self.rel, latch],
+            input=BLOCK,
+            text=True,
+            env=env,
+            check=True,
+        )
+        return (
+            json.load(open(os.path.join(self.home, ".claude.json"))).get("mcpServers", {}),
+            Path(self.home, ".claude/CLAUDE.md").read_text(),
+        )
 
     def test_latch_follows_plow_and_the_note_appears_once(self):
         url = "https://plow-x.int.exe.xyz/v1/relay/devices/owner/mcp"
@@ -61,6 +71,7 @@ class OwnerSkills(unittest.TestCase):
     def install(self, dest, skills, extra=()):
         import io
         import tarfile
+
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             for name in [*("%s/SKILL.md" % s for s in skills), *extra]:

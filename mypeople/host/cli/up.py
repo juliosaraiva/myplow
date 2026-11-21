@@ -28,14 +28,19 @@ def cmd_up(args):
     log = os.path.join(install, "logs", "supervise.out")
     os.makedirs(os.path.dirname(log), exist_ok=True)
     with open(log, "ab") as lf:
-        supervisor = subprocess.Popen(["bash", os.path.join(bindir, "supervise.sh")],
-                                      env=env, stdout=lf, stderr=lf, stdin=subprocess.DEVNULL,
-                                      start_new_session=True, cwd=install)
+        supervisor = subprocess.Popen(
+            ["bash", os.path.join(bindir, "supervise.sh")],
+            env=env,
+            stdout=lf,
+            stderr=lf,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=install,
+        )
     _stamp_serving_version(install)
     print("[myplow] daemons starting (role=%s) ..." % role)
     if not wait_health(cfg):
-        print("[myplow] WARNING: HUD health not ready after 40s; check `mypeople logs`",
-              file=sys.stderr)
+        print("[myplow] WARNING: HUD health not ready after 40s; check `mypeople logs`", file=sys.stderr)
     if backend is None:
         # Login-required mode: the front doors are up and say so, but there is no backend to
         # spawn an agent against yet. boss-supervisor.sh re-checks and starts the Boss on its
@@ -45,9 +50,9 @@ def cmd_up(args):
         # Ensure the Boss deterministically. Existing nodes must resume their persisted session;
         # only a node without a Boss roster entry may create the initial session.
         mp = os.path.join(bindir, "mp")
-        subprocess.run(["python3", mp, "ensure-boss", "%s/main:Boss" % host,
-                        "--backend", backend],
-                       env=env, cwd=install)
+        subprocess.run(
+            ["python3", mp, "ensure-boss", "%s/main:Boss" % host, "--backend", backend], env=env, cwd=install
+        )
     print_urls(cfg)
     if foreground:
         if os.environ.get("MYPEOPLE_CONTAINER") == "1":
@@ -63,8 +68,7 @@ def cmd_up(args):
 def _up_client(cfg, env, bindir, foreground):
     up = os.environ.get("UPSTREAM_QUEUE_URL") or cfg.get("UPSTREAM_QUEUE_URL")
     if not up:
-        print("[myplow] client mode needs UPSTREAM_QUEUE_URL=http://<server-host>:9900",
-              file=sys.stderr)
+        print("[myplow] client mode needs UPSTREAM_QUEUE_URL=http://<server-host>:9900", file=sys.stderr)
         return 2
     upstream_secret = os.environ.get("UPSTREAM_QUEUE_SECRET") or cfg.get("UPSTREAM_QUEUE_SECRET")
     if not upstream_secret:
@@ -97,5 +101,3 @@ def _follow(install, cfg):
         except Exception:
             pass
         print("\n[myplow] detached. `mypeople status` / `mypeople down`.")
-
-

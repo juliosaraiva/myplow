@@ -8,6 +8,7 @@ reads stdin and DOES parse --by; mp send does neither.
 
 --by is the only flag mp comment has, and it must keep working.
 """
+
 import io
 import os
 from pathlib import Path
@@ -39,11 +40,13 @@ class CommentArgvTests(unittest.TestCase):
             sent.update(body or {})
             return 200, {"ok": True, "id": "cid"}
 
-        with mock.patch.object(self.mp.C, "http_json", fake_post), \
-             mock.patch.object(self.mp.sys, "stdin", stdin), \
-             mock.patch.object(self.mp.sys, "stderr", err), \
-             mock.patch.object(self.mp.sys, "stdout", io.StringIO()), \
-             mock.patch.dict(os.environ, {"AGENT_ID": AGENT}, clear=False):
+        with (
+            mock.patch.object(self.mp.C, "http_json", fake_post),
+            mock.patch.object(self.mp.sys, "stdin", stdin),
+            mock.patch.object(self.mp.sys, "stderr", err),
+            mock.patch.object(self.mp.sys, "stdout", io.StringIO()),
+            mock.patch.dict(os.environ, {"AGENT_ID": AGENT}, clear=False),
+        ):
             rc = self.mp.do_comment(argv)
         return rc, (sent.get("body") if sent else None), err.getvalue()
 
@@ -95,7 +98,7 @@ class CommentArgvTests(unittest.TestCase):
         self.assertEqual(body, "long report")
 
     def test_a_bulleted_body_starting_with_a_dash_still_posts(self):
-        """"- item one" is one quoted argument with whitespace, not a bare flag token."""
+        """ "- item one" is one quoted argument with whitespace, not a bare flag token."""
         rc, body, _ = self.comment([CARD, "- item one\n- item two"])
         self.assertEqual(rc, 0)
         self.assertEqual(body, "- item one\n- item two")
@@ -105,8 +108,7 @@ class CommentArgvTests(unittest.TestCase):
         stdin.isatty.return_value = True
         stdin.read.side_effect = AssertionError("read stdin on a tty -- would hang")
         err = io.StringIO()
-        with mock.patch.object(self.mp.sys, "stdin", stdin), \
-             mock.patch.object(self.mp.sys, "stderr", err):
+        with mock.patch.object(self.mp.sys, "stdin", stdin), mock.patch.object(self.mp.sys, "stderr", err):
             rc = self.mp.do_comment([CARD])
         self.assertEqual(rc, 2)
 

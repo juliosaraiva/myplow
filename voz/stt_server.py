@@ -109,14 +109,10 @@ class Recognizer:
             "model": MODEL,
             "device": "Metal",
             "language": "pt-BR",
-            "energy_peak_db": max(
-                (db for t, db in self.levels if t >= now - 1), default=-180
-            ),
+            "energy_peak_db": max((db for t, db in self.levels if t >= now - 1), default=-180),
             "audio_seconds": round(self.audio_seconds, 2),
             "compute_seconds": round(self.compute_seconds, 2),
-            "real_time_factor": round(
-                self.compute_seconds / max(self.audio_seconds, 0.001), 3
-            ),
+            "real_time_factor": round(self.compute_seconds / max(self.audio_seconds, 0.001), 3),
             "metal_memory_mb": round(mx.get_active_memory() / 1048576),
             "uptime_seconds": round(now - self.started),
         }
@@ -147,9 +143,7 @@ async def serve(port: int, lookahead: int) -> None:
         return web.json_response(data)
 
     async def events(request: web.Request) -> web.StreamResponse:
-        response = web.StreamResponse(
-            headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"}
-        )
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"})
         await response.prepare(request)
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
         listeners.add(queue)
@@ -158,11 +152,7 @@ async def serve(port: int, lookahead: int) -> None:
             while True:
                 try:
                     text = await asyncio.wait_for(queue.get(), timeout=10)
-                    payload = (
-                        "data: "
-                        + json.dumps({"text": text}, ensure_ascii=False)
-                        + "\n\n"
-                    )
+                    payload = "data: " + json.dumps({"text": text}, ensure_ascii=False) + "\n\n"
                 except asyncio.TimeoutError:
                     payload = ": keepalive\n\n"
                 await response.write(payload.encode())
@@ -188,11 +178,7 @@ async def serve(port: int, lookahead: int) -> None:
             try:
                 async for message in ws:
                     if message.type == WSMsgType.BINARY:
-                        publish(
-                            await loop.run_in_executor(
-                                executor, recognizer.feed, message.data
-                            )
-                        )
+                        publish(await loop.run_in_executor(executor, recognizer.feed, message.data))
                     elif message.type == WSMsgType.TEXT and message.data == "end":
                         publish(await loop.run_in_executor(executor, recognizer.finish))
                         await ws.send_json({"text": latest, "done": True})
@@ -230,9 +216,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=load_settings().stt_port)
     parser.add_argument("--lookahead", type=int, choices=[0, 3, 6, 13], default=3)
     args = parser.parse_args()
-    logging.basicConfig(
-        level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
     LOG.setLevel(logging.INFO)
     try:
         asyncio.run(serve(args.port, args.lookahead))

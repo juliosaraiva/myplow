@@ -1,4 +1,5 @@
 """The voice plugin offline: captions in, one message per thought to the Boss, its own voice dropped."""
+
 import io
 import os
 import subprocess
@@ -22,17 +23,17 @@ class Voice(unittest.TestCase):
         th = self.v.Thoughts()
         th.update("old talk before the plugin started", 0.0)
         th.update("old talk before the plugin started conta uma", 1.0)
-        th.update("old talk before the plugin started conta uma piada de pirata", 1.8)   # a mid-thought pause
-        self.assertIsNone(th.due(3.4))   # no sentence end yet: 1.6 s is a pause, not the end (11-01)
+        th.update("old talk before the plugin started conta uma piada de pirata", 1.8)  # a mid-thought pause
+        self.assertIsNone(th.due(3.4))  # no sentence end yet: 1.6 s is a pause, not the end (11-01)
         self.assertEqual(th.due(5.4), "conta uma piada de pirata")
-        self.assertIsNone(th.due(12.0))   # sent once
+        self.assertIsNone(th.due(12.0))  # sent once
 
     def test_trimmed_buffer_never_resends(self):
         th = self.v.Thoughts()
         th.update("", 0.0)
         th.update("primeira frase que eu falei aqui na live.", 1.0)
         self.assertEqual(th.due(3.0), "primeira frase que eu falei aqui na live.")
-        th.update("eu falei aqui na live. e agora a segunda", 4.0)   # the caption server trimmed its front
+        th.update("eu falei aqui na live. e agora a segunda", 4.0)  # the caption server trimmed its front
         self.assertEqual(th.due(8.0), "e agora a segunda")
 
     def test_hard_cap_ships_a_thought_that_never_pauses(self):
@@ -46,9 +47,12 @@ class Voice(unittest.TestCase):
         """Real 10-31 lines: the echo of a spoken reply drops; two of his lines that shared only filler words pass."""
         Path(self.state, "said.txt").write_text(
             "Ainda não. Hoje eu não consigo mandar mensagem em grupo pelo seu WhatsApp. Dá pra configurar, e você "
-            "aprova o texto antes de eu enviar.\nEu tava conferindo se já tenho acesso ao seu WhatsApp.\n")
+            "aprova o texto antes de eu enviar.\nEu tava conferindo se já tenho acesso ao seu WhatsApp.\n"
+        )
         self.assertTrue(self.v.is_echo("pelo seu WhatsApp configurar e você aprova um texto antes de eu enviar."))
-        self.assertFalse(self.v.is_echo("Cara, qual que é esse agente que eu tô conversando? É melhor rotear do boss ao i"))
+        self.assertFalse(
+            self.v.is_echo("Cara, qual que é esse agente que eu tô conversando? É melhor rotear do boss ao i")
+        )
         self.assertFalse(self.v.is_echo("ONDER, tolhando histórico para mandar do jeito que já foi feito."))
         old = time.time() - 120
         os.utime(Path(self.state, "said.txt"), (old, old))
@@ -56,25 +60,38 @@ class Voice(unittest.TestCase):
 
     def test_garbled_echo_dropped(self):
         """10-31: this echo matched 10 of 21 word pairs and reached the Boss as his speech."""
-        Path(self.state, "said.txt").write_text("Beleza, a gente liga o WebSocket do OBS pra você agora. E no AbacatePay: "
-                                                "posso eu mesmo ativar o 2FA e guardar o segredo no cofre dos agentes?\n")
-        self.assertTrue(self.v.is_echo("pra você agora e numa batate pari possui o mesmo ativar o dois FA e guardar "
-                                       "o segredo no órgão dos agentes"))
+        Path(self.state, "said.txt").write_text(
+            "Beleza, a gente liga o WebSocket do OBS pra você agora. E no AbacatePay: "
+            "posso eu mesmo ativar o 2FA e guardar o segredo no cofre dos agentes?\n"
+        )
+        self.assertTrue(
+            self.v.is_echo(
+                "pra você agora e numa batate pari possui o mesmo ativar o dois FA e guardar "
+                "o segredo no órgão dos agentes"
+            )
+        )
 
     def test_mic_stays_open_while_speaking_his_words_kept_speaker_stripped(self):
         """11-01 real case: Daniel tested the mic while the Boss spoke; the old mute dropped 'Vamos testar então se
         você recebe tudo'. Now his words stay and only the speaker's (said.txt) are stripped at send."""
         th = self.v.Thoughts()
         th.update("", 0.0)
-        th.update("ei Boss liga o OBS", 1.0)                                                   # his, not yet sent
+        th.update("ei Boss liga o OBS", 1.0)  # his, not yet sent
         th.update("ei Boss liga o OBS o Madu agora suas frases chegam inteiras", 2.0, muted=True)  # speaker starts
-        self.assertEqual(th.due(2.1), "ei Boss liga o OBS")                                    # his, at once
+        self.assertEqual(th.due(2.1), "ei Boss liga o OBS")  # his, at once
         self.assertTrue(th.before_speaker)
-        th.update("ei Boss liga o OBS o Madu agora suas frases chegam inteiras, pode testar. Vamos testar então se "
-                  "você recebe tudo", 4.0, muted=True)
+        th.update(
+            "ei Boss liga o OBS o Madu agora suas frases chegam inteiras, pode testar. Vamos testar então se "
+            "você recebe tudo",
+            4.0,
+            muted=True,
+        )
         th.in_speaker = False
-        th.update("ei Boss liga o OBS o Madu agora suas frases chegam inteiras, pode testar. Vamos testar então se "
-                  "você recebe tudo que eu falar.", 5.0)
+        th.update(
+            "ei Boss liga o OBS o Madu agora suas frases chegam inteiras, pode testar. Vamos testar então se "
+            "você recebe tudo que eu falar.",
+            5.0,
+        )
         line = th.due(7.0)
         self.assertTrue(th.was_overlap)
         Path(self.state, "said.txt").write_text("Arrumado: agora suas frases chegam inteiras. Pode testar.\n")
@@ -99,7 +116,7 @@ class Voice(unittest.TestCase):
         model added later shipped as its own line. Daniel: send the whole utterance."""
         th = self.v.Thoughts()
         th.update("", 0.0)
-        th.update("eu ligo faço a ligação se eu ficar me", 1.0)          # he pauses mid-word
+        th.update("eu ligo faço a ligação se eu ficar me", 1.0)  # he pauses mid-word
         self.assertIsNone(th.due(2.5))
         th.update("eu ligo faço a ligação se eu ficar melhor entendi o que você quiser comprar.", 2.7)
         self.assertEqual(th.due(5.0), "eu ligo faço a ligação se eu ficar melhor entendi o que você quiser comprar.")
@@ -108,9 +125,9 @@ class Voice(unittest.TestCase):
         th = self.v.Thoughts()
         th.update("", 0.0)
         th.update("se eu ficar me", 1.0)
-        self.assertEqual(th.due(5.0), "se eu ficar me")                   # a long pause does ship it
+        self.assertEqual(th.due(5.0), "se eu ficar me")  # a long pause does ship it
         th.update("se eu ficar melhor entendi", 6.0)
-        self.assertEqual(th.due(10.0), "melhor entendi")                  # the next line starts with the whole word
+        self.assertEqual(th.due(10.0), "melhor entendi")  # the next line starts with the whole word
 
     def test_words_before_the_speaker_ship_at_once_and_skip_the_echo_filter(self):
         """11-01: held words used to ship glued to the speaker's echo and were dropped with it; and his line was
@@ -118,7 +135,9 @@ class Voice(unittest.TestCase):
         th = self.v.Thoughts()
         th.update("", 0.0)
         th.update("a gente precisa de um agente de criativos", 1.0)
-        th.update("a gente precisa de um agente de criativos combinado vou montar o agente de criativos", 2.0, muted=True)
+        th.update(
+            "a gente precisa de um agente de criativos combinado vou montar o agente de criativos", 2.0, muted=True
+        )
         self.assertEqual(th.due(2.1), "a gente precisa de um agente de criativos")
         self.assertTrue(th.before_speaker)
         Path(self.state, "said.txt").write_text("Combinado, vou montar o agente de criativos que a gente precisa.\n")
@@ -128,9 +147,9 @@ class Voice(unittest.TestCase):
         self.assertEqual(len(sent), 1)
 
     def test_speaking_window(self):
-        Path(self.state, "speaking").write_text("100.0 ")                    # still playing
+        Path(self.state, "speaking").write_text("100.0 ")  # still playing
         self.assertTrue(self.v.speaking(150.0))
-        self.assertFalse(self.v.speaking(200.0))                             # a `say` that died stops muting
+        self.assertFalse(self.v.speaking(200.0))  # a `say` that died stops muting
         Path(self.state, "speaking").write_text("100.0 110.0")
         self.assertTrue(self.v.speaking(112.0))
         self.assertFalse(self.v.speaking(113.0))
@@ -141,7 +160,7 @@ class Voice(unittest.TestCase):
         with mock.patch.object(self.v, "send_to_agent", lambda m, agent=None: sent.append(m) or True):
             self.v.deliver("MP, conta uma piada", "Ana (studio mic)", [""])
         self.assertTrue(sent[0].startswith("[voice] from Ana (studio mic): MP, conta uma piada\n"))
-        self.assertIn(f"{self.v.RUN} say \"your reply\"", sent[0])
+        self.assertIn(f'{self.v.RUN} say "your reply"', sent[0])
         self.assertIn("Answer only when they are talking to you", sent[0])
 
     def test_cue_tells_the_boss_how_it_is_addressed(self):
@@ -158,14 +177,18 @@ class Voice(unittest.TestCase):
         sent, logged = [], []
         line = "uma linha com mais de oitenta caracteres para provar que o log guarda a frase inteira ate o fim"
         self.v.OFF.touch()
-        with mock.patch.object(self.v, "send_to_agent", lambda m, agent=None: sent.append(m) or True), \
-                mock.patch.object(self.v, "log", logged.append):
+        with (
+            mock.patch.object(self.v, "send_to_agent", lambda m, agent=None: sent.append(m) or True),
+            mock.patch.object(self.v, "log", logged.append),
+        ):
             self.v.deliver(line, "Ana", [""])
         self.assertEqual(sent, [])
         self.assertEqual(logged, [f"paused, not sent: {line!r}"])
         self.v.OFF.unlink()
-        with mock.patch.object(self.v, "send_to_agent", lambda m, agent=None: sent.append(m) or True), \
-                mock.patch.object(self.v, "log", logged.append):
+        with (
+            mock.patch.object(self.v, "send_to_agent", lambda m, agent=None: sent.append(m) or True),
+            mock.patch.object(self.v, "log", logged.append),
+        ):
             self.v.deliver("de volta", "Ana", [""])
         self.assertIn("de volta", sent[0])
 
@@ -207,7 +230,9 @@ class Voice(unittest.TestCase):
         self.assertFalse(th.due(now + 0.1))
         rest = th.due(now + 10)
         self.assertTrue(rest.startswith("depois dois0"), rest)
-        self.assertEqual(f"{line} {rest}".split(), [w[0] if isinstance(w, tuple) else w for w in said], "every word once, in order")
+        self.assertEqual(
+            f"{line} {rest}".split(), [w[0] if isinstance(w, tuple) else w for w in said], "every word once, in order"
+        )
 
     def test_cap_with_no_pause_ships_everything_as_before(self):
         th = self.v.Thoughts()
@@ -220,7 +245,7 @@ class Voice(unittest.TestCase):
         th = self.v.Thoughts()
         th.update("", 0.0)
         now = self._speak(th, ["so", ("this", 5.0)] + [f"w{i}" for i in range(50)], 0.0)
-        th.update(th.text + " me", now)            # the model is mid-word: "me" ... "lhor"
+        th.update(th.text + " me", now)  # the model is mid-word: "me" ... "lhor"
         th.update(th.text + "lhor", now + 3.0)
         now = self._speak(th, [f"x{i}" for i in range(40)], now + 3.0)
         line = th.due(now)
@@ -237,8 +262,14 @@ class Voice(unittest.TestCase):
         second = th.due(now + 10)
         self.assertEqual(len(set(first.split()) & set(second.split())), 0, (first, second))
 
-    SWITCH = {"switch": {"off": r"\b(desliga\w*|turn off)\b.{0,20}\b(microfone|mic|voz)\b", "on": r"\b(liga|turn on)\b.{0,20}\b(microfone|mic|voz)\b",
-                         "off_said": "Microfone desligado.", "on_said": "Microfone ligado."}}
+    SWITCH = {
+        "switch": {
+            "off": r"\b(desliga\w*|turn off)\b.{0,20}\b(microfone|mic|voz)\b",
+            "on": r"\b(liga|turn on)\b.{0,20}\b(microfone|mic|voz)\b",
+            "off_said": "Microfone desligado.",
+            "on_said": "Microfone ligado.",
+        }
+    }
 
     def _flip_waits(self, line):
         before = set(self.v.threading.enumerate())
@@ -268,7 +299,12 @@ class Voice(unittest.TestCase):
 
     def test_talk_about_the_mic_is_not_a_switch(self):
         self.v.send_to_agent = lambda *a: self.fail("nothing to tell")
-        for line in ("hoje eu vou te explicar como eu desliga o microfone quando a live termina aqui", "desliga o anúncio", "microfone ligado", ""):
+        for line in (
+            "hoje eu vou te explicar como eu desliga o microfone quando a live termina aqui",
+            "desliga o anúncio",
+            "microfone ligado",
+            "",
+        ):
             self.assertFalse(self._flip_waits(line), line)
         self.assertFalse(self.v.OFF.exists())
         self.assertFalse(self.v.heard_switch("desliga o microfone", {}), "no phrases set: no switch")

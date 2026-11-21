@@ -2,6 +2,7 @@
 
 Runs the SHIPPED page script in node against a small DOM and a fake board, so what it pins is what ships: every action reaches its real route.
 """
+
 import json
 from pathlib import Path
 import re
@@ -14,15 +15,68 @@ from plugins.test_access_page import DOM
 
 BIN = Path(__file__).resolve().parents[2] / "mypeople" / "runtime" / "bin"
 HTML = (BIN / "plugins.html").read_text()
-SCRIPT = (BIN / "textbox.js").read_text() + HTML[HTML.index("<script>\n") + 9:HTML.rindex("</script>")]
-IDS = re.findall(r'id="([\w-]+)"', HTML[HTML.index("<body"):HTML.index("<script")])
-ROWS = [{"name": "plow-chat", "state": "running", "desc": "Texts", "installed": False, "also": ["lab"], "rule": "", "custom": "", "asking": True},
-        {"name": "voice", "state": "down", "desc": "Agents", "installed": False, "also": [], "rule": "", "custom": "", "asking": False},
-        {"name": "github-prs", "state": "off", "desc": "PRs", "installed": False, "also": [], "rule": "", "custom": "", "asking": False},
-        {"name": "web-chat", "state": "not set up", "desc": "Web", "installed": False, "also": [], "rule": "", "custom": "", "asking": False}]
+SCRIPT = (BIN / "textbox.js").read_text() + HTML[HTML.index("<script>\n") + 9 : HTML.rindex("</script>")]
+IDS = re.findall(r'id="([\w-]+)"', HTML[HTML.index("<body") : HTML.index("<script")])
+ROWS = [
+    {
+        "name": "plow-chat",
+        "state": "running",
+        "desc": "Texts",
+        "installed": False,
+        "also": ["lab"],
+        "rule": "",
+        "custom": "",
+        "asking": True,
+    },
+    {
+        "name": "voice",
+        "state": "down",
+        "desc": "Agents",
+        "installed": False,
+        "also": [],
+        "rule": "",
+        "custom": "",
+        "asking": False,
+    },
+    {
+        "name": "github-prs",
+        "state": "off",
+        "desc": "PRs",
+        "installed": False,
+        "also": [],
+        "rule": "",
+        "custom": "",
+        "asking": False,
+    },
+    {
+        "name": "web-chat",
+        "state": "not set up",
+        "desc": "Web",
+        "installed": False,
+        "also": [],
+        "rule": "",
+        "custom": "",
+        "asking": False,
+    },
+]
 PLOW = "[plowchat] from {sender} in {chat}: {their_message}\\nRun {reply_command}. {safety_line} {plow}"
-SAID = {"plow-chat": {"kind": "template", "default": PLOW, "text": PLOW, "required": ["their_message", "sender", "reply_command"], "warned": ["safety_line"], "identity": ["sender"]},
-        "github-prs": {"kind": "yes", "default": "[LOCKED] <their message>", "text": "[LOCKED] <their message>", "required": [], "warned": []}}
+SAID = {
+    "plow-chat": {
+        "kind": "template",
+        "default": PLOW,
+        "text": PLOW,
+        "required": ["their_message", "sender", "reply_command"],
+        "warned": ["safety_line"],
+        "identity": ["sender"],
+    },
+    "github-prs": {
+        "kind": "yes",
+        "default": "[LOCKED] <their message>",
+        "text": "[LOCKED] <their message>",
+        "required": [],
+        "warned": [],
+    },
+}
 RUN = r"""
 const posts=[];const FAKE=__ROWS__,SAID=__SAID__;
 const fetch=async(u,o)=>{if(o&&o.method==="POST"){const b=JSON.parse(o.body);posts.push([u,b]);if(u.endsWith("/set")){const r=FAKE.find(x=>x.name===b.name);r.state=b.on?"running":"off"}return{ok:true,status:200,json:async()=>({plugins:FAKE})}}if(u.endsWith("/messages"))return{ok:true,status:200,json:async()=>({messages:SAID})};return{ok:true,status:200,json:async()=>({plugins:FAKE})}};
@@ -55,7 +109,13 @@ __SCRIPT__
 class PluginsTab(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        js = (DOM + RUN).replace("__IDS__", json.dumps(IDS)).replace("__ROWS__", json.dumps(ROWS)).replace("__SAID__", json.dumps(SAID)).replace("__SCRIPT__", SCRIPT)
+        js = (
+            (DOM + RUN)
+            .replace("__IDS__", json.dumps(IDS))
+            .replace("__ROWS__", json.dumps(ROWS))
+            .replace("__SAID__", json.dumps(SAID))
+            .replace("__SCRIPT__", SCRIPT)
+        )
         with tempfile.NamedTemporaryFile("w", suffix=".js") as f:
             f.write(js)
             f.flush()
@@ -95,8 +155,10 @@ class PluginsTab(unittest.TestCase):
 
     def test_every_action_reaches_its_real_route(self):
         posts = dict((u, b) for u, b in self.r["posts"] if not u.endswith("/connect"))
-        self.assertEqual([b for u, b in self.r["posts"] if u.endswith("/wrap")],
-                         [{"name": "plow-chat", "text": PLOW + " Mine."}, {"name": "github-prs", "text": "My own text."}])
+        self.assertEqual(
+            [b for u, b in self.r["posts"] if u.endswith("/wrap")],
+            [{"name": "plow-chat", "text": PLOW + " Mine."}, {"name": "github-prs", "text": "My own text."}],
+        )
         self.assertEqual(posts["/todo/plugins/wrap-ask"], {"name": "plow-chat", "text": "Be shorter"})
         self.assertEqual(posts["/todo/plugins/set"], {"name": "plow-chat", "on": False})
         connects = [b["text"] for u, b in self.r["posts"] if u.endswith("/connect")]

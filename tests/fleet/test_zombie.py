@@ -4,6 +4,7 @@ is_birth_zombie() authorises killing a window, so a false positive murders a hea
 mid-turn and a false negative leaves a deaf one parked forever. Every clause of the signal triad
 (card 157dcb7c75) gets a test that flips exactly that clause and nothing else.
 """
+
 import json
 import os
 from pathlib import Path
@@ -38,8 +39,10 @@ class BirthZombieTests(unittest.TestCase):
         self.rr = {"agent_id": AID, "backend": "claude", "retired": False, "is_master": False}
         self._window = mock.patch.object(self.mp, "window_exists", return_value=True)
         self._working = mock.patch.object(self.mp, "pane_looks_working", return_value=False)
-        self._window.start(); self.addCleanup(self._window.stop)
-        self._working.start(); self.addCleanup(self._working.stop)
+        self._window.start()
+        self.addCleanup(self._window.stop)
+        self._working.start()
+        self.addCleanup(self._working.stop)
         write_status_file(self.mp, AID, "starting", self.stale_ts)
 
     def verdict(self):
@@ -110,8 +113,10 @@ class SignInScreenTests(unittest.TestCase):
         """#35: a respawn every 90s threw away the device-code login being finished in the pane."""
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            codex = ("Welcome to Codex, OpenAI's command-line coding agent\n"
-                     "> 1. Sign in with ChatGPT\n  2. Sign in with Device Code\n")
+            codex = (
+                "Welcome to Codex, OpenAI's command-line coding agent\n"
+                "> 1. Sign in with ChatGPT\n  2. Sign in with Device Code\n"
+            )
             for pane, busy in ((codex, True), ("Select login method:", True), ("> ", False)):
                 with mock.patch.object(mp.C, "tmux_capture", return_value=pane):
                     self.assertEqual(busy, mp.pane_looks_working(AID), pane)
@@ -127,17 +132,20 @@ class ReconcileKillRaceTests(unittest.TestCase):
             revived = []
 
             def revive(argv):
-                if argv == [one]:   # while eng-1 is being brought back, the Boss kills eng-2
+                if argv == [one]:  # while eng-1 is being brought back, the Boss kills eng-2
                     r = mp.load_roster()
                     r[two].update(retired=True, retire_reason="killed")
                     mp.save_roster(r)
                 revived.append(argv[0])
                 return 0
-            with mock.patch.object(mp, "is_local", return_value=True), \
-                 mock.patch.object(mp.C, "tmux_windows", return_value=set()), \
-                 mock.patch.object(mp, "window_exists", return_value=False), \
-                 mock.patch.object(mp, "is_birth_zombie", return_value=False), \
-                 mock.patch.object(mp, "do_revive", revive):
+
+            with (
+                mock.patch.object(mp, "is_local", return_value=True),
+                mock.patch.object(mp.C, "tmux_windows", return_value=set()),
+                mock.patch.object(mp, "window_exists", return_value=False),
+                mock.patch.object(mp, "is_birth_zombie", return_value=False),
+                mock.patch.object(mp, "do_revive", revive),
+            ):
                 mp.do_reconcile([])
             self.assertEqual([one], revived)
             self.assertEqual("killed", mp.load_roster()[two]["retire_reason"])
@@ -159,28 +167,37 @@ class ZombieReapCapTests(unittest.TestCase):
         spawn.assert_not_called()
 
     def test_a_reap_below_the_cap_respawns_and_counts_up(self):
-        rr = {"agent_id": AID, "session": "main", "tab": "eng-9", "backend": "claude",
-              "zombie_reaps": 0}
+        rr = {"agent_id": AID, "session": "main", "tab": "eng-9", "backend": "claude", "zombie_reaps": 0}
         self.mp.save_roster({AID: dict(rr)})
-        with mock.patch.object(self.mp, "do_spawn", return_value=0), \
-             mock.patch.object(self.mp, "pane_looks_ready", return_value=True), \
-             mock.patch.object(self.mp.subprocess, "run"), \
-             mock.patch.object(self.mp.C, "http_json", return_value=(200, {})), \
-             mock.patch.object(self.mp.C, "tmux_send_message"):
+        with (
+            mock.patch.object(self.mp, "do_spawn", return_value=0),
+            mock.patch.object(self.mp, "pane_looks_ready", return_value=True),
+            mock.patch.object(self.mp.subprocess, "run"),
+            mock.patch.object(self.mp.C, "http_json", return_value=(200, {})),
+            mock.patch.object(self.mp.C, "tmux_send_message"),
+        ):
             ok, detail = self.mp.reap_birth_zombie(AID, rr)
         self.assertTrue(ok, detail)
         self.assertEqual(1, self.mp.load_roster()[AID]["zombie_reaps"])
 
     def test_a_reaped_agent_never_carries_its_dead_session_id_forward(self):
         """Resuming a session that never started is the trap the reap exists to break."""
-        rr = {"agent_id": AID, "session": "main", "tab": "eng-9", "backend": "claude",
-              "session_id": "never-booted", "zombie_reaps": 0}
+        rr = {
+            "agent_id": AID,
+            "session": "main",
+            "tab": "eng-9",
+            "backend": "claude",
+            "session_id": "never-booted",
+            "zombie_reaps": 0,
+        }
         self.mp.save_roster({AID: dict(rr)})
-        with mock.patch.object(self.mp, "do_spawn", return_value=0), \
-             mock.patch.object(self.mp, "pane_looks_ready", return_value=True), \
-             mock.patch.object(self.mp.subprocess, "run"), \
-             mock.patch.object(self.mp.C, "http_json", return_value=(200, {})), \
-             mock.patch.object(self.mp.C, "tmux_send_message"):
+        with (
+            mock.patch.object(self.mp, "do_spawn", return_value=0),
+            mock.patch.object(self.mp, "pane_looks_ready", return_value=True),
+            mock.patch.object(self.mp.subprocess, "run"),
+            mock.patch.object(self.mp.C, "http_json", return_value=(200, {})),
+            mock.patch.object(self.mp.C, "tmux_send_message"),
+        ):
             self.mp.reap_birth_zombie(AID, rr)
         self.assertEqual("", self.mp.load_roster()[AID]["session_id"])
 

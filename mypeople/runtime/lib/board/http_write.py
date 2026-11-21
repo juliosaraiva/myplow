@@ -40,7 +40,7 @@ class _BoardWrite:
                 return self._send(400, {"error": str(e)})
             return self._send(200, {"plugins": mpplugins.listing()})
         if p in ("/todo/plugins/connect", "/todo/plugins/wrap", "/todo/plugins/wrap-ask"):
-            if ident != "browser":      # the owner's click, as for Access below: a message can reach an agent, never this
+            if ident != "browser":  # the owner's click, as for Access below: a message can reach an agent, never this
                 return self._send(403, {"error": "the owner does this in the app"})
             try:
                 if p == "/todo/plugins/wrap":
@@ -75,16 +75,30 @@ class _BoardWrite:
         agent will not act on pasted text that merely says "your owner"."""
         with LOCK:
             cid = board_snapshot().get("bossChat")
-        note = ("\nThese words are on your owner's Boss card, written from their app. Confirm with mp card %s, and answer "
-                "there: mp comment %s \"...\"" % (cid, cid)) if cid else ""
+        note = (
+            (
+                "\nThese words are on your owner's Boss card, written from their app. Confirm with mp card %s, and answer "
+                'there: mp comment %s "..."' % (cid, cid)
+            )
+            if cid
+            else ""
+        )
         if mp_send(BOSS_AGENT, text + note) != 0:
             raise mpplugins.PluginError("not sent: your agent could not be reached")
         with LOCK:
             board = board_for_edit()
             t = task_for_edit(board, cid) if cid else None
             if t:
-                t["comments"].append({"id": uuid.uuid4().hex[:8], "by": "CEO", "to": BOSS_AGENT, "kind": "comment",
-                                      "body": "From the Plugins page: " + words, "ts": now()})
+                t["comments"].append(
+                    {
+                        "id": uuid.uuid4().hex[:8],
+                        "by": "CEO",
+                        "to": BOSS_AGENT,
+                        "kind": "comment",
+                        "body": "From the Plugins page: " + words,
+                        "ts": now(),
+                    }
+                )
                 t["updated"] = now()
                 save_board(board, changed=[cid])
 
@@ -103,9 +117,8 @@ class _BoardWrite:
         """Is the singleton Boss up? Heartbeat-driven, so it can lag reality by one interval; it
         is a UX guard, not the invariant. `mp spawn`'s own window_exists check is the real backstop
         and queue-client dispatches serially, so a stale yes/no here cannot produce two Bosses."""
-        code, agents = C.http_json("GET", CFG["QUEUE_URL"] + "/agents", None,
-                                   {"X-Queue-Secret": SECRET}, timeout=6)
-        for a in (agents or []):
+        code, agents = C.http_json("GET", CFG["QUEUE_URL"] + "/agents", None, {"X-Queue-Secret": SECRET}, timeout=6)
+        for a in agents or []:
             if a.get("is_master") and a.get("state") == "alive":
                 return True, a.get("agent_id", "")
         return False, ""
@@ -134,14 +147,21 @@ class _BoardWrite:
         elif action == "spawn":
             backend = (body.get("backend") or "").strip().lower()
             if backend not in BOSS_BACKENDS:
-                return self._send(400, {"ok": False, "error": "bad_backend",
-                                        "detail": "choose %s" % ", ".join(BOSS_BACKENDS)})
+                return self._send(
+                    400, {"ok": False, "error": "bad_backend", "detail": "choose %s" % ", ".join(BOSS_BACKENDS)}
+                )
             if alive:
-                return self._send(409, {"ok": False, "error": "boss_already_alive",
-                                        "agent_id": live_id,
-                                        "detail": "kill the running Boss before spawning another"})
+                return self._send(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "boss_already_alive",
+                        "agent_id": live_id,
+                        "detail": "kill the running Boss before spawning another",
+                    },
+                )
             why = C.backend_unready(backend)
-            if why:     # said here, on the card: queued, mp spawn's refusal reached only a log and the page said Down
+            if why:  # said here, on the card: queued, mp spawn's refusal reached only a log and the page said Down
                 return self._send(409, {"ok": False, "error": "backend_not_ready", "detail": why})
             # role:boss is required or do_spawn refuses a bundle-less Boss; queue-client also
             # defaults it for any master spawn, but state it explicitly here (card f6339b85a2).
@@ -149,65 +169,99 @@ class _BoardWrite:
             target = BOSS_AGENT
         elif action == "revive":
             if alive:
-                return self._send(409, {"ok": False, "error": "boss_already_alive",
-                                        "agent_id": live_id,
-                                        "detail": "the Boss is already up; nothing to revive"})
+                return self._send(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "boss_already_alive",
+                        "agent_id": live_id,
+                        "detail": "the Boss is already up; nothing to revive",
+                    },
+                )
             rc, roster = C.http_json("GET", CFG["QUEUE_URL"] + "/roster", None, {"X-Queue-Secret": SECRET}, timeout=6)
-            was = next((r.get("backend") for r in (roster if rc == 200 and isinstance(roster, list) else [])
-                        if r.get("agent_id") == BOSS_AGENT), "")
+            was = next(
+                (
+                    r.get("backend")
+                    for r in (roster if rc == 200 and isinstance(roster, list) else [])
+                    if r.get("agent_id") == BOSS_AGENT
+                ),
+                "",
+            )
             why = C.backend_unready(was) if was in BOSS_BACKENDS else ""
             if why:
-                return self._send(409, {"ok": False, "error": "backend_not_ready", "detail": why + ". Or start a new Boss on another one."})
+                return self._send(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "backend_not_ready",
+                        "detail": why + ". Or start a new Boss on another one.",
+                    },
+                )
             payload = {}
             target = BOSS_AGENT
         else:
-            return self._send(400, {"ok": False, "error": "bad_action",
-                                    "detail": "choose kill, spawn or revive"})
+            return self._send(400, {"ok": False, "error": "bad_action", "detail": "choose kill, spawn or revive"})
 
-        code, r = C.http_json("POST", CFG["QUEUE_URL"] + "/task/submit",
-                              {"type": action, "target_agent": target, "payload": payload},
-                              {"X-Queue-Secret": SECRET}, timeout=10)
+        code, r = C.http_json(
+            "POST",
+            CFG["QUEUE_URL"] + "/task/submit",
+            {"type": action, "target_agent": target, "payload": payload},
+            {"X-Queue-Secret": SECRET},
+            timeout=10,
+        )
         if code != 200 or not isinstance(r, dict) or not r.get("task_id"):
             return self._send(502, {"ok": False, "error": "submit_failed", "detail": str(r)[:200]})
-        return self._send(200, {"ok": True, "action": action, "agent_id": target,
-                                "task_id": r["task_id"], "by": ident})
+        return self._send(200, {"ok": True, "action": action, "agent_id": target, "task_id": r["task_id"], "by": ident})
 
     # ---- board view (server-authoritative ordering: pinned first by pinRank, then order) ----
     def _terminal_graph(self):
         """Live fleet topology. Polling this metadata never replaces terminal iframe clients."""
-        acode, agents = C.http_json("GET", CFG["QUEUE_URL"] + "/agents", None,
-                                    {"X-Queue-Secret": SECRET})
-        rcode, roster = C.http_json("GET", CFG["QUEUE_URL"] + "/roster", None,
-                                    {"X-Queue-Secret": SECRET})
-        if acode != 200 or not isinstance(agents, list): agents = []
-        if rcode != 200 or not isinstance(roster, list): roster = []
+        acode, agents = C.http_json("GET", CFG["QUEUE_URL"] + "/agents", None, {"X-Queue-Secret": SECRET})
+        rcode, roster = C.http_json("GET", CFG["QUEUE_URL"] + "/roster", None, {"X-Queue-Secret": SECRET})
+        if acode != 200 or not isinstance(agents, list):
+            agents = []
+        if rcode != 200 or not isinstance(roster, list):
+            roster = []
         roster_by_id = {r.get("agent_id", ""): r for r in roster}
         live_ids = {a.get("agent_id", "") for a in agents if a.get("state", "alive") == "alive"}
         sizes = _tmux_window_sizes()
         viewers = _tmux_viewers()
         nodes = []
         for a in agents:
-            aid = a.get("agent_id", ""); rr = roster_by_id.get(aid, {})
-            if not aid or aid not in live_ids or rr.get("retired") is True: continue
+            aid = a.get("agent_id", "")
+            rr = roster_by_id.get(aid, {})
+            if not aid or aid not in live_ids or rr.get("retired") is True:
+                continue
             target = a.get("tmux_target") or C.tmux_target(aid)
             cols, rows = sizes.get(target, (0, 0))
-            nodes.append({"agent_id": aid, "boss_id": rr.get("boss_id") or a.get("boss_id", ""),
-                          "is_master": bool(rr.get("is_master") or a.get("is_master")),
-                          "state": a.get("status", "ready"), "summary": a.get("summary", ""),
-                          "target": target, "host": rr.get("host") or a.get("host", ""),
-                          "cols": cols or 160, "rows": rows or 48})
+            nodes.append(
+                {
+                    "agent_id": aid,
+                    "boss_id": rr.get("boss_id") or a.get("boss_id", ""),
+                    "is_master": bool(rr.get("is_master") or a.get("is_master")),
+                    "state": a.get("status", "ready"),
+                    "summary": a.get("summary", ""),
+                    "target": target,
+                    "host": rr.get("host") or a.get("host", ""),
+                    "cols": cols or 160,
+                    "rows": rows or 48,
+                }
+            )
             if viewers is not None:  # tmux turns . and : into _ in a session name
                 nodes[-1]["viewers"] = viewers.get(target.split(":", 1)[-1].replace(".", "_"), 0)
         nodes.sort(key=lambda n: (not n["is_master"], n["agent_id"]))
         node_ids = {n["agent_id"] for n in nodes}
-        edges = [{"from": n["boss_id"], "to": n["agent_id"]} for n in nodes
-                 if n["boss_id"] in node_ids]
+        edges = [{"from": n["boss_id"], "to": n["agent_id"]} for n in nodes if n["boss_id"] in node_ids]
         # Ports come from config, never constants: the tiles are iframes onto this install's own
         # ttyd, and a hardcoded port silently renders every tile dead wherever ttyd was moved.
-        return {"nodes": nodes, "edges": edges,
-                "readonly_port": int(CFG["TTYD_RO_PORT"]),
-                "interactive_port": int(CFG["TTYD_BROWSER_PORT"]), "ts": now(),
-                "version": "v" + C.version()}
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "readonly_port": int(CFG["TTYD_RO_PORT"]),
+            "interactive_port": int(CFG["TTYD_BROWSER_PORT"]),
+            "ts": now(),
+            "version": "v" + C.version(),
+        }
 
     def _board_view(self):
         board = load_board()
@@ -223,12 +277,26 @@ class _BoardWrite:
                 tid = uuid.uuid4().hex[:10]
                 # assignee is NOT settable here: /todo/owner is the only door, and it is the one
                 # that checks the agent is alive, unretired, this Boss's, and born for this card.
-                task = {"id": tid, "text": body.get("text", ""), "state": "working",
-                        "assignee": "", "ownerHistory": [], "ownerNeedsReplacement": False,
-                        "pinned": False, "pinRank": None,
-                        "doneCondition": "", "done": False, "verified": False,
-                        "unread": 0, "pingsToBoss": 0, "comments": [], "proofs": [],
-                        "test": bool(body.get("test")), "created": now(), "updated": now()}
+                task = {
+                    "id": tid,
+                    "text": body.get("text", ""),
+                    "state": "working",
+                    "assignee": "",
+                    "ownerHistory": [],
+                    "ownerNeedsReplacement": False,
+                    "pinned": False,
+                    "pinRank": None,
+                    "doneCondition": "",
+                    "done": False,
+                    "verified": False,
+                    "unread": 0,
+                    "pingsToBoss": 0,
+                    "comments": [],
+                    "proofs": [],
+                    "test": bool(body.get("test")),
+                    "created": now(),
+                    "updated": now(),
+                }
                 board["tasks"][tid] = task
                 board["order"].insert(0, tid)
                 # Count the ping before the only save, and tell the Boss after it commits.
@@ -330,14 +398,18 @@ class _BoardWrite:
         action, tid, agent_id = body.get("action"), body.get("task_id"), body.get("agent_id", "")
         if action not in ("assign", "replace", "reopen") or not FULL_AGENT_ID.match(agent_id):
             return self._send(400, {"ok": False, "error": "bad_owner_request"})
-        code, roster = C.http_json("GET", CFG["QUEUE_URL"] + "/roster", None,
-                                   {"X-Queue-Secret": SECRET})
+        code, roster = C.http_json("GET", CFG["QUEUE_URL"] + "/roster", None, {"X-Queue-Secret": SECRET})
         if code != 200 or not isinstance(roster, list):
             return self._send(503, {"ok": False, "error": "roster_unavailable"})
         row = next((r for r in roster if r.get("agent_id") == agent_id), None)
-        if (not row or row.get("state") != "alive" or row.get("retired") is True or
-                row.get("boss_id") != BOSS_AGENT or row.get("lifecycle") != "owner" or
-                row.get("owner_task_id") != tid):
+        if (
+            not row
+            or row.get("state") != "alive"
+            or row.get("retired") is True
+            or row.get("boss_id") != BOSS_AGENT
+            or row.get("lifecycle") != "owner"
+            or row.get("owner_task_id") != tid
+        ):
             return self._send(400, {"ok": False, "error": "ineligible_owner"})
         with LOCK:
             board = board_for_edit()
@@ -345,14 +417,16 @@ class _BoardWrite:
             if not task:
                 return self._send(200, {"ok": False, "error": "no_task"})
             for other in board.get("tasks", {}).values():
-                if (other.get("id") != tid and other.get("assignee") == agent_id and
-                        other.get("state") not in TERMINAL_STATES):
+                if (
+                    other.get("id") != tid
+                    and other.get("assignee") == agent_id
+                    and other.get("state") not in TERMINAL_STATES
+                ):
                     return self._send(409, {"ok": False, "error": "owner_busy"})
             current = task.get("assignee", "")
             if action == "assign":
                 if current == agent_id:
-                    return self._send(200, {"ok": True, "assignee": current,
-                                            "previous": current, "action": action})
+                    return self._send(200, {"ok": True, "assignee": current, "previous": current, "action": action})
                 if current:
                     return self._send(409, {"ok": False, "error": "owner_exists"})
             elif action == "replace":
@@ -364,13 +438,14 @@ class _BoardWrite:
                 if current == agent_id:
                     return self._send(409, {"ok": False, "error": "fresh_owner_required"})
             previous = current
-            task["assignee"] = agent_id; task["ownerNeedsReplacement"] = False
+            task["assignee"] = agent_id
+            task["ownerNeedsReplacement"] = False
             record_owner_event(task, action, agent_id, previous=previous)
-            task["updated"] = now(); save_board(board, changed=[tid])
+            task["updated"] = now()
+            save_board(board, changed=[tid])
             if action == "replace" and previous:
                 request_owner_lifecycle(task, "replace", previous)
-            return self._send(200, {"ok": True, "assignee": agent_id,
-                                    "previous": previous, "action": action})
+            return self._send(200, {"ok": True, "assignee": agent_id, "previous": previous, "action": action})
 
     # ---- comment ----
     def _comment(self, body, ident):
@@ -387,8 +462,7 @@ class _BoardWrite:
             if peer and (ident != "machine" or str(by).split("/")[0] != peer or peer not in t.get("peers", [])):
                 return self._send(200, {"ok": False, "error": "not_on_card"})
             t = task_for_edit(board, tid)
-            c = {"id": uuid.uuid4().hex[:8], "by": by, "kind": "comment",
-                 "body": body.get("body", ""), "ts": now()}
+            c = {"id": uuid.uuid4().hex[:8], "by": by, "kind": "comment", "body": body.get("body", ""), "ts": now()}
             if to:
                 c["to"] = to
             if peer:
@@ -428,8 +502,10 @@ class _BoardWrite:
             save_board(board, changed=[tid])
             try:
                 with open(os.path.join(TODOS_DIR, "comment-deletes.jsonl"), "a") as f:
-                    f.write(json.dumps({"comment_id": cid, "card": tid, "author": c.get("by"),
-                                        "actor": actor, "ts": now()}) + "\n")
+                    f.write(
+                        json.dumps({"comment_id": cid, "card": tid, "author": c.get("by"), "actor": actor, "ts": now()})
+                        + "\n"
+                    )
             except OSError:
                 pass
             return self._send(200, {"ok": True, "deleted": cid})
@@ -474,8 +550,12 @@ class _BoardWrite:
                 proof = {"kind": kind, "url": url, "body": fields.get("body", ""), "ts": now()}
             else:
                 url = fields.get("url", "")
-                proof = {"kind": classify_kind(url=url, given=fields.get("kind")),
-                         "url": url, "body": fields.get("body", ""), "ts": now()}
+                proof = {
+                    "kind": classify_kind(url=url, given=fields.get("kind")),
+                    "url": url,
+                    "body": fields.get("body", ""),
+                    "ts": now(),
+                }
             t["proofs"].append(proof)
             save_board(board, changed=[tid])
             return self._send(200, {"ok": True, "proof": proof})
@@ -497,7 +577,7 @@ class _BoardWrite:
             prev = t.get("state")
             if st:
                 t["state"] = st
-                t["done"] = (st == "done")
+                t["done"] = st == "done"
             if "verified" in body:
                 t["verified"] = bool(body["verified"])
             t["updated"] = now()

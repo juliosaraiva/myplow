@@ -4,6 +4,7 @@ Seen on the owner's board, 11-05: an agent ran `mypeople auth-check` from a scra
 shell carries MYPEOPLE_HOME, so that wrote "not logged in" into the real install, and since the Boss supervisor's login gate latches
 open, nothing rechecked it until a later hand-run auth-check.
 """
+
 import json
 import os
 from pathlib import Path
@@ -24,9 +25,18 @@ class AnotherHome(unittest.TestCase):
         status = Path(install) / "status" / "auth.json"
         status.parent.mkdir(parents=True, exist_ok=True)
         status.write_text(json.dumps({"authenticated": True, "backend": "claude", "requested": "claude"}))
-        r = subprocess.run([sys.executable, "-c", "import sys; from mypeople.cli import main; sys.argv=['mypeople','auth-check','--quiet']; sys.exit(main())"],
-                           env={"PATH": "/usr/bin:/bin", "HOME": str(home), "MYPEOPLE_HOME": str(install), "PYTHONPATH": str(ROOT)},
-                           cwd=str(home), capture_output=True, text=True, timeout=60)
+        r = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from mypeople.cli import main; sys.argv=['mypeople','auth-check','--quiet']; sys.exit(main())",
+            ],
+            env={"PATH": "/usr/bin:/bin", "HOME": str(home), "MYPEOPLE_HOME": str(install), "PYTHONPATH": str(ROOT)},
+            cwd=str(home),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         self.assertIn(r.returncode, (0, 1), r.stderr[-300:])
         return r.returncode, json.loads(status.read_text())["authenticated"]
 
@@ -57,9 +67,13 @@ class GateRechecksWhileItSaysNoLogin(unittest.TestCase):
             fake = bin_dir / "mypeople"
             fake.write_text('#!/bin/sh\necho "$@" >> %s\nexit 1\n' % log)
             fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-            r = subprocess.run(["/bin/bash", "-c", "%s\nLOGIN_GATE=open\nauthenticated; echo rc=$? gate=$LOGIN_GATE" % GATE],
-                               env={"PATH": "%s:/usr/bin:/bin" % bin_dir, "INSTALL_DIR": str(install), "HOME": tmp},
-                               capture_output=True, text=True, timeout=20)
+            r = subprocess.run(
+                ["/bin/bash", "-c", "%s\nLOGIN_GATE=open\nauthenticated; echo rc=$? gate=$LOGIN_GATE" % GATE],
+                env={"PATH": "%s:/usr/bin:/bin" % bin_dir, "INSTALL_DIR": str(install), "HOME": tmp},
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
             return r.stdout.strip(), log.read_text().strip() if log.exists() else ""
 
     def test_a_false_status_is_rechecked_and_the_gate_stays_open_whatever_it_answers(self):

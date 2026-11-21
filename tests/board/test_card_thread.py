@@ -3,6 +3,7 @@
 The board takes a message from another MyPlow only on a card that already addressed that MyPlow, so a paired
 peer cannot write itself into a card by guessing its id. A thread line pings nobody: mp send delivered it.
 """
+
 import tempfile
 import unittest
 from unittest import mock
@@ -17,7 +18,14 @@ class CardThreadTests(unittest.TestCase):
         self.srv = sandbox.load(self.tmp.name, "todo-server.py")
         with self.srv.LOCK:
             b = self.srv.load_board()
-            b["tasks"]["c1"] = {"id": "c1", "text": "t", "state": "working", "assignee": "test-node/main:eng-7", "comments": [], "proofs": []}
+            b["tasks"]["c1"] = {
+                "id": "c1",
+                "text": "t",
+                "state": "working",
+                "assignee": "test-node/main:eng-7",
+                "comments": [],
+                "proofs": [],
+            }
             self.srv.save_board(b)
         p = mock.patch.object(self.srv, "emit_comment_event")
         self.emit = p.start()

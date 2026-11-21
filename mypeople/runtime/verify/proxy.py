@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Tiny port-shift proxy used by Verify J6b."""
+
 import http.client
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,8 +15,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _proxy(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
-        headers = {k: v for k, v in self.headers.items()
-                   if k.lower() not in ("host", "connection", "content-length")}
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "connection", "content-length")}
         conn = http.client.HTTPConnection("127.0.0.1", TARGET, timeout=10)
         conn.request(self.command, self.path, body=body or None, headers=headers)
         resp = conn.getresponse()

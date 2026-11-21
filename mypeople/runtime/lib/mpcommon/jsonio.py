@@ -9,6 +9,7 @@ def atomic_write(path, data_bytes):
         os.fsync(f.fileno())
     os.replace(tmp, path)
 
+
 _JSON_SNAPSHOTS = {}
 
 
@@ -75,6 +76,6 @@ def read_json(path, default=None):
     except Exception:
         return default
 
+
 def write_json(path, obj):
     atomic_write(path, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
-

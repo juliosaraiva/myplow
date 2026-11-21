@@ -6,6 +6,7 @@ which WebKit still counts as visible. The tiles' status-line jobs, one set per c
 in the one tmux server, took a real client's keystroke p90 from 0.4 ms to 299 ms. And after a ttyd
 recycle every tile closed with 1006 and none came back: ttyd's client does not reconnect.
 """
+
 import json
 import os
 from pathlib import Path
@@ -26,7 +27,7 @@ PAGE = (BIN / "terminal-graph.html").read_text()
 
 class EdgesAreStatic(unittest.TestCase):
     def test_no_edge_is_animated(self):
-        css = PAGE[:PAGE.index("</style>")]
+        css = PAGE[: PAGE.index("</style>")]
         for rule in re.findall(r"\.edge[^{]*\{[^}]*\}", css):
             self.assertNotIn("animation", rule, rule)
         self.assertNotIn("stroke-dashoffset", css, "a moving dash repaints every edge every frame")
@@ -38,11 +39,15 @@ class DeadTilesHeal(unittest.TestCase):
 
     def run_heal(self, polls):
         fn = re.search(r"const TILE_WAIT=.*?\nfunction reconcile", PAGE, re.S).group(0).rsplit("\n", 1)[0]
-        js = fn + """
+        js = (
+            fn
+            + """
 const frame={};const reloads=[];let roPort=7682;const ttyUrl=(p,t)=>{return p+t};
 Object.defineProperty(frame,"src",{set(v){reloads.push([now,v])}});
 let now=0;for(const [t,viewers] of %s){now=t;healTile(frame,{target:"T",viewers:viewers===null?undefined:viewers},t)}
-console.log(JSON.stringify(reloads.map(r=>r[0])));""" % json.dumps(polls)
+console.log(JSON.stringify(reloads.map(r=>r[0])));"""
+            % json.dumps(polls)
+        )
         out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=20)
         self.assertEqual(0, out.returncode, out.stderr)
         return json.loads(out.stdout)
@@ -89,7 +94,7 @@ class AnOpenPageFollowsTheRelease(unittest.TestCase):
     """5.22.151 and .152 could not reach the Graph page he had open: it kept the code it loaded."""
 
     def run_follow(self, versions, modal=False, stream=False, stored=None):
-        fn = re.search(r'const PAGE_VERSION=.*?\nfunction reconcile', PAGE, re.S).group(0).rsplit("\n", 1)[0]
+        fn = re.search(r"const PAGE_VERSION=.*?\nfunction reconcile", PAGE, re.S).group(0).rsplit("\n", 1)[0]
         js = """
 const STREAM=%s;let reloads=0;const store=%s;
 const sessionStorage={getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=v}};
@@ -97,8 +102,13 @@ const location={reload(){reloads++}};
 const document={getElementById:()=>({classList:{contains:()=>%s}})};
 %s
 for(const v of %s)followRelease(v);
-console.log(reloads);""" % (json.dumps(stream), json.dumps({"mp_graph_version": stored} if stored else {}),
-                            json.dumps(modal), fn.replace("__MP_VERSION__", "v1"), json.dumps(versions))
+console.log(reloads);""" % (
+            json.dumps(stream),
+            json.dumps({"mp_graph_version": stored} if stored else {}),
+            json.dumps(modal),
+            fn.replace("__MP_VERSION__", "v1"),
+            json.dumps(versions),
+        )
         out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=20)
         self.assertEqual(0, out.returncode, out.stderr)
         return int(out.stdout)
@@ -132,8 +142,9 @@ class ServerSaysWhichTilesAreLive(unittest.TestCase):
         self.srv = sandbox.load(self.tmp.name, "todo-server.py")
 
     def viewers(self, stdout, returncode=0):
-        with mock.patch.object(self.srv.subprocess, "run",
-                               lambda *a, **k: mock.Mock(returncode=returncode, stdout=stdout)):
+        with mock.patch.object(
+            self.srv.subprocess, "run", lambda *a, **k: mock.Mock(returncode=returncode, stdout=stdout)
+        ):
             return self.srv._tmux_viewers()
 
     def test_counts_viewer_sessions_per_window(self):

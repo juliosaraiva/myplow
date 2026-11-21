@@ -35,7 +35,7 @@ Second Brain", "that card about X"), consult team memory FIRST, before acting or
    intermediate findings):
 
    ```python
-   context = open("<corpus path from step 1>").read()   # the entire board, in one string
+   context = open("<corpus path from step 1>").read()  # the entire board, in one string
    len(context)
    ```
 

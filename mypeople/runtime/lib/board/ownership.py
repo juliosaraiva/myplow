@@ -10,8 +10,9 @@ def migrate_legacy_owner_fields(board):
             changed = True
         owner = task.get("assignee", "")
         if owner and not history:
-            history.append({"action": "migrated_existing_owner", "agent_id": owner,
-                            "previous": "", "by": "system", "ts": now()})
+            history.append(
+                {"action": "migrated_existing_owner", "agent_id": owner, "previous": "", "by": "system", "ts": now()}
+            )
             changed = True
         if not isinstance(task.get("ownerNeedsReplacement"), bool):
             task["ownerNeedsReplacement"] = False
@@ -20,8 +21,9 @@ def migrate_legacy_owner_fields(board):
 
 
 def record_owner_event(task, action, agent_id, previous="", by=BOSS_AGENT):
-    task.setdefault("ownerHistory", []).append({"action": action, "agent_id": agent_id,
-        "previous": previous, "by": by, "ts": now()})
+    task.setdefault("ownerHistory", []).append(
+        {"action": action, "agent_id": agent_id, "previous": previous, "by": by, "ts": now()}
+    )
 
 
 def queue_kill_owner(owner, reason):
@@ -36,10 +38,12 @@ def queue_kill_owner(owner, reason):
         return False
     try:
         code, r = C.http_json(
-            "POST", CFG["QUEUE_URL"] + "/task/submit",
-            {"type": "kill", "target_agent": owner,
-             "payload": {"reason": reason}},
-            {"X-Queue-Secret": SECRET}, timeout=10)
+            "POST",
+            CFG["QUEUE_URL"] + "/task/submit",
+            {"type": "kill", "target_agent": owner, "payload": {"reason": reason}},
+            {"X-Queue-Secret": SECRET},
+            timeout=10,
+        )
         return code == 200 and isinstance(r, dict) and bool(r.get("task_id"))
     except Exception:
         return False
@@ -54,17 +58,23 @@ def request_owner_lifecycle(task, action, owner=""):
         # Secondary: ping Boss for the audit trail / any extra bookkeeping.
         if owner:
             queue_kill_owner(owner, "card-%s-closed" % tid)
-        ping_boss('[todo lifecycle] Card %s was CLOSED by the CEO. Kill its owner %s now; '
-                  'preserve the assignee/history. Do not replace it unless the CEO reopens the card.' %
-                  (tid, owner or "unassigned"))
+        ping_boss(
+            "[todo lifecycle] Card %s was CLOSED by the CEO. Kill its owner %s now; "
+            "preserve the assignee/history. Do not replace it unless the CEO reopens the card."
+            % (tid, owner or "unassigned")
+        )
     elif action == "reopen":
-        ping_boss('[todo lifecycle] Card %s was REOPENED by the CEO. CREATE one FRESH owner engineer '
-                  'with --owner-task %s; do not reuse %s.' % (tid, tid, owner or "unassigned"))
+        ping_boss(
+            "[todo lifecycle] Card %s was REOPENED by the CEO. CREATE one FRESH owner engineer "
+            "with --owner-task %s; do not reuse %s." % (tid, tid, owner or "unassigned")
+        )
     elif action == "replace":
         if owner:
             queue_kill_owner(owner, "card-%s-owner-replaced" % tid)
-        ping_boss('[todo lifecycle] Card %s owner was REPLACED. Kill prior owner %s; preserve history.' %
-                  (tid, owner or "unassigned"))
+        ping_boss(
+            "[todo lifecycle] Card %s owner was REPLACED. Kill prior owner %s; preserve history."
+            % (tid, owner or "unassigned")
+        )
 
 
 def apply_owner_state_transition(task, previous, state, actor):
@@ -121,8 +131,7 @@ def owner_relay(card_id, by, bodytext):
 
 def boss_chat_relay(card_id, by, bodytext):
     """The Boss chat card is a conversation, not a task: say so, and say where the answer goes."""
-    return ('[boss chat] %s: %s\n(reply on the Boss chat card: mp comment %s "your answer")'
-            % (by, bodytext, card_id))
+    return '[boss chat] %s: %s\n(reply on the Boss chat card: mp comment %s "your answer")' % (by, bodytext, card_id)
 
 
 def ensure_boss_chat(board):
@@ -135,12 +144,27 @@ def ensure_boss_chat(board):
     if t and t.get("bossChat"):
         return False
     tid = uuid.uuid4().hex[:10]
-    board["tasks"][tid] = {"id": tid, "text": "Boss", "state": "working", "bossChat": True,
-                           "assignee": "", "ownerHistory": [], "ownerNeedsReplacement": False,
-                           "pinned": False, "pinRank": None, "doneCondition": "",
-                           "done": False, "verified": False, "unread": 0, "pingsToBoss": 0,
-                           "comments": [], "proofs": [], "test": False,
-                           "created": now(), "updated": now()}
+    board["tasks"][tid] = {
+        "id": tid,
+        "text": "Boss",
+        "state": "working",
+        "bossChat": True,
+        "assignee": "",
+        "ownerHistory": [],
+        "ownerNeedsReplacement": False,
+        "pinned": False,
+        "pinRank": None,
+        "doneCondition": "",
+        "done": False,
+        "verified": False,
+        "unread": 0,
+        "pingsToBoss": 0,
+        "comments": [],
+        "proofs": [],
+        "test": False,
+        "created": now(),
+        "updated": now(),
+    }
     board["order"].insert(0, tid)
     board["bossChat"] = tid
     return True
@@ -155,9 +179,10 @@ def deliver_comment(card_id, title, owner, by, bodytext, boss_chat=False):
         delivered = mp_send(owner, owner_relay(card_id, by, bodytext)) == 0
     # ping_boss stays the one seam for Boss notifications; it is what the verbatim-relay tests
     # pin, and what any future change to Boss delivery has to go through.
-    ping_boss('[todo] comment on %s "%s" by %s%s: %s'
-              % (card_id, title, by,
-                 " (already delivered to %s)" % owner if delivered else "", bodytext))
+    ping_boss(
+        '[todo] comment on %s "%s" by %s%s: %s'
+        % (card_id, title, by, " (already delivered to %s)" % owner if delivered else "", bodytext)
+    )
 
 
 def take_comment_event(board, task, by, bodytext):
@@ -168,7 +193,7 @@ def take_comment_event(board, task, by, bodytext):
     if task.get("test"):
         return None
     if by == BOSS_AGENT:
-        return None                                  # the Boss's own comment pings nobody
+        return None  # the Boss's own comment pings nobody
     task["pingsToBoss"] = task.get("pingsToBoss", 0) + 1
     # Straight to the card's owner. Routing through the Boss meant every word waited for a whole
     # agent turn before it moved: measured on the CEO's own card, a median of 18s between his
@@ -185,5 +210,3 @@ def emit_comment_event(board, task, by, bodytext):
     args = take_comment_event(board, task, by, bodytext)
     if args:
         threading.Thread(target=deliver_comment, args=args, daemon=True).start()
-
-

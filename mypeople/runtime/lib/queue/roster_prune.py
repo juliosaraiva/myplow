@@ -21,6 +21,7 @@ entries are copied to run/roster-archive.json first, so the history stays querya
 
 Usage: roster-prune.py [--retention-days N] [--dry-run] [--install-dir DIR]
 """
+
 import argparse
 import json
 import os
@@ -32,21 +33,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C  # noqa: E402
 
 # Mirrors ACCIDENTAL_REASONS in bin/mp: a death the system observed, so still revivable.
-ACCIDENTAL_REASONS = frozenset({"died-no-window", "tmux-server-crash", "window-missing",
-                                "tmux-window-vanished", "boss-window-missing"})
-
+ACCIDENTAL_REASONS = frozenset(
+    {"died-no-window", "tmux-server-crash", "window-missing", "tmux-window-vanished", "boss-window-missing"}
+)
 
 
 def prunable(entry, now, retention_days):
     if not entry.get("retired"):
         return False
     if entry.get("is_master"):
-        return False                      # a missing Boss entry makes ensure-boss spawn a new one
+        return False  # a missing Boss entry makes ensure-boss spawn a new one
     if entry.get("retire_reason") in ACCIDENTAL_REASONS:
-        return False                      # revivable: never touch
+        return False  # revivable: never touch
     ts = entry.get("retired_ts")
     if not ts:
-        return False                      # no age evidence: leave it alone
+        return False  # no age evidence: leave it alone
     return (now - float(ts)) > retention_days * 86400
 
 
@@ -66,31 +67,30 @@ def main():
     targets = {k: v for k, v in roster.items() if prunable(v, now, a.retention_days)}
 
     print("roster : %d entries, %.0f KB" % (len(roster), before / 1024))
-    print("prune  : %d entries (deliberate, non-Boss, retired over %g days ago)"
-          % (len(targets), a.retention_days))
-    print("keep   : %d entries (live, recent, revivable, or Boss)"
-          % (len(roster) - len(targets)))
+    print("prune  : %d entries (deliberate, non-Boss, retired over %g days ago)" % (len(targets), a.retention_days))
+    print("keep   : %d entries (live, recent, revivable, or Boss)" % (len(roster) - len(targets)))
     if not targets:
-        print("nothing to do"); return 0
+        print("nothing to do")
+        return 0
 
     pruned = {k: v for k, v in roster.items() if k not in targets}
     after = len(json.dumps(pruned, ensure_ascii=False))
-    print("result : %.0f KB -> %.0f KB (%.1fx smaller)" % (before / 1024, after / 1024,
-                                                           before / max(after, 1)))
+    print("result : %.0f KB -> %.0f KB (%.1fx smaller)" % (before / 1024, after / 1024, before / max(after, 1)))
 
     if a.dry_run:
-        print("(dry run; nothing written)"); return 0
+        print("(dry run; nothing written)")
+        return 0
 
     backup = "%s.bak-prune-%d" % (roster_path, int(now))
     shutil.copy2(roster_path, backup)
     print("backup : %s" % backup)
 
     archive = C.read_json(archive_path, {}) or {}
-    archive.update(targets)                      # FULL original entries
+    archive.update(targets)  # FULL original entries
     C.write_json(archive_path, archive)
     print("archive: %s (%d entries, full detail)" % (archive_path, len(archive)))
 
-    C.write_json_merged(roster_path, pruned)     # locked: concurrent writers are not clobbered
+    C.write_json_merged(roster_path, pruned)  # locked: concurrent writers are not clobbered
     print("written: %s" % roster_path)
     return 0
 

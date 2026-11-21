@@ -10,6 +10,7 @@ agent the fleet had no record of.
 Locking only the write would not have helped -- the stale read already happened -- so these
 tests drive real concurrent PROCESSES through the read+merge+write transaction.
 """
+
 import json
 import os
 from pathlib import Path
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "mypeople" / "runtime" / "bin"
 
 # Each worker: tracked read, dawdle (widening the window the bug needed), mutate ONE key, write.
-WORKER = r'''
+WORKER = r"""
 import sys, time
 sys.path.insert(0, %r)
 import mpcommon as C
@@ -32,9 +33,9 @@ r = C.read_json_tracked(path, {})
 time.sleep(delay)
 r[key] = {"agent_id": key, "retired": False}
 C.write_json_merged(path, r)
-'''  % str(BIN)
+""" % str(BIN)
 
-KILLER = r'''
+KILLER = r"""
 import sys, time
 sys.path.insert(0, %r)
 import mpcommon as C
@@ -44,9 +45,9 @@ time.sleep(delay)
 r[victim]["retired"] = True
 r[victim]["retire_reason"] = "killed"
 C.write_json_merged(path, r)
-'''  % str(BIN)
+""" % str(BIN)
 
-HEARTBEAT = r'''
+HEARTBEAT = r"""
 import sys, time
 sys.path.insert(0, %r)
 import mpcommon as C
@@ -55,7 +56,7 @@ r = C.read_json_tracked(path, {})          # reads BEFORE the kill lands
 time.sleep(delay)
 r["_heartbeat"] = {"touched": True}        # unrelated change, then writes its stale copy
 C.write_json_merged(path, r)
-'''  % str(BIN)
+""" % str(BIN)
 
 
 class RosterLockTests(unittest.TestCase):
@@ -71,18 +72,19 @@ class RosterLockTests(unittest.TestCase):
         return json.loads(Path(self.path).read_text())
 
     def run_all(self, procs):
-        running = [subprocess.Popen([sys.executable, "-c", src] + [str(a) for a in args])
-                   for src, args in procs]
+        running = [subprocess.Popen([sys.executable, "-c", src] + [str(a) for a in args]) for src, args in procs]
         for p in running:
             self.assertEqual(p.wait(timeout=60), 0)
 
     def test_two_concurrent_writers_both_survive(self):
         """The plain lost update: each adds a different agent, overlapping."""
         self.write({"existing": {"agent_id": "existing"}})
-        self.run_all([
-            (WORKER, [self.path, "agent-A", 0.6]),
-            (WORKER, [self.path, "agent-B", 0.3]),
-        ])
+        self.run_all(
+            [
+                (WORKER, [self.path, "agent-A", 0.6]),
+                (WORKER, [self.path, "agent-B", 0.3]),
+            ]
+        )
         r = self.read()
         self.assertIn("agent-A", r)
         self.assertIn("agent-B", r)
@@ -93,10 +95,12 @@ class RosterLockTests(unittest.TestCase):
         heartbeat wrote last. retired=True must survive -- reconcile reads ONLY that flag to
         tell a deliberate stop from a crash, and revives anything that is not retired."""
         self.write({"eng-554": {"agent_id": "eng-554", "retired": False}})
-        self.run_all([
-            (HEARTBEAT, [self.path, 0.8]),          # reads now, writes last
-            (KILLER, [self.path, "eng-554", 0.3]),  # reads now, writes first
-        ])
+        self.run_all(
+            [
+                (HEARTBEAT, [self.path, 0.8]),  # reads now, writes last
+                (KILLER, [self.path, "eng-554", 0.3]),  # reads now, writes first
+            ]
+        )
         entry = self.read()["eng-554"]
         self.assertTrue(entry["retired"], "the kill was erased -- reconcile would revive it")
         self.assertEqual(entry["retire_reason"], "killed")
@@ -105,31 +109,31 @@ class RosterLockTests(unittest.TestCase):
     def test_a_spawn_is_not_erased_by_an_overlapping_heartbeat(self):
         """The eng-555 case: a new agent added while the heartbeat held an older copy."""
         self.write({"eng-550": {"agent_id": "eng-550"}})
-        self.run_all([
-            (HEARTBEAT, [self.path, 0.8]),
-            (WORKER, [self.path, "eng-555", 0.3]),
-        ])
+        self.run_all(
+            [
+                (HEARTBEAT, [self.path, 0.8]),
+                (WORKER, [self.path, "eng-555", 0.3]),
+            ]
+        )
         self.assertIn("eng-555", self.read(), "the spawn was erased -- agent invisible to the fleet")
 
     def test_many_concurrent_writers_lose_nothing(self):
         self.write({})
-        self.run_all([(WORKER, [self.path, "agent-%02d" % i, 0.1 + (i % 5) * 0.1])
-                      for i in range(12)])
+        self.run_all([(WORKER, [self.path, "agent-%02d" % i, 0.1 + (i % 5) * 0.1]) for i in range(12)])
         r = self.read()
-        self.assertEqual(sorted(k for k in r if k.startswith("agent-")),
-                         sorted("agent-%02d" % i for i in range(12)))
+        self.assertEqual(sorted(k for k in r if k.startswith("agent-")), sorted("agent-%02d" % i for i in range(12)))
 
     def test_a_deletion_still_deletes(self):
         """The merge must not resurrect an entry this process intentionally removed."""
         self.write({"keep": {"a": 1}, "drop": {"a": 2}})
-        src = r'''
+        src = r"""
 import sys
 sys.path.insert(0, %r)
 import mpcommon as C
 r = C.read_json_tracked(sys.argv[1], {})
 del r["drop"]
 C.write_json_merged(sys.argv[1], r)
-''' % str(BIN)
+""" % str(BIN)
         self.run_all([(src, [self.path])])
         r = self.read()
         self.assertIn("keep", r)

@@ -10,6 +10,7 @@ These tests pin the three outcomes of the liveness check, because the cost is as
 directions: a false "it's fine" reinstates the silent no-op, and a false "it's broken" kills a
 healthy agent mid-turn.
 """
+
 import tempfile
 import unittest
 from unittest import mock
@@ -33,12 +34,14 @@ class WindowLivenessTest(unittest.TestCase):
 
     def _with_ps(self, pane_rc, ps_rows):
         """Fake `tmux list-panes` + `ps -eo pid=,ppid=,command=`."""
+
         def fake_run(argv, *a, **k):
             if argv[0] == "tmux" and argv[1] == "list-panes":
                 return Proc(returncode=pane_rc, stdout="100\n")
             if argv[0] == "ps":
                 return Proc(stdout=ps_rows)
             return Proc()
+
         return mock.patch.object(self.mp.subprocess, "run", side_effect=fake_run)
 
     def test_launched_agent_is_recognised(self):
@@ -54,8 +57,7 @@ class WindowLivenessTest(unittest.TestCase):
 
     def test_agent_found_in_a_child_process_counts(self):
         """tmux may run the launch through a shell, so the agent is a descendant, not the pane pid."""
-        rows = ("100 1 -sh\n"
-                "204 100 env AGENT_ID=x claude --dangerously-skip-permissions\n")
+        rows = "100 1 -sh\n204 100 env AGENT_ID=x claude --dangerously-skip-permissions\n"
         with self._with_ps(0, rows):
             self.assertIs(self.mp.window_runs_launched_agent("main", "Boss", "claude"), True)
 
@@ -76,8 +78,7 @@ class WindowLivenessTest(unittest.TestCase):
         for backend, rows in cases.items():
             with self.subTest(backend=backend):
                 with self._with_ps(0, rows):
-                    self.assertIs(
-                        self.mp.window_runs_launched_agent("main", "Boss", backend), True)
+                    self.assertIs(self.mp.window_runs_launched_agent("main", "Boss", backend), True)
         # a backend launched without its bypass flag is not acceptable either
         with self._with_ps(0, "100 1 codex\n"):
             self.assertIs(self.mp.window_runs_launched_agent("main", "Boss", "codex"), False)
@@ -102,10 +103,12 @@ class EnsureBossLivenessTest(unittest.TestCase):
 
     def test_broken_boss_window_is_not_reported_alive(self):
         """The first-run bug: window present, no launched agent, ensure-boss declared victory."""
-        with mock.patch.object(self.mp, "window_exists", return_value=True), \
-             mock.patch.object(self.mp, "window_runs_launched_agent", return_value=False), \
-             mock.patch.object(self.mp, "load_roster", return_value={}), \
-             mock.patch.object(self.mp, "do_spawn", return_value=0) as spawn:
+        with (
+            mock.patch.object(self.mp, "window_exists", return_value=True),
+            mock.patch.object(self.mp, "window_runs_launched_agent", return_value=False),
+            mock.patch.object(self.mp, "load_roster", return_value={}),
+            mock.patch.object(self.mp, "do_spawn", return_value=0) as spawn,
+        ):
             rc = self.mp.do_ensure_boss(["test-node/main:Boss", "--backend", "claude"])
         self.assertEqual(rc, 0)
         spawn.assert_called_once()
@@ -114,18 +117,22 @@ class EnsureBossLivenessTest(unittest.TestCase):
         self.assertIn("--role", args)
 
     def test_healthy_boss_is_left_alone(self):
-        with mock.patch.object(self.mp, "window_exists", return_value=True), \
-             mock.patch.object(self.mp, "window_runs_launched_agent", return_value=True), \
-             mock.patch.object(self.mp, "do_spawn") as spawn:
+        with (
+            mock.patch.object(self.mp, "window_exists", return_value=True),
+            mock.patch.object(self.mp, "window_runs_launched_agent", return_value=True),
+            mock.patch.object(self.mp, "do_spawn") as spawn,
+        ):
             rc = self.mp.do_ensure_boss(["test-node/main:Boss", "--backend", "claude"])
         self.assertEqual(rc, 0)
         spawn.assert_not_called()
 
     def test_undeterminable_boss_is_left_alone(self):
         """Unknown must not trigger a respawn of a possibly-healthy Boss."""
-        with mock.patch.object(self.mp, "window_exists", return_value=True), \
-             mock.patch.object(self.mp, "window_runs_launched_agent", return_value=None), \
-             mock.patch.object(self.mp, "do_spawn") as spawn:
+        with (
+            mock.patch.object(self.mp, "window_exists", return_value=True),
+            mock.patch.object(self.mp, "window_runs_launched_agent", return_value=None),
+            mock.patch.object(self.mp, "do_spawn") as spawn,
+        ):
             rc = self.mp.do_ensure_boss(["test-node/main:Boss", "--backend", "claude"])
         self.assertEqual(rc, 0)
         spawn.assert_not_called()

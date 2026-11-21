@@ -5,6 +5,7 @@ rendered as dead text; only [label](url) markdown became a link. This runs the S
 markdownInline() from todos.html in node against a minimal DOM stub, so it tests the real code
 rather than a copy of the regex.
 """
+
 from pathlib import Path
 import json
 import os
@@ -44,8 +45,7 @@ def fn(name, html=HTML):
 
 def run(script, cases):
     env = {**os.environ, "LINKIFY_CASES": json.dumps(cases)}
-    res = subprocess.run(["node", "-e", script], capture_output=True, text=True,
-                         timeout=30, env=env)
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30, env=env)
     assert res.returncode == 0, res.stderr
     return json.loads(res.stdout)
 
@@ -108,8 +108,7 @@ class LinkifyTests(unittest.TestCase):
         self.assertEqual(hrefs, ["http://ok.example"])
 
     def test_several_urls_in_one_line(self):
-        self.assertEqual([a["href"] for a in self.links("two")],
-                         ["https://a.example", "https://b.example"])
+        self.assertEqual([a["href"] for a in self.links("two")], ["https://a.example", "https://b.example"])
 
 
 if __name__ == "__main__":

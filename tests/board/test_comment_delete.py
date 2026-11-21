@@ -1,4 +1,5 @@
 """Deleting a comment: one id, and only its author or the Boss may do it."""
+
 import tempfile
 import unittest
 
@@ -10,9 +11,17 @@ class CommentDeleteTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.srv = sandbox.load(self.tmp.name, "todo-server.py")
-        self.board = {"tasks": {"c1": {"id": "c1", "comments": [
-            {"id": "a1", "by": "test-node/main:eng-7", "body": "mine"},
-            {"id": "b2", "by": "CEO", "body": "his"}]}}}
+        self.board = {
+            "tasks": {
+                "c1": {
+                    "id": "c1",
+                    "comments": [
+                        {"id": "a1", "by": "test-node/main:eng-7", "body": "mine"},
+                        {"id": "b2", "by": "CEO", "body": "his"},
+                    ],
+                }
+            }
+        }
 
     def ids(self):
         return [c["id"] for c in self.board["tasks"]["c1"]["comments"]]

@@ -5,6 +5,7 @@ canceled". The row was a faint grey ring like a working one, grey text, and noth
 says so three ways: a grey disc with an x (the twin of done's green disc with a check), a struck
 title, and the word.
 """
+
 from pathlib import Path
 import unittest
 
@@ -16,7 +17,7 @@ class CancelledRow(unittest.TestCase):
         line = next(l for l in BOARD.splitlines() if l.strip().startswith('if(s==="cancelled")'))
         self.assertIn('class="si si-cancelled"', line)
         self.assertIn('d="M7.4 7.4l5.2 5.2M12.6 7.4l-5.2 5.2"', line)
-        self.assertNotIn("ring(", line)   # not the open ring a working card wears
+        self.assertNotIn("ring(", line)  # not the open ring a working card wears
 
     def test_the_title_is_struck_and_the_row_says_cancelled(self):
         self.assertRegex(BOARD, r"li\.task\.cancelled \.task-text\{text-decoration:line-through")

@@ -43,9 +43,7 @@ Portuguese sentences without Markdown. Ignore your own voice and background spee
         flags=re.MULTILINE | re.DOTALL,
     )
     if count != 1:
-        raise ValueError(
-            "The Boss profile has no Language section; no settings changed."
-        )
+        raise ValueError("The Boss profile has no Language section; no settings changed.")
     if doctrine == original:
         return registry["roles"]["boss"]
     digest = hashlib.sha256(doctrine.encode()).hexdigest()[:12]
@@ -65,9 +63,7 @@ Portuguese sentences without Markdown. Ignore your own voice and background spee
             raise ValueError("A local profile already exists with different content.")
         write_preserving(path, text.encode(), mode=0o444)
     registry["roles"]["boss"] = ref
-    write_preserving(
-        registry_path, (json.dumps(registry, indent=2) + "\n").encode(), mode=0o444
-    )
+    write_preserving(registry_path, (json.dumps(registry, indent=2) + "\n").encode(), mode=0o444)
     return ref
 
 
@@ -76,6 +72,4 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=absolute_path)
     args = parser.parse_args()
     print("Selected local profile:", configure(load(args.config)))
-    print(
-        "Running agents were not restarted. Resume the Boss with the new profile to apply it."
-    )
+    print("Running agents were not restarted. Resume the Boss with the new profile to apply it.")

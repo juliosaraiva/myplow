@@ -15,15 +15,31 @@ in this file are the layout; the pieces stay here because the install copies
   http_json, WebSocket              clients used by the bridges
   JSONHandler                       body limits, sessions, proxying, the thread cap
 """
-import os, sys, json, hmac, hashlib, base64, html, time, socket, ssl, subprocess, shutil, urllib.request, urllib.parse
+
+import os
+import sys
+import json
+import hmac
+import hashlib
+import base64
+import html
+import time
+import socket
+import ssl
+import subprocess
+import shutil
+import urllib.request
+import urllib.parse
 import errno
 import re
 import mimetypes
-import shlex, signal
+import shlex
+import signal
 import copy
 import fcntl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 
 def config_path():
     explicit = os.environ.get("MYPEOPLE_CONFIG_PATH")
@@ -36,6 +52,7 @@ def config_path():
 
 
 CONFIG_PATH = config_path()
+
 
 def read_config_file():
     """queue.env as it is on disk now, without the env override load_env() applies.
@@ -65,15 +82,37 @@ def load_env():
     cfg = read_config_file()
     # Live env overrides the file, including fleet/client-only keys not present in old configs.
     known = set(cfg) | {
-        "INSTALL_DIR", "HOST_ID", "HUD_PORT", "TODO_PORT", "TTYD_PORT",
-        "TTYD_BROWSER_PORT", "TTYD_RO_PORT", "BIND_ADDR",
-        "QUEUE_URL", "QUEUE_SECRET", "TTYD_PUBLIC_URL", "DEFAULT_ENG_MODEL",
-        "DEFAULT_BACKEND", "DEFAULT_AGENT_BACKEND", "DEFAULT_CLAUDE_MODEL", "DEFAULT_CLAUDE_EFFORT", "DEFAULT_CODEX_MODEL", "DEFAULT_GROK_MODEL",
+        "INSTALL_DIR",
+        "HOST_ID",
+        "HUD_PORT",
+        "TODO_PORT",
+        "TTYD_PORT",
+        "TTYD_BROWSER_PORT",
+        "TTYD_RO_PORT",
+        "BIND_ADDR",
+        "QUEUE_URL",
+        "QUEUE_SECRET",
+        "TTYD_PUBLIC_URL",
+        "DEFAULT_ENG_MODEL",
+        "DEFAULT_BACKEND",
+        "DEFAULT_AGENT_BACKEND",
+        "DEFAULT_CLAUDE_MODEL",
+        "DEFAULT_CLAUDE_EFFORT",
+        "DEFAULT_CODEX_MODEL",
+        "DEFAULT_GROK_MODEL",
         "MYPEOPLE_RECORD",
-        "QUEUE_DEAD_AFTER", "HEARTBEAT_INTERVAL", "UPSTREAM_QUEUE_URL",
-        "UPSTREAM_QUEUE_SECRET", "NODE_PURPOSE", "NODE_TYPE", "NODE_RECORDING_URL",
-        "MP_HANDLER_TIMEOUT", "MP_MAX_CONNECTIONS", "MP_MAX_JSON_BYTES",
-        "MP_MAX_UPLOAD_BYTES", "MP_SESSION_TTL",
+        "QUEUE_DEAD_AFTER",
+        "HEARTBEAT_INTERVAL",
+        "UPSTREAM_QUEUE_URL",
+        "UPSTREAM_QUEUE_SECRET",
+        "NODE_PURPOSE",
+        "NODE_TYPE",
+        "NODE_RECORDING_URL",
+        "MP_HANDLER_TIMEOUT",
+        "MP_MAX_CONNECTIONS",
+        "MP_MAX_JSON_BYTES",
+        "MP_MAX_UPLOAD_BYTES",
+        "MP_SESSION_TTL",
     }
     for k in known:
         if os.environ.get(k) is not None:
@@ -112,5 +151,5 @@ def load_env():
     cfg.setdefault("MP_SESSION_TTL", str(12 * 3600))
     return cfg
 
-CFG = load_env()
 
+CFG = load_env()

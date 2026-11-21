@@ -8,5 +8,3 @@ def cmd_verify(args):
         return 1
     env = child_env(cfg)
     return subprocess.call(["bash", vs], env=env, cwd=install)
-
-

@@ -4,6 +4,7 @@ ttyd-attach.sh relied on `set-option destroy-unattached` at the end of its comma
 never runs when select-window fails (the tab is gone) or when ttyd kills the viewer first: the
 _v_ session then stayed behind with nobody attached, for 10 hours in the case found.
 """
+
 import os
 from pathlib import Path
 import pty
@@ -22,16 +23,17 @@ class ViewerTests(unittest.TestCase):
     def test_a_viewer_session_goes_when_ttyd_closes_it(self):
         mux = tempfile.mkdtemp(dir="/tmp")  # tmux sockets need a short path
         self.addCleanup(shutil.rmtree, mux, True)
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TMUX_TMPDIR": mux, "HOME": mux,
-               "TERM": "xterm"}
-        sessions = lambda: subprocess.run(["tmux", "list-sessions", "-F", "#{session_name}"], env=env,
-                                          capture_output=True, text=True).stdout.split()
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TMUX_TMPDIR": mux, "HOME": mux, "TERM": "xterm"}
+        sessions = lambda: subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"], env=env, capture_output=True, text=True
+        ).stdout.split()
         subprocess.run(["tmux", "new-session", "-d", "-s", "mc-t", "-n", "w"], env=env, check=True)
         subprocess.run(["tmux", "new-window", "-d", "-t", "mc-t", "-n", "gone-prefix"], env=env, check=True)
         self.addCleanup(subprocess.run, ["tmux", "kill-server"], env=env, capture_output=True)
         # a retired agent's tile reconnecting: no session, and it never lands on a live window
-        gone = subprocess.run(["bash", str(SCRIPT), "-t", "mc-t:gon"], env=env,
-                              capture_output=True, text=True, timeout=10)
+        gone = subprocess.run(
+            ["bash", str(SCRIPT), "-t", "mc-t:gon"], env=env, capture_output=True, text=True, timeout=10
+        )
         self.assertEqual(1, gone.returncode)
         self.assertIn("gon is gone", gone.stdout)
         self.assertEqual(["mc-t"], sessions())

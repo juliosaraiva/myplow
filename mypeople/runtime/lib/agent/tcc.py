@@ -8,12 +8,22 @@
 # when neither names one. Read-only: it never answers a prompt or touches TCC.
 TCC_LOG = os.path.join(INSTALL_DIR, "logs", "tcc.log")
 TCC_SERVICE = "kTCCServiceSystemPolicyAppData"
-TCC_STREAM = ["/usr/bin/log", "stream", "--style", "ndjson", "--info", "--debug", "--predicate",
-              'subsystem == "com.apple.TCC" AND category == "access" AND eventMessage BEGINSWITH "AUTHREQ_"']
+TCC_STREAM = [
+    "/usr/bin/log",
+    "stream",
+    "--style",
+    "ndjson",
+    "--info",
+    "--debug",
+    "--predicate",
+    'subsystem == "com.apple.TCC" AND category == "access" AND eventMessage BEGINSWITH "AUTHREQ_"',
+]
 TCC_CONTAINER = re.compile(r"Library/(?:Group\\? Containers|Containers)/([A-Za-z0-9._-]+)")
 TCC_VALUES = {"0": "denied", "2": "allowed", "3": "limited"}  # tccd's authValue
-TCC_USAGE = ("usage: mp tcc [YYYY-MM-DD]   (macOS App Data requests that day, by agent and container;\n"
-             "                              one line each in logs/tcc.log, recorded by mp tcc serve)")
+TCC_USAGE = (
+    "usage: mp tcc [YYYY-MM-DD]   (macOS App Data requests that day, by agent and container;\n"
+    "                              one line each in logs/tcc.log, recorded by mp tcc serve)"
+)
 
 
 def tcc_requests(lines, snapshot):
@@ -73,7 +83,7 @@ def tcc_snapshot(pid):
         return {}
     agents = []
     for p in pids:  # ps -E prints the environment after the argv
-        a = re.search(r"(?:^| )AGENT_ID=(\S+)", envs.get(p, "")[len(args.get(p, "")):])
+        a = re.search(r"(?:^| )AGENT_ID=(\S+)", envs.get(p, "")[len(args.get(p, "")) :])
         agents.append(a.group(1) if a else "")
     agent = next((a for a in agents if a), "")
     keep = len(pids) - agents[::-1].index(agent) if agent else len(pids)
@@ -81,12 +91,14 @@ def tcc_snapshot(pid):
     for p in pids[:keep]:
         words = args.get(p, "?").split()
         scripts.append(next((w for w in words[1:4] if re.search(r"\.(py|sh|mjs|js)$", w)), ""))
-        chain.append(os.path.basename(words[0]).lstrip("-")
-                     + (" " + os.path.basename(scripts[-1]) if scripts[-1] else ""))
+        chain.append(
+            os.path.basename(words[0]).lstrip("-") + (" " + os.path.basename(scripts[-1]) if scripts[-1] else "")
+        )
     c = next(filter(None, (TCC_CONTAINER.search(args.get(p, "")) for p in pids)), None)
     if not c:
-        files = subprocess.run(["lsof", "-nP", "-p", str(pid), "-Ffn"], capture_output=True,
-                               text=True, timeout=10).stdout
+        files = subprocess.run(
+            ["lsof", "-nP", "-p", str(pid), "-Ffn"], capture_output=True, text=True, timeout=10
+        ).stdout
         c = TCC_CONTAINER.search(files)
         cwd = re.search(r"^fcwd\nn(.*)$", files, re.M)
         if not c and scripts[0] and cwd:  # e.g. python3 watcher.py, whose source names the path
@@ -100,11 +112,19 @@ def tcc_snapshot(pid):
 
 def tcc_line(req):
     """One request -> one tab-separated line: time, agent, container, prompt?, answer, chain."""
-    return "\t".join([req["ts"][:19] + " " + time.strftime("%Z"), req.get("agent") or "-",
-                      req.get("container") or "?", "prompt" if req["prompt"] else "no-prompt",
-                      req.get("result", "unknown"),
-                      req.get("chain") or "%s (exited)" % os.path.basename(req.get("binary", "?"))]
-                     ) + "\n"
+    return (
+        "\t".join(
+            [
+                req["ts"][:19] + " " + time.strftime("%Z"),
+                req.get("agent") or "-",
+                req.get("container") or "?",
+                "prompt" if req["prompt"] else "no-prompt",
+                req.get("result", "unknown"),
+                req.get("chain") or "%s (exited)" % os.path.basename(req.get("binary", "?")),
+            ]
+        )
+        + "\n"
+    )
 
 
 def tcc_counts(lines, day):
@@ -123,11 +143,13 @@ def do_tcc(argv):
     """mp tcc [YYYY-MM-DD] | mp tcc serve — App Data requests by agent and container (card 1c417d9f90)."""
     if argv == ["serve"]:
         import fcntl
+
         lock = open(os.path.join(INSTALL_DIR, "run", "tcc.lock"), "a+")
         try:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            print("mp tcc serve is already running", file=sys.stderr); return 0
+            print("mp tcc serve is already running", file=sys.stderr)
+            return 0
         os.makedirs(os.path.dirname(TCC_LOG), exist_ok=True)
 
         def snapshot(pid):
@@ -135,26 +157,27 @@ def do_tcc(argv):
                 return tcc_snapshot(pid)
             except Exception as e:  # the process is gone, or ps hung: keep the request anyway
                 return {"chain": "(%r)" % e}
+
         while True:
-            stream = subprocess.Popen(TCC_STREAM, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                      text=True)
+            stream = subprocess.Popen(TCC_STREAM, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
             for req in tcc_requests(stream.stdout, snapshot):
                 with open(TCC_LOG, "a") as f:
                     f.write(tcc_line(req))
             stream.wait()
             time.sleep(10)  # logd restarted, or this is not a Mac
     if len(argv) > 1 or (argv and not re.match(r"\d{4}-\d\d-\d\d$", argv[0])):
-        print(TCC_USAGE, file=sys.stderr); return 2
+        print(TCC_USAGE, file=sys.stderr)
+        return 2
     day = argv[0] if argv else time.strftime("%Y-%m-%d")
     try:
         with open(TCC_LOG) as f:
             rows = tcc_counts(f, day)
     except FileNotFoundError:
         rows = []
-    print("%s: %d App Data prompts, %d requests (prompts/requests, agent, container)"
-          % (day, sum(c[0] for _, c in rows), sum(c[1] for _, c in rows)))
+    print(
+        "%s: %d App Data prompts, %d requests (prompts/requests, agent, container)"
+        % (day, sum(c[0] for _, c in rows), sum(c[1] for _, c in rows))
+    )
     for (agent, container), (prompts, total) in rows:
         print("  %4d/%-4d %s  %s" % (prompts, total, agent, container))
     return 0
-
-

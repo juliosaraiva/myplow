@@ -2,7 +2,8 @@ def do_board(argv):
     """mp board [--compact] — print the whole board as JSON (no curl/secret/jq needed)."""
     board, err = _fetch_board()
     if err:
-        print("ERROR: " + err, file=sys.stderr); return 1
+        print("ERROR: " + err, file=sys.stderr)
+        return 1
     if "--compact" in argv:
         print(json.dumps(board, ensure_ascii=False, separators=(",", ":")))
     else:
@@ -14,11 +15,13 @@ def do_card(argv):
     """mp card <task_id> [--compact] — print a single card (exact id or unique prefix)."""
     ids = [a for a in argv if not a.startswith("--")]
     if not ids:
-        print(USAGE["card"], file=sys.stderr); return 2
+        print(USAGE["card"], file=sys.stderr)
+        return 2
     tid = ids[0]
     board, err = _fetch_board()
     if err:
-        print("ERROR: " + err, file=sys.stderr); return 1
+        print("ERROR: " + err, file=sys.stderr)
+        return 1
     tasks = board.get("tasks", {}) or {}
     t = tasks.get(tid)
     if t is None:
@@ -26,9 +29,11 @@ def do_card(argv):
         if len(matches) == 1:
             t = tasks[matches[0]]
         elif len(matches) > 1:
-            print("ERROR: %r is ambiguous (%d cards match)" % (tid, len(matches)), file=sys.stderr); return 1
+            print("ERROR: %r is ambiguous (%d cards match)" % (tid, len(matches)), file=sys.stderr)
+            return 1
     if t is None:
-        print("ERROR: no card matching %r" % tid, file=sys.stderr); return 1
+        print("ERROR: no card matching %r" % tid, file=sys.stderr)
+        return 1
     if "--compact" in argv:
         print(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
     else:
@@ -48,8 +53,8 @@ def do_comment(argv):
     by = os.environ.get("AGENT_ID", "").strip()
     if "--by" in rest:
         i = rest.index("--by")
-        by = (rest[i + 1] if i + 1 < len(rest) else by)
-        rest = rest[:i] + rest[i + 2:]
+        by = rest[i + 1] if i + 1 < len(rest) else by
+        rest = rest[:i] + rest[i + 2 :]
     by = full_aid(by) if by else "CEO"
     # --by is the ONLY flag and it was just consumed. Anything flag-shaped left over is a
     # command someone expected mp to parse, and it used to be POSTED as the comment instead
@@ -59,25 +64,31 @@ def do_comment(argv):
     # is never a bare flag-shaped token; "- item one" has whitespace and passes.
     stray = [a for a in rest if a.startswith("-") and not any(c.isspace() for c in a)]
     if stray:
-        print("ERROR: mp comment takes the body as ONE quoted argument, or on stdin with no "
-              "body arguments — there is no --stdin and no --file flag, and a flag-looking "
-              "token is POSTED as the comment.\n"
-              "  got:     mp comment %s %s\n"
-              "  correct: mp comment %s \"your comment text\"\n"
-              "           mp comment %s < body.md     (or a heredoc, with no body arguments)\n"
-              "           add --by <agent_id> to attribute it\n"
-              "  if the body really begins with %s, quote the whole body as one argument."
-              % (tid, " ".join(rest), tid, tid, stray[0]), file=sys.stderr)
+        print(
+            "ERROR: mp comment takes the body as ONE quoted argument, or on stdin with no "
+            "body arguments — there is no --stdin and no --file flag, and a flag-looking "
+            "token is POSTED as the comment.\n"
+            "  got:     mp comment %s %s\n"
+            '  correct: mp comment %s "your comment text"\n'
+            "           mp comment %s < body.md     (or a heredoc, with no body arguments)\n"
+            "           add --by <agent_id> to attribute it\n"
+            "  if the body really begins with %s, quote the whole body as one argument."
+            % (tid, " ".join(rest), tid, tid, stray[0]),
+            file=sys.stderr,
+        )
         return 2
     body = " ".join(rest).strip()
     if not body and not sys.stdin.isatty():
         body = sys.stdin.read().strip()
     if not body:
-        print("ERROR: empty comment body (pass as args or pipe via stdin)", file=sys.stderr); return 2
-    code, res = C.http_json("POST", TODO_URL + "/todo/comment",
-                            {"task_id": tid, "by": by, "body": body}, HDR, timeout=12)
+        print("ERROR: empty comment body (pass as args or pipe via stdin)", file=sys.stderr)
+        return 2
+    code, res = C.http_json(
+        "POST", TODO_URL + "/todo/comment", {"task_id": tid, "by": by, "body": body}, HDR, timeout=12
+    )
     if code != 200 or not (isinstance(res, dict) and res.get("ok")):
-        print("ERROR: comment failed (HTTP %s): %s" % (code, str(res)[:200]), file=sys.stderr); return 1
+        print("ERROR: comment failed (HTTP %s): %s" % (code, str(res)[:200]), file=sys.stderr)
+        return 1
     print("commented on %s as %s (id %s)" % (tid, by, res.get("id")))
     return 0
 
@@ -95,15 +106,22 @@ def do_owner(argv):
         return 2
     action, tid, agent_id = argv[0], argv[1], full_aid(argv[2])
     by = os.environ.get("AGENT_ID", "").strip()
-    code, res = C.http_json("POST", TODO_URL + "/todo/owner",
-                            {"action": action, "task_id": tid, "agent_id": agent_id,
-                             "by": full_aid(by) if by else by}, HDR, timeout=12)
+    code, res = C.http_json(
+        "POST",
+        TODO_URL + "/todo/owner",
+        {"action": action, "task_id": tid, "agent_id": agent_id, "by": full_aid(by) if by else by},
+        HDR,
+        timeout=12,
+    )
     if code != 200 or not (isinstance(res, dict) and res.get("ok")):
         err = res.get("error") if isinstance(res, dict) else str(res)[:200]
         # ineligible_owner is the common one and its cause is never obvious from the word alone.
-        hint = ("\nHINT: the agent must be alive, report to you, and have been spawned FOR this "
-                "card (`mp spawn <id> --boss <you> --owner-task %s`)." % tid
-                if err == "ineligible_owner" else "")
+        hint = (
+            "\nHINT: the agent must be alive, report to you, and have been spawned FOR this "
+            "card (`mp spawn <id> --boss <you> --owner-task %s`)." % tid
+            if err == "ineligible_owner"
+            else ""
+        )
         print("ERROR: owner %s failed (HTTP %s): %s%s" % (action, code, err, hint), file=sys.stderr)
         return 1
     print("owner of %s is now %s" % (tid, res.get("assignee", agent_id)))
@@ -132,24 +150,23 @@ def do_proof(argv):
     A local file is uploaded and served by the board; an http(s) link is stored as a link.
     """
     if len(argv) < 2:
-        print(USAGE["proof"], file=sys.stderr); return 2
+        print(USAGE["proof"], file=sys.stderr)
+        return 2
     tid, target = argv[0], argv[1]
     body = " ".join(argv[2:]).strip()
     local = _local_proof_path(target)
     if local is not None:
         if not os.path.isfile(local):
             print("ERROR: no such file: %s" % local, file=sys.stderr)
-            print("       pass a readable file path, or an http(s) URL for a link proof",
-                  file=sys.stderr)
+            print("       pass a readable file path, or an http(s) URL for a link proof", file=sys.stderr)
             return 2
-        code, res = C.http_upload(TODO_URL + "/todo/proof", {"task_id": tid, "body": body},
-                                  local, HDR, timeout=120)
+        code, res = C.http_upload(TODO_URL + "/todo/proof", {"task_id": tid, "body": body}, local, HDR, timeout=120)
     else:
-        code, res = C.http_json("POST", TODO_URL + "/todo/proof",
-                                {"task_id": tid, "url": target, "body": body}, HDR, timeout=12)
+        code, res = C.http_json(
+            "POST", TODO_URL + "/todo/proof", {"task_id": tid, "url": target, "body": body}, HDR, timeout=12
+        )
     if code != 200 or not (isinstance(res, dict) and res.get("ok")):
-        print("ERROR: proof failed (HTTP %s): %s" % (code, str(res)[:200]), file=sys.stderr); return 1
+        print("ERROR: proof failed (HTTP %s): %s" % (code, str(res)[:200]), file=sys.stderr)
+        return 1
     print("proof attached to %s -> %s" % (tid, (res.get("proof") or {}).get("url", "")))
     return 0
-
-

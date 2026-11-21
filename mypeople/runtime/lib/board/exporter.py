@@ -5,7 +5,12 @@ board; never runs git in the live tree. Carries the <50%-shrink quarantine guard
 
 Usage: board-exporter.py            # daemon: watch + export
        board-exporter.py --once     # single export pass (for tests)"""
-import os, sys, json, time, subprocess
+
+import os
+import sys
+import json
+import time
+import subprocess
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -80,9 +85,16 @@ def export_once():
             git("commit", "-q", "-m", "SUSPECT shrink %d->%d quarantined" % (old_n, new_n))
             # notify boss (best-effort)
             try:
-                subprocess.run(["mp", "send", "%s/main:Boss" % CFG["HOST_ID"],
-                                "[board-backup] SUSPECT shrink quarantined (%d->%d)" % (old_n, new_n)],
-                               capture_output=True, timeout=15)
+                subprocess.run(
+                    [
+                        "mp",
+                        "send",
+                        "%s/main:Boss" % CFG["HOST_ID"],
+                        "[board-backup] SUSPECT shrink quarantined (%d->%d)" % (old_n, new_n),
+                    ],
+                    capture_output=True,
+                    timeout=15,
+                )
             except Exception:
                 pass
             return "quarantined"

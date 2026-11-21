@@ -5,6 +5,7 @@ agent that is alive, unretired, reporting to THIS Boss, born for ownership, and 
 Everything here defends one clause of that, plus the close/reopen lifecycle that keeps a terminal
 card from keeping a live owner.
 """
+
 import tempfile
 import unittest
 from unittest import mock
@@ -16,8 +17,15 @@ def load_todo_server(home):
 
 
 def task(**kw):
-    base = {"id": "card1", "text": "t", "state": "working", "assignee": "",
-            "ownerHistory": [], "ownerNeedsReplacement": False, "test": False}
+    base = {
+        "id": "card1",
+        "text": "t",
+        "state": "working",
+        "assignee": "",
+        "ownerHistory": [],
+        "ownerNeedsReplacement": False,
+        "test": False,
+    }
     base.update(kw)
     return base
 
@@ -31,8 +39,7 @@ class OwnerStateTransitionTests(unittest.TestCase):
     def test_closing_a_card_kills_its_owner_through_the_queue(self):
         """The Boss may be dead or mid-crash; the kill must not depend on it (card 476fd89607)."""
         t = task(assignee="test-node/main:eng-1")
-        with mock.patch.object(self.ts, "queue_kill_owner") as kill, \
-             mock.patch.object(self.ts, "ping_boss"):
+        with mock.patch.object(self.ts, "queue_kill_owner") as kill, mock.patch.object(self.ts, "ping_boss"):
             self.ts.apply_owner_state_transition(t, "working", "done", "CEO")
         kill.assert_called_once()
         self.assertEqual("test-node/main:eng-1", kill.call_args[0][0])
@@ -48,8 +55,7 @@ class OwnerStateTransitionTests(unittest.TestCase):
     def test_reopening_asks_for_a_fresh_owner_and_kills_nobody(self):
         """Reopen must not kill: the old owner is already gone, and the card needs a NEW one."""
         t = task(assignee="test-node/main:eng-1", state="working")
-        with mock.patch.object(self.ts, "queue_kill_owner") as kill, \
-             mock.patch.object(self.ts, "ping_boss") as ping:
+        with mock.patch.object(self.ts, "queue_kill_owner") as kill, mock.patch.object(self.ts, "ping_boss") as ping:
             self.ts.apply_owner_state_transition(t, "done", "working", "CEO")
         kill.assert_not_called()
         self.assertTrue(t["ownerNeedsReplacement"])
@@ -58,8 +64,7 @@ class OwnerStateTransitionTests(unittest.TestCase):
 
     def test_a_move_between_two_live_states_is_not_a_lifecycle_event(self):
         t = task(assignee="test-node/main:eng-1")
-        with mock.patch.object(self.ts, "queue_kill_owner") as kill, \
-             mock.patch.object(self.ts, "ping_boss") as ping:
+        with mock.patch.object(self.ts, "queue_kill_owner") as kill, mock.patch.object(self.ts, "ping_boss") as ping:
             self.ts.apply_owner_state_transition(t, "working", "review", "CEO")
         kill.assert_not_called()
         ping.assert_not_called()
@@ -67,16 +72,14 @@ class OwnerStateTransitionTests(unittest.TestCase):
 
     def test_a_test_card_never_touches_a_real_agent(self):
         t = task(assignee="test-node/main:eng-1", test=True)
-        with mock.patch.object(self.ts, "queue_kill_owner") as kill, \
-             mock.patch.object(self.ts, "ping_boss") as ping:
+        with mock.patch.object(self.ts, "queue_kill_owner") as kill, mock.patch.object(self.ts, "ping_boss") as ping:
             self.ts.apply_owner_state_transition(t, "working", "done", "CEO")
         kill.assert_not_called()
         ping.assert_not_called()
 
     def test_closing_an_ownerless_card_kills_nothing(self):
         t = task(assignee="")
-        with mock.patch.object(self.ts, "queue_kill_owner") as kill, \
-             mock.patch.object(self.ts, "ping_boss"):
+        with mock.patch.object(self.ts, "queue_kill_owner") as kill, mock.patch.object(self.ts, "ping_boss"):
             self.ts.apply_owner_state_transition(t, "working", "done", "CEO")
         kill.assert_not_called()
 
@@ -95,8 +98,7 @@ class QueueKillOwnerTests(unittest.TestCase):
         http.assert_not_called()
 
     def test_a_well_formed_id_is_submitted_as_a_kill(self):
-        with mock.patch.object(self.ts.C, "http_json",
-                               return_value=(200, {"task_id": "abc"})) as http:
+        with mock.patch.object(self.ts.C, "http_json", return_value=(200, {"task_id": "abc"})) as http:
             self.assertTrue(self.ts.queue_kill_owner("test-node/main:eng-1", "card-x-closed"))
         payload = http.call_args[0][2]
         self.assertEqual("kill", payload["type"])

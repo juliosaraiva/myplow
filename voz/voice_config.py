@@ -20,11 +20,7 @@ def owner_name() -> str:
 
 def config_path() -> Path:
     value = os.environ.get("MYPLOW_VOICE_CONFIG")
-    return (
-        absolute_path(value)
-        if value
-        else Path.home() / ".config/mypeople/voice-metal.json"
-    )
+    return absolute_path(value) if value else Path.home() / ".config/mypeople/voice-metal.json"
 
 
 def absolute_path(value: str) -> Path:
@@ -84,35 +80,20 @@ def load(path: Path | None = None) -> Settings:
     )
     source = path or config_path()
     data = json.loads(source.read_text()) if source.exists() else {}
-    if not source.exists() and (
-        path is not None or "MYPLOW_VOICE_CONFIG" in os.environ
-    ):
+    if not source.exists() and (path is not None or "MYPLOW_VOICE_CONFIG" in os.environ):
         raise ValueError(f"Voice configuration does not exist: {source}")
     if not isinstance(data, dict) or set(data) - set(asdict(defaults)):
-        raise ValueError(
-            "Voice configuration must be an object with known setting names."
-        )
+        raise ValueError("Voice configuration must be an object with known setting names.")
     values = asdict(defaults) | data
     for key in ("name", "cue", "backend"):
-        if (
-            not isinstance(values[key], str)
-            or not values[key].strip()
-            or any(c in values[key] for c in "\n\r\0")
-        ):
+        if not isinstance(values[key], str) or not values[key].strip() or any(c in values[key] for c in "\n\r\0"):
             raise ValueError(f"Invalid {key}.")
     if values["backend"] not in ("codex", "claude", "grok"):
         raise ValueError("backend must be codex, claude, or grok.")
     for key in ("microphone", "speaker"):
         value = values[key]
-        if value is not None and not (
-            type(value) is int
-            and value >= 0
-            or isinstance(value, str)
-            and value.strip()
-        ):
-            raise ValueError(
-                f"{key} must be a device name, index, or null for the system default."
-            )
+        if value is not None and not (type(value) is int and value >= 0 or isinstance(value, str) and value.strip()):
+            raise ValueError(f"{key} must be a device name, index, or null for the system default.")
     for key in ("venv", "logs", "install_dir", "mypeople_config"):
         if not isinstance(values[key], str):
             raise TypeError(f"Invalid {key} path.")
@@ -128,11 +109,7 @@ def load(path: Path | None = None) -> Settings:
     if values["stt_port"] == values["tts_port"]:
         raise ValueError("STT and TTS must use different ports.")
     speed = values["tts_speed"]
-    if (
-        type(speed) not in (int, float)
-        or not math.isfinite(speed)
-        or not 0.5 <= speed <= 2
-    ):
+    if type(speed) not in (int, float) or not math.isfinite(speed) or not 0.5 <= speed <= 2:
         raise ValueError("tts_speed must be between 0.5 and 2.")
     if type(values["autostart_microphone"]) is not bool:
         raise ValueError("autostart_microphone must be true or false.")

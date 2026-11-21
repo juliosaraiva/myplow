@@ -57,6 +57,7 @@ def mint_session(ttl=None, now=None):
     msg = "%s.%d" % (nonce, exp)
     return "%s.%s" % (msg, _hmac(msg))
 
+
 def valid_session(tok, now=None):
     if not tok or tok.count(".") != 2:
         return False
@@ -72,6 +73,7 @@ def valid_session(tok, now=None):
         now = time.time()
     return exp_i >= now
 
+
 def parse_cookies(header):
     out = {}
     if not header:
@@ -81,6 +83,7 @@ def parse_cookies(header):
             k, v = part.strip().split("=", 1)
             out[k.strip()] = v.strip()
     return out
+
 
 def caller_identity(headers):
     """Returns (authorized:bool, identity:str) where identity in {machine,browser,none}."""
@@ -92,4 +95,3 @@ def caller_identity(headers):
     if valid_session(cookies.get("mp_session", "")):
         return True, "browser"
     return False, "none"
-

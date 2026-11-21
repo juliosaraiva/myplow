@@ -67,11 +67,14 @@ class PromptRegistryTests(unittest.TestCase):
             client.set_terminated(run_id)
             run = client.get_run(run_id)
             self.assertEqual(run.info.status, "FINISHED")
-            self.assertEqual(run.data.params, {
-                f"prompt.{name}.name": name,
-                f"prompt.{name}.version": result["version"],
-                f"prompt.{name}.sha256": digest,
-            })
+            self.assertEqual(
+                run.data.params,
+                {
+                    f"prompt.{name}.name": name,
+                    f"prompt.{name}.version": result["version"],
+                    f"prompt.{name}.sha256": digest,
+                },
+            )
             self.assertFalse(run.data.metrics)
             self.assertEqual(client.list_artifacts(run_id), [])
             self.assertEqual(client.load_prompt(name, version=result["version"]).template, template)

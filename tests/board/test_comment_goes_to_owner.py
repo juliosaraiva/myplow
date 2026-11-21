@@ -4,6 +4,7 @@ It used to ping only the Boss, so every word the CEO said waited for a whole age
 reached the person doing the work: measured on his own card, a median of 18s and a worst case of
 439s. The board knows the owner, so it delivers first and tells the Boss it already did.
 """
+
 import tempfile
 import unittest
 from unittest import mock
@@ -27,9 +28,9 @@ class CommentDeliveryTests(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         # deliver_comment runs in a thread; run it inline so the test sees the result.
-        p2 = mock.patch.object(self.srv.threading, "Thread",
-                               lambda target, args=(), daemon=None: mock.Mock(
-                                   start=lambda: target(*args)))
+        p2 = mock.patch.object(
+            self.srv.threading, "Thread", lambda target, args=(), daemon=None: mock.Mock(start=lambda: target(*args))
+        )
         p2.start()
         self.addCleanup(p2.stop)
 
@@ -62,11 +63,10 @@ class CommentDeliveryTests(unittest.TestCase):
         self.assertNotIn("already delivered", self.sent[0][1])
 
     def test_an_unreachable_owner_leaves_the_boss_to_relay(self):
-        self.reachable = {self.srv.BOSS_AGENT}          # owner's window is gone
+        self.reachable = {self.srv.BOSS_AGENT}  # owner's window is gone
         self.emit(self.task())
         boss_msg = dict(self.sent)[self.srv.BOSS_AGENT]
-        self.assertNotIn("already delivered", boss_msg,
-                         "if delivery failed the Boss must still route it by hand")
+        self.assertNotIn("already delivered", boss_msg, "if delivery failed the Boss must still route it by hand")
 
     def test_an_agent_never_gets_its_own_comment_back(self):
         self.emit(self.task(), by="test-node/main:eng-7")

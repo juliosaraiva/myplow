@@ -6,6 +6,7 @@ literal string "--by Y" and discarded the real body on stdin nothing read, while
 Several agents lost most of a day to it, and the tell was that the recipient got the SAME
 string every time -- real truncation varies with the text, operator error repeats verbatim.
 """
+
 import io
 from pathlib import Path
 import unittest
@@ -30,14 +31,15 @@ class SendArgvTests(unittest.TestCase):
         stdin = mock.Mock()
         stdin.isatty.return_value = tty
         stdin.read.return_value = stdin_text or ""
-        with mock.patch.object(self.mp.C, "tmux_send_message",
-                               lambda t, m: got.__setitem__("msg", m) or True), \
-             mock.patch.object(self.mp.C, "enqueue_notification_route", lambda *a, **k: ""), \
-             mock.patch.object(self.mp.C, "tmux_target", lambda aid: "mc-main:eng-1"), \
-             mock.patch.object(self.mp, "is_local", lambda aid: True), \
-             mock.patch.object(self.mp.sys, "stdin", stdin), \
-             mock.patch.object(self.mp.sys, "stderr", err), \
-             mock.patch.object(self.mp.sys, "stdout", io.StringIO()):
+        with (
+            mock.patch.object(self.mp.C, "tmux_send_message", lambda t, m: got.__setitem__("msg", m) or True),
+            mock.patch.object(self.mp.C, "enqueue_notification_route", lambda *a, **k: ""),
+            mock.patch.object(self.mp.C, "tmux_target", lambda aid: "mc-main:eng-1"),
+            mock.patch.object(self.mp, "is_local", lambda aid: True),
+            mock.patch.object(self.mp.sys, "stdin", stdin),
+            mock.patch.object(self.mp.sys, "stderr", err),
+            mock.patch.object(self.mp.sys, "stdout", io.StringIO()),
+        ):
             rc = self.mp.do_send(argv)
         return rc, got.get("msg"), err.getvalue()
 
@@ -62,7 +64,7 @@ class SendArgvTests(unittest.TestCase):
         self.assertIn("no --by flag", err)
 
     def test_the_error_names_the_fix(self):
-        """"invalid arguments" would have saved nobody. It must say: argument not stdin,
+        """ "invalid arguments" would have saved nobody. It must say: argument not stdin,
         no --by flag, reply_to comes from AGENT_ID."""
         _, _, err = self.send([AGENT, "--by", AGENT])
         self.assertIn("ARGUMENTS", err)
@@ -90,8 +92,7 @@ class SendArgvTests(unittest.TestCase):
         stdin.isatty.return_value = True
         stdin.read.side_effect = AssertionError("read stdin on a tty -- would hang")
         err = io.StringIO()
-        with mock.patch.object(self.mp.sys, "stdin", stdin), \
-             mock.patch.object(self.mp.sys, "stderr", err):
+        with mock.patch.object(self.mp.sys, "stdin", stdin), mock.patch.object(self.mp.sys, "stderr", err):
             rc = self.mp.do_send([AGENT])
         self.assertEqual(rc, 2)
         self.assertIn("usage: mp send", err.getvalue())

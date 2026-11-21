@@ -73,6 +73,7 @@ def refuse_downgrade(install):
     if os.environ.get("MYPEOPLE_ALLOW_DOWNGRADE") == "1":
         return False
     from . import __version__
+
     here, there = _version_tuple(__version__), _version_tuple(installed_version(install))
     return bool(here and there and there > here)
 
@@ -81,10 +82,13 @@ def materialize(install):
     """Copy the packaged runtime into a WRITABLE INSTALL_DIR. Idempotent: never overwrite
     existing daemon code differently, and NEVER clobber live state (board/roster/logs)."""
     from . import __version__
+
     if refuse_downgrade(install):
-        _echo("[myplow] this build is %s and %s already runs %s — leaving it alone.\n"
-              "[myplow] open the current app, or set MYPEOPLE_ALLOW_DOWNGRADE=1 to force it."
-              % (__version__, install, installed_version(install)))
+        _echo(
+            "[myplow] this build is %s and %s already runs %s — leaving it alone.\n"
+            "[myplow] open the current app, or set MYPEOPLE_ALLOW_DOWNGRADE=1 to force it."
+            % (__version__, install, installed_version(install))
+        )
         return
     rt = runtime_dir()
     os.makedirs(install, exist_ok=True)
@@ -105,9 +109,13 @@ def materialize(install):
     for sub in ("bin", "lib", "plugins", "verify", "config", "roles"):
         src = os.path.join(rt, sub)
         if os.path.isdir(src):
-            shutil.copytree(src, os.path.join(install, sub), dirs_exist_ok=True,
-                            copy_function=_replace_file,
-                            ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copytree(
+                src,
+                os.path.join(install, sub),
+                dirs_exist_ok=True,
+                copy_function=_replace_file,
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
         for root, dirs, _ in os.walk(os.path.join(install, sub)):
             if "__pycache__" in dirs:
                 dirs.remove("__pycache__")
@@ -123,13 +131,15 @@ def materialize(install):
         # person's role, 10-18) stays pointed there: the product's version only replaces the product's
         # versions. Moving it to the stock profile made every restart revive that Boss onto the wrong
         # role, or refuse it on a locked-role drift, so the agent stayed down.
-        merged.update({r: ref for r, ref in kept_roles.items()
-                       if not os.path.isfile(os.path.join(rt, "roles", *ref.split("/")))})
+        merged.update(
+            {r: ref for r, ref in kept_roles.items() if not os.path.isfile(os.path.join(rt, "roles", *ref.split("/")))}
+        )
         # a kept entry whose profile this release deleted would fail closed at spawn; drop it.
-        reg["roles"] = {r: ref for r, ref in merged.items()
-                        if os.path.isfile(os.path.join(install, "roles", *ref.split("/")))}
+        reg["roles"] = {
+            r: ref for r, ref in merged.items() if os.path.isfile(os.path.join(install, "roles", *ref.split("/")))
+        }
         _write_file(reg_path, json.dumps(reg, indent=1) + "\n")
-        os.chmod(reg_path, mode)   # the store is published read-only; keep it that way
+        os.chmod(reg_path, mode)  # the store is published read-only; keep it that way
     # Files a previous version shipped and this one does not. copytree(dirs_exist_ok) only ever
     # adds, so a retired page would survive every upgrade forever as a file the product no longer
     # serves. Removing it here is what makes "removed" true on an upgraded install, not just a
@@ -143,8 +153,11 @@ def materialize(install):
     # only its files left latch-reconnect's folder behind (10-29). A source folder holding nothing
     # but bytecode, what `git rm` leaves in a checkout, ships nothing.
     src = os.path.join(rt, "plugins")
-    shipped = {name for name in os.listdir(src)
-               if any(files for root, _, files in os.walk(os.path.join(src, name)) if "__pycache__" not in root)}
+    shipped = {
+        name
+        for name in os.listdir(src)
+        if any(files for root, _, files in os.walk(os.path.join(src, name)) if "__pycache__" not in root)
+    }
     for name in os.listdir(os.path.join(install, "plugins")):
         if name not in shipped and os.path.isdir(os.path.join(install, "plugins", name)):
             shutil.rmtree(os.path.join(install, "plugins", name), ignore_errors=True)
@@ -157,6 +170,7 @@ def materialize(install):
     # the UI) know which version is serving. Rewritten here so an upgrade cannot leave a stale
     # number on the pages; a hand-placed VERSION is replaced the same way the code trees are.
     from . import __version__
+
     _write_file(os.path.join(install, "VERSION"), __version__ + "\n")
     # writable state skeletons — create empty, never overwrite existing board/roster/logs
     for sub in ("todos", "run", "status", "logs"):
@@ -174,8 +188,10 @@ def materialize(install):
                 if rel != os.path.join("roles", "registry.json") and os.path.isfile(dst):
                     with open(dst, "rb") as f:
                         files[rel] = hashlib.sha256(f.read()).hexdigest()
-    _write_file(os.path.join(install, "run", "manifest.json"),
-                json.dumps({"version": __version__, "files": files}, indent=1, sort_keys=True) + "\n")
+    _write_file(
+        os.path.join(install, "run", "manifest.json"),
+        json.dumps({"version": __version__, "files": files}, indent=1, sort_keys=True) + "\n",
+    )
     # make scripts executable (package-data can lose the bit on some backends)
     bindir = os.path.join(install, "bin")
     for f in os.listdir(bindir):
@@ -192,5 +208,3 @@ def materialize(install):
     vs = os.path.join(install, "verify", "verify.sh")
     if os.path.exists(vs):
         os.chmod(vs, 0o755)
-
-

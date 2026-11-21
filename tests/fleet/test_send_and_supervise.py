@@ -4,6 +4,7 @@ tmux_send_message was mocked by every other test, so its submit behaviour was ne
 here -- which is how an unconditional second Enter survived. These tests drive the real function
 with tmux stubbed at subprocess level.
 """
+
 import os
 from pathlib import Path
 import re
@@ -45,9 +46,11 @@ class FakeTmux:
 
     def buffered(self):
         """Message bodies handed to `load-buffer` on stdin -- the delivery path."""
-        return [self.stdin[i].decode("utf-8")
-                for i, c in enumerate(self.calls)
-                if c[:2] == ["tmux", "load-buffer"] and self.stdin[i] is not None]
+        return [
+            self.stdin[i].decode("utf-8")
+            for i, c in enumerate(self.calls)
+            if c[:2] == ["tmux", "load-buffer"] and self.stdin[i] is not None
+        ]
 
     def pastes(self):
         return [c for c in self.calls if c[:2] == ["tmux", "paste-buffer"]]
@@ -61,8 +64,7 @@ class TmuxSendMessageTests(unittest.TestCase):
 
     def send(self, message, pane_text=""):
         fake = FakeTmux(pane_text)
-        with mock.patch.object(self.C.subprocess, "run", fake), \
-             mock.patch.object(self.C.time, "sleep"):
+        with mock.patch.object(self.C.subprocess, "run", fake), mock.patch.object(self.C.time, "sleep"):
             ok = self.C.tmux_send_message("mc-main:eng-1", message)
         return ok, fake
 
@@ -117,8 +119,7 @@ class TmuxSendMessageTests(unittest.TestCase):
     def test_never_targets_the_calling_pane(self):
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux-501/default,123,4"}, clear=False):
             fake = FakeTmux()
-            with mock.patch.object(self.C.subprocess, "run", fake), \
-                 mock.patch.object(self.C.time, "sleep"):
+            with mock.patch.object(self.C.subprocess, "run", fake), mock.patch.object(self.C.time, "sleep"):
                 self.C.tmux_send_message("mc-main:eng-1", "hi")
         self.assertTrue(fake.sent())
 
@@ -131,14 +132,18 @@ class SupervisorScriptTests(unittest.TestCase):
         the fleet is only ever repaired by hand."""
         text = (BIN / "boss-supervisor.sh").read_text()
         self.assertIn("mp reconcile", text)
-        self.assertIn("|| true", text.split("mp reconcile", 1)[1].split("\n", 1)[0],
-                      "a failing reconcile must not kill the supervisor loop")
+        self.assertIn(
+            "|| true",
+            text.split("mp reconcile", 1)[1].split("\n", 1)[0],
+            "a failing reconcile must not kill the supervisor loop",
+        )
 
     def test_supervise_raises_descriptor_limit_before_starting_daemons(self):
         text = (BIN / "supervise.sh").read_text()
         self.assertIn("ulimit -n", text)
-        self.assertLess(text.index("ulimit -n"), text.index("ensure "),
-                        "ulimit must be raised before any daemon is spawned")
+        self.assertLess(
+            text.index("ulimit -n"), text.index("ensure "), "ulimit must be raised before any daemon is spawned"
+        )
 
 
 class TtydRecycleTests(unittest.TestCase):
@@ -147,8 +152,7 @@ class TtydRecycleTests(unittest.TestCase):
     on unreaped children ONLY -- keying it on total children would kill a healthy viewer as soon as
     the fleet outgrew the threshold."""
 
-    FN = re.search(r"^recycle_leaked_ttyd\(\)\{.*?^\}",
-                   (BIN / "supervise.sh").read_text(), re.S | re.M)
+    FN = re.search(r"^recycle_leaked_ttyd\(\)\{.*?^\}", (BIN / "supervise.sh").read_text(), re.S | re.M)
 
     def run_guard(self, ps_output, threshold=20):
         """Run the real shell function against a fabricated process table. ps/pgrep are PATH stubs;
@@ -162,10 +166,13 @@ class TtydRecycleTests(unittest.TestCase):
             (stub / "ps.out").write_text(ps_output)
             for name in ("pgrep", "ps"):
                 (stub / name).chmod(0o755)
-            script = 'LOG=%s\nTTYD_MAX_DEAD_CHILDREN=%d\nkill(){ echo "$@" >> %s; }\n%s\nrecycle_leaked_ttyd "ttyd -a -p 7691"\n' % (
-                tmp, threshold, stub / "killed", self.FN.group(0))
-            subprocess.run(["bash", "-c", script], check=True,
-                           env={**os.environ, "PATH": "%s:%s" % (stub, os.environ["PATH"])})
+            script = (
+                'LOG=%s\nTTYD_MAX_DEAD_CHILDREN=%d\nkill(){ echo "$@" >> %s; }\n%s\nrecycle_leaked_ttyd "ttyd -a -p 7691"\n'
+                % (tmp, threshold, stub / "killed", self.FN.group(0))
+            )
+            subprocess.run(
+                ["bash", "-c", script], check=True, env={**os.environ, "PATH": "%s:%s" % (stub, os.environ["PATH"])}
+            )
             killed = stub / "killed"
             return killed.read_text().split() if killed.exists() else []
 
@@ -184,7 +191,7 @@ class TtydRecycleTests(unittest.TestCase):
     def test_the_supervisor_loop_actually_calls_the_guard(self):
         """A guard that is defined but never called is the bug shipping again."""
         text = (BIN / "supervise.sh").read_text()
-        loop = text[text.index("while true; do"):]
+        loop = text[text.index("while true; do") :]
         self.assertIn('recycle_leaked_ttyd "ttyd -W -a -p $TTYD_PORT"', loop)
         self.assertIn('recycle_leaked_ttyd "ttyd -a -p $TTYD_RO_PORT"', loop)
 
@@ -220,7 +227,7 @@ class BoardUiTests(unittest.TestCase):
     def test_assignee_is_not_a_free_text_field(self):
         """/todo/owner owns assignment: op=set refuses a supplied assignee, so an editable input
         would silently do nothing."""
-        self.assertNotIn('patchTask(task.id,{assignee:', self.HTML.replace(" ", ""))
+        self.assertNotIn("patchTask(task.id,{assignee:", self.HTML.replace(" ", ""))
         self.assertIn("appendAgentLink", self.HTML)
 
 

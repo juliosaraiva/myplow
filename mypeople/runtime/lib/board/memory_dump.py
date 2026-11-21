@@ -14,7 +14,10 @@ Usage:
 
 Read-only with respect to the board: it never writes the board, only reads it.
 """
-import os, sys, argparse
+
+import os
+import sys
+import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -43,10 +46,9 @@ def build_corpus(board, comment_cap=4000):
     flat = lambda s: (s or "").replace("\r", " ").replace("\n", " ")
     out = []
     for tid, t in tasks.items():
-        out.append("==== CARD %s [state=%s assignee=%s] ====" % (
-            tid, t.get("state"), t.get("assignee")))
+        out.append("==== CARD %s [state=%s assignee=%s] ====" % (tid, t.get("state"), t.get("assignee")))
         out.append("TEXT: " + flat(t.get("text")))
-        for c in (t.get("comments") or []):
+        for c in t.get("comments") or []:
             body = flat(c.get("body"))
             if len(body) > comment_cap:
                 body = body[:comment_cap] + "…"

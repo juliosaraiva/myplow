@@ -8,8 +8,9 @@ def ensure(preferred_backend=None, allow_unauthenticated=None):
     install = install_dir()
     materialize(install)
     configured = load_cfg().get("DEFAULT_BACKEND")
-    requested = (preferred_backend or os.environ.get("MYPEOPLE_BACKEND") or
-                 os.environ.get("DEFAULT_BACKEND") or configured)
+    requested = (
+        preferred_backend or os.environ.get("MYPEOPLE_BACKEND") or os.environ.get("DEFAULT_BACKEND") or configured
+    )
     if allow_unauthenticated is None:
         # Only PID 1 under a restart policy, or the desktop app. An installer or an interactive
         # `mypeople up` still refuses cleanly and starts nothing -- that behaviour is the
@@ -17,8 +18,7 @@ def ensure(preferred_backend=None, allow_unauthenticated=None):
         # in a double-clicked .app is a window that never opens and says nothing: it has no
         # terminal to print to, so the window it just refused to show is the only place to say
         # that a login is missing and which command to run in a terminal of the user's own.
-        allow_unauthenticated = (os.environ.get("MYPEOPLE_CONTAINER") == "1" or
-                                 os.environ.get("MYPEOPLE_DESKTOP") == "1")
+        allow_unauthenticated = os.environ.get("MYPEOPLE_CONTAINER") == "1" or os.environ.get("MYPEOPLE_DESKTOP") == "1"
     # Backend config seeding happens BEFORE the auth gate on purpose (card 293fc81898). It writes
     # only local files and needs no login, but it is what pre-accepts Claude's first-run modals
     # (onboarding, folder trust, and the Bypass Permissions warning whose default button is "No,
@@ -45,6 +45,5 @@ def ensure(preferred_backend=None, allow_unauthenticated=None):
     install_tmux_conf(install)
     write_auth_state(install, ok, backend, msg, requested or "")
     host = os.environ.get("HOST_ID") or load_cfg().get("HOST_ID") or socket.gethostname().split(".")[0]
-    _echo("[myplow] install dir: %s  (config: %s%s)" %
-          (install, CONFIG_PATH, ", fresh" if fresh else ", reused"))
+    _echo("[myplow] install dir: %s  (config: %s%s)" % (install, CONFIG_PATH, ", fresh" if fresh else ", reused"))
     return install, host, backend

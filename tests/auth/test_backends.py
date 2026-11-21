@@ -26,17 +26,21 @@ class GrokAuthTests(unittest.TestCase):
 
     def _run(self, stdout, returncode=0):
         return mock.patch.object(
-            firstrun.subprocess, "run",
-            return_value=subprocess.CompletedProcess([], returncode, stdout, ""))
+            firstrun.subprocess, "run", return_value=subprocess.CompletedProcess([], returncode, stdout, "")
+        )
 
     def test_logged_out_grok_is_not_authenticated_despite_exit_zero(self):
-        with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/grok"), \
-             self._run("You are not authenticated.\n\nDefault model: grok-build\n"):
+        with (
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/grok"),
+            self._run("You are not authenticated.\n\nDefault model: grok-build\n"),
+        ):
             self.assertFalse(firstrun._grok_authenticated())
 
     def test_logged_in_grok_is_authenticated(self):
-        with mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/grok"), \
-             self._run("You are logged in with grok.com.\n\nDefault model: grok-4.5\n"):
+        with (
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/grok"),
+            self._run("You are logged in with grok.com.\n\nDefault model: grok-4.5\n"),
+        ):
             self.assertTrue(firstrun._grok_authenticated())
 
     def test_missing_grok_cli_is_not_authenticated(self):
@@ -67,9 +71,11 @@ class HookConfigTests(unittest.TestCase):
                 'export DEFAULT_CODEX_MODEL="codex-custom"\n',
                 encoding="utf-8",
             )
-            with mock.patch.object(firstrun, "CONFIG_PATH", str(path)), \
-                 mock.patch.object(firstrun, "CONFIG_DIR", td), \
-                 mock.patch.dict(os.environ, {}, clear=True):
+            with (
+                mock.patch.object(firstrun, "CONFIG_PATH", str(path)),
+                mock.patch.object(firstrun, "CONFIG_DIR", td),
+                mock.patch.dict(os.environ, {}, clear=True),
+            ):
                 firstrun.write_queue_env(str(Path(td) / "state"), "codex")
             values = {}
             for line in path.read_text().splitlines():
@@ -84,11 +90,15 @@ class HookConfigTests(unittest.TestCase):
         # #49: engineers ran claude-opus-4-8 because that was the default nobody had picked.
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "queue.env"
-            path.write_text('export DEFAULT_ENG_MODEL="claude-opus-4-8"\n'
-                            'export DEFAULT_CLAUDE_MODEL="claude-opus-4-8"\n', encoding="utf-8")
-            with mock.patch.object(firstrun, "CONFIG_PATH", str(path)), \
-                 mock.patch.object(firstrun, "CONFIG_DIR", td), \
-                 mock.patch.dict(os.environ, {}, clear=True):
+            path.write_text(
+                'export DEFAULT_ENG_MODEL="claude-opus-4-8"\nexport DEFAULT_CLAUDE_MODEL="claude-opus-4-8"\n',
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(firstrun, "CONFIG_PATH", str(path)),
+                mock.patch.object(firstrun, "CONFIG_DIR", td),
+                mock.patch.dict(os.environ, {}, clear=True),
+            ):
                 firstrun.write_queue_env(str(Path(td) / "state"), "claude")
             text = path.read_text()
             self.assertNotIn("claude-opus-4-8", text)
@@ -98,12 +108,10 @@ class HookConfigTests(unittest.TestCase):
     def test_retired_hooks_are_removed_and_unrelated_hooks_survive(self):
         old = "/old/plugins/tmux-boss-hooks/emit-event.sh"
         hooks = {
-            "PreToolUse": [{"matcher": "AskUserQuestion", "hooks": [
-                {"type": "command", "command": old + " PreToolUse"}
-            ]}],
-            "SessionEnd": [{"hooks": [
-                {"type": "command", "command": old + " SessionEnd"}
-            ]}],
+            "PreToolUse": [
+                {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": old + " PreToolUse"}]}
+            ],
+            "SessionEnd": [{"hooks": [{"type": "command", "command": old + " SessionEnd"}]}],
             "Stop": [{"hooks": [{"type": "command", "command": "/usr/bin/custom-stop"}]}],
         }
         current = "/new/plugins/tmux-boss-hooks/emit-event.sh"
@@ -114,8 +122,11 @@ class HookConfigTests(unittest.TestCase):
         self.assertEqual(2, len(result["Stop"]))
         self.assertEqual(
             {"SessionStart", "UserPromptSubmit", "Stop"},
-            {event for event, groups in result.items()
-             if any(firstrun._mypeople_hook_group(group) for group in groups)},
+            {
+                event
+                for event, groups in result.items()
+                if any(firstrun._mypeople_hook_group(group) for group in groups)
+            },
         )
 
     def test_a_second_install_leaves_a_running_installs_hooks_alone(self):
@@ -138,13 +149,17 @@ class HookConfigTests(unittest.TestCase):
             home = Path(td)
             (home / ".claude").mkdir()
             stale = "/old/plugins/tmux-boss-hooks/emit-event.sh"
-            (home / ".claude" / "settings.json").write_text(json.dumps({"hooks": {
-                "SessionEnd": [{"hooks": [{"type": "command", "command": stale + " SessionEnd"}]}]
-            }}))
+            (home / ".claude" / "settings.json").write_text(
+                json.dumps(
+                    {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": stale + " SessionEnd"}]}]}}
+                )
+            )
             (home / ".codex").mkdir()
-            (home / ".codex" / "hooks.json").write_text(json.dumps({"hooks": {
-                "PreToolUse": [{"hooks": [{"type": "command", "command": stale + " PreToolUse"}]}]
-            }}))
+            (home / ".codex" / "hooks.json").write_text(
+                json.dumps(
+                    {"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": stale + " PreToolUse"}]}]}}
+                )
+            )
 
             firstrun.write_claude_config("/tmp/mypeople")
             firstrun.write_codex_config("/tmp/mypeople")
@@ -159,10 +174,8 @@ class BackendCommandTests(unittest.TestCase):
     def test_builds_backend_specific_launch_and_resume_commands(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            claude = mp.build_launch("n/main:e", td, "n/main:Boss", False,
-                                     "claude-model", "claude", "claude-session")
-            codex = mp.build_launch("n/main:e", td, "n/main:Boss", False,
-                                    "codex-model", "codex", "codex-session")
+            claude = mp.build_launch("n/main:e", td, "n/main:Boss", False, "claude-model", "claude", "claude-session")
+            codex = mp.build_launch("n/main:e", td, "n/main:Boss", False, "codex-model", "codex", "codex-session")
 
             self.assertIn("MYPEOPLE_BACKEND=claude", claude)
             self.assertIn("claude --dangerously-skip-permissions", claude)
@@ -200,8 +213,10 @@ class BackendCommandTests(unittest.TestCase):
             mp = load_mp(td)
             target = "test-node/main:peer"
             parent = "test-node/main:parent"
-            with mock.patch.dict(os.environ, {"AGENT_ID": parent}), \
-                 mock.patch.object(mp.C, "tmux_send_message", return_value=True):
+            with (
+                mock.patch.dict(os.environ, {"AGENT_ID": parent}),
+                mock.patch.object(mp.C, "tmux_send_message", return_value=True),
+            ):
                 self.assertEqual(0, mp.do_send([target, "do work"]))
             mp.C.open_notification_routes(target, "do work")  # the turn this message opens
             self.assertEqual([parent], mp.C.claim_notification_routes(target))
@@ -211,8 +226,10 @@ class BackendCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
             target = "test-node/main:missing"
-            with mock.patch.dict(os.environ, {"AGENT_ID": "test-node/main:parent"}), \
-                 mock.patch.object(mp.C, "tmux_send_message", return_value=False):
+            with (
+                mock.patch.dict(os.environ, {"AGENT_ID": "test-node/main:parent"}),
+                mock.patch.object(mp.C, "tmux_send_message", return_value=False),
+            ):
                 self.assertEqual(1, mp.do_send([target, "do work"]))
             mp.C.open_notification_routes(target, "do work")
             self.assertEqual([], mp.C.claim_notification_routes(target))
@@ -220,12 +237,16 @@ class BackendCommandTests(unittest.TestCase):
     def test_remote_send_carries_reply_to(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            with mock.patch.dict(os.environ, {"AGENT_ID": "test-node/main:parent"}), \
-                 mock.patch.object(mp, "remote_task", return_value=(True, "sent")) as remote:
+            with (
+                mock.patch.dict(os.environ, {"AGENT_ID": "test-node/main:parent"}),
+                mock.patch.object(mp, "remote_task", return_value=(True, "sent")) as remote,
+            ):
                 self.assertEqual(0, mp.do_send(["other-node/main:peer", "do work"]))
             remote.assert_called_once_with(
-                "send", "other-node/main:peer",
-                {"message": "do work", "reply_to": "test-node/main:parent"}, timeout=30,
+                "send",
+                "other-node/main:peer",
+                {"message": "do work", "reply_to": "test-node/main:parent"},
+                timeout=30,
             )
 
 
@@ -254,9 +275,14 @@ class NotificationRouteTests(unittest.TestCase):
             path, _ = C._notification_route_paths(w)
             now = time.time()
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(json.dumps([
-                {"token": "a", "reply_to": "test-node/main:stale", "ts": now - C.ROUTE_TTL - 5},
-                {"token": "b", "reply_to": "test-node/main:waiting", "ts": now - 60}]))
+            Path(path).write_text(
+                json.dumps(
+                    [
+                        {"token": "a", "reply_to": "test-node/main:stale", "ts": now - C.ROUTE_TTL - 5},
+                        {"token": "b", "reply_to": "test-node/main:waiting", "ts": now - 60},
+                    ]
+                )
+            )
             self.assertEqual(["test-node/main:waiting"], C.claim_notification_routes(w))
             self.assertEqual([], C.claim_notification_routes(w))
 
@@ -265,12 +291,14 @@ class HookHandlerTests(unittest.TestCase):
     def test_codex_stop_uses_last_assistant_message(self):
         with tempfile.TemporaryDirectory() as td:
             env = dict(os.environ)
-            env.update({
-                "INSTALL_DIR": td,
-                "AGENT_ID": "node/main:eng",
-                "MYPEOPLE_BACKEND": "codex",
-                "BOSS_ID": "",
-            })
+            env.update(
+                {
+                    "INSTALL_DIR": td,
+                    "AGENT_ID": "node/main:eng",
+                    "MYPEOPLE_BACKEND": "codex",
+                    "BOSS_ID": "",
+                }
+            )
             payload = {
                 "hook_event_name": "Stop",
                 "session_id": "codex-session",
@@ -278,7 +306,10 @@ class HookHandlerTests(unittest.TestCase):
             }
             subprocess.run(
                 [sys.executable, str(HANDLER), "Stop"],
-                input=json.dumps(payload), text=True, env=env, check=True,
+                input=json.dumps(payload),
+                text=True,
+                env=env,
+                check=True,
             )
             status = json.loads((Path(td) / "status" / "mc-main" / "eng.json").read_text())
             self.assertEqual("codex", status["backend"])
@@ -293,13 +324,16 @@ class HookHandlerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             long_summary = ("Sentence %d of the completion summary. " % 1) * 40  # ~1500 chars
             env = dict(os.environ)
-            env.update({"INSTALL_DIR": td, "AGENT_ID": "node/main:eng",
-                        "MYPEOPLE_BACKEND": "codex", "BOSS_ID": ""})
-            subprocess.run([sys.executable, str(HANDLER), "Stop"],
-                           input=json.dumps({"hook_event_name": "Stop",
-                                             "session_id": "s", 
-                                             "last_assistant_message": long_summary}),
-                           text=True, env=env, check=True)
+            env.update({"INSTALL_DIR": td, "AGENT_ID": "node/main:eng", "MYPEOPLE_BACKEND": "codex", "BOSS_ID": ""})
+            subprocess.run(
+                [sys.executable, str(HANDLER), "Stop"],
+                input=json.dumps(
+                    {"hook_event_name": "Stop", "session_id": "s", "last_assistant_message": long_summary}
+                ),
+                text=True,
+                env=env,
+                check=True,
+            )
             status = json.loads((Path(td) / "status" / "mc-main" / "eng.json").read_text())
             self.assertEqual(status["summary"], long_summary.strip())
             self.assertGreater(len(status["summary"]), 280)
@@ -309,12 +343,16 @@ class HookHandlerTests(unittest.TestCase):
         must still collapse -- lifting the cap must not turn the notice multi-line."""
         with tempfile.TemporaryDirectory() as td:
             env = dict(os.environ)
-            env.update({"INSTALL_DIR": td, "AGENT_ID": "node/main:eng",
-                        "MYPEOPLE_BACKEND": "codex", "BOSS_ID": ""})
-            subprocess.run([sys.executable, str(HANDLER), "Stop"],
-                           input=json.dumps({"hook_event_name": "Stop", "session_id": "s",
-                                             "last_assistant_message": "para one\n\npara two"}),
-                           text=True, env=env, check=True)
+            env.update({"INSTALL_DIR": td, "AGENT_ID": "node/main:eng", "MYPEOPLE_BACKEND": "codex", "BOSS_ID": ""})
+            subprocess.run(
+                [sys.executable, str(HANDLER), "Stop"],
+                input=json.dumps(
+                    {"hook_event_name": "Stop", "session_id": "s", "last_assistant_message": "para one\n\npara two"}
+                ),
+                text=True,
+                env=env,
+                check=True,
+            )
             status = json.loads((Path(td) / "status" / "mc-main" / "eng.json").read_text())
             self.assertNotIn("\n", status["summary"])
             self.assertEqual(status["summary"], "para one para two")
@@ -325,38 +363,56 @@ class HookHandlerTests(unittest.TestCase):
             tp = Path(td) / "t.jsonl"
             tp.write_text("".join(json.dumps(e) + "\n" for e in transcript))
             payload = dict(payload, transcript_path=str(tp))
-        hh = load_file(HANDLER, "hh_%d" % id(payload),
-                       {"INSTALL_DIR": td, "AGENT_ID": "node/main:eng", "BOSS_ID": "node/main:Boss",
-                        "MYPEOPLE_BACKEND": "claude", "QUEUE_URL": "http://queue", "QUEUE_SECRET": "s"})
+        hh = load_file(
+            HANDLER,
+            "hh_%d" % id(payload),
+            {
+                "INSTALL_DIR": td,
+                "AGENT_ID": "node/main:eng",
+                "BOSS_ID": "node/main:Boss",
+                "MYPEOPLE_BACKEND": "claude",
+                "QUEUE_URL": "http://queue",
+                "QUEUE_SECRET": "s",
+            },
+        )
         sent = []
         opened = [] if opened is None else opened
-        hh.C = mock.Mock(claim_notification_routes=lambda aid: claimed or [],
-                         open_notification_routes=lambda aid, text: opened.append(text),
-                         http_json=lambda *a, **k: sent.append((a[2]["target_agent"], a[2]["payload"]["message"])))
-        with mock.patch.object(sys, "stdin", __import__("io").StringIO(json.dumps(payload))), \
-                mock.patch.object(sys, "argv", ["hook-handler.py", "Stop"]), mock.patch.object(hh.time, "sleep"):
+        hh.C = mock.Mock(
+            claim_notification_routes=lambda aid: claimed or [],
+            open_notification_routes=lambda aid, text: opened.append(text),
+            http_json=lambda *a, **k: sent.append((a[2]["target_agent"], a[2]["payload"]["message"])),
+        )
+        with (
+            mock.patch.object(sys, "stdin", __import__("io").StringIO(json.dumps(payload))),
+            mock.patch.object(sys, "argv", ["hook-handler.py", "Stop"]),
+            mock.patch.object(hh.time, "sleep"),
+        ):
             hh.main()
         return [m for _, m in sent] if claimed is None else sent
 
     def test_a_message_queued_mid_turn_is_answered_by_that_turn(self):
         """A message that lands while the agent works never opens a turn of its own; Claude
         records it as a queued_command, and the Stop that ends the turn must answer it."""
-        turn = [{"type": "user", "message": {"content": "work on the card"}},
-                {"type": "attachment", "attachment": {"type": "queued_command",
-                                                      "prompt": "peer asks: status?"}}]
+        turn = [
+            {"type": "user", "message": {"content": "work on the card"}},
+            {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "peer asks: status?"}},
+        ]
         opened = []
         with tempfile.TemporaryDirectory() as td:
-            sent = self._notices(td, {"last_assistant_message": "done"}, turn,
-                                 claimed=["node/main:peer"], opened=opened)
+            sent = self._notices(
+                td, {"last_assistant_message": "done"}, turn, claimed=["node/main:peer"], opened=opened
+            )
         self.assertIn("peer asks: status?", " ".join(opened))
         self.assertEqual([("node/main:peer", "[AGENT NOTIFICATION] node/main:eng finished: done")], sent)
 
     def test_an_empty_reply_notifies_nobody(self):
         """card 8f490e73e5: an empty reply fell back to the PREVIOUS turn's text and notified,
         and each such notice woke an idle agent whose empty reply notified again."""
-        before = [{"type": "user", "message": {"content": "earlier ask"}},
-                  {"type": "assistant", "message": {"content": [{"type": "text", "text": "old news"}]}},
-                  {"type": "user", "message": {"content": "[AGENT NOTIFICATION] x finished: y"}}]
+        before = [
+            {"type": "user", "message": {"content": "earlier ask"}},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "old news"}]}},
+            {"type": "user", "message": {"content": "[AGENT NOTIFICATION] x finished: y"}},
+        ]
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual([], self._notices(td, {"last_assistant_message": ""}, before))
         with tempfile.TemporaryDirectory() as td:
@@ -364,15 +420,24 @@ class HookHandlerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:  # no payload field: the transcript's own turn
             self.assertEqual([], self._notices(td, {}, before))
         with tempfile.TemporaryDirectory() as td:
-            self.assertEqual(["[AGENT NOTIFICATION] node/main:eng finished: shipped it"],
-                             self._notices(td, {"last_assistant_message": "shipped it"}, before))
+            self.assertEqual(
+                ["[AGENT NOTIFICATION] node/main:eng finished: shipped it"],
+                self._notices(td, {"last_assistant_message": "shipped it"}, before),
+            )
 
     def _run(self, td, event, payload, backend="claude"):
         env = dict(os.environ)
-        env.update({"INSTALL_DIR": td, "AGENT_ID": "node/main:eng",
-                    "MYPEOPLE_BACKEND": backend, "BOSS_ID": "", "QUEUE_URL": "", "GROK_HOME": td})
-        subprocess.run([sys.executable, str(HANDLER), event],
-                       input=json.dumps(payload), text=True, env=env, check=True)
+        env.update(
+            {
+                "INSTALL_DIR": td,
+                "AGENT_ID": "node/main:eng",
+                "MYPEOPLE_BACKEND": backend,
+                "BOSS_ID": "",
+                "QUEUE_URL": "",
+                "GROK_HOME": td,
+            }
+        )
+        subprocess.run([sys.executable, str(HANDLER), event], input=json.dumps(payload), text=True, env=env, check=True)
         return json.loads((Path(td) / "status" / "mc-main" / "eng.json").read_text())
 
     def test_session_start_does_not_clobber_a_working_agent(self):
@@ -382,7 +447,8 @@ class HookHandlerTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as td:
                 self._run(td, "UserPromptSubmit", {"session_id": "s1"})
                 p = Path(td) / "status" / "mc-main" / "eng.json"
-                cur = json.loads(p.read_text()); cur["status"] = live_state
+                cur = json.loads(p.read_text())
+                cur["status"] = live_state
                 p.write_text(json.dumps(cur))
                 status = self._run(td, "SessionStart", {"session_id": "s1"})
                 self.assertEqual(live_state, status["status"], live_state)
@@ -396,7 +462,8 @@ class HookHandlerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             self._run(td, "UserPromptSubmit", {"session_id": "s1"})
             p = Path(td) / "status" / "mc-main" / "eng.json"
-            cur = json.loads(p.read_text()); cur["status"] = "working"
+            cur = json.loads(p.read_text())
+            cur["status"] = "working"
             p.write_text(json.dumps(cur))
             status = self._run(td, "SessionStart", {"session_id": "s2"})
             self.assertEqual("s2", status["session_id"])
@@ -416,10 +483,11 @@ class HookHandlerTests(unittest.TestCase):
             sess.mkdir(parents=True)
             (sess / "updates.jsonl").write_text("{}\n")
             (sess / "chat_history.jsonl").write_text(
-                json.dumps({"type": "assistant", "content": "Finished from Grok"}) + "\n")
-            status = self._run(td, "Stop",
-                               {"sessionId": "grok-session",
-                                "transcriptPath": str(sess / "updates.jsonl")}, backend="grok")
+                json.dumps({"type": "assistant", "content": "Finished from Grok"}) + "\n"
+            )
+            status = self._run(
+                td, "Stop", {"sessionId": "grok-session", "transcriptPath": str(sess / "updates.jsonl")}, backend="grok"
+            )
             self.assertEqual("Finished from Grok", status["summary"])
             self.assertEqual("idle", status["status"])
 
@@ -428,8 +496,8 @@ class HookHandlerTests(unittest.TestCase):
             sess = Path(td) / "sessions" / "proj" / "grok-session"
             sess.mkdir(parents=True)
             (sess / "chat_history.jsonl").write_text(
-                json.dumps({"type": "assistant",
-                            "content": [{"type": "text", "text": "Block form too"}]}) + "\n")
+                json.dumps({"type": "assistant", "content": [{"type": "text", "text": "Block form too"}]}) + "\n"
+            )
             status = self._run(td, "Stop", {"sessionId": "grok-session"}, backend="grok")
             self.assertEqual("Block form too", status["summary"])
 
@@ -441,13 +509,30 @@ class NestedCliHookTests(unittest.TestCase):
 
     # pid: (ppid, name). 1 tmux; 10 = the agent's own CLI (the pane process)
     OWN = {1: (0, "tmux"), 10: (1, "claude"), 11: (10, "sh"), 12: (11, "bash"), 13: (12, "python3")}
-    NESTED = {1: (0, "tmux"), 10: (1, "claude"), 20: (10, "zsh"), 21: (20, "timeout"), 22: (21, "grok"),
-              23: (22, "sh"), 24: (23, "bash"), 25: (24, "python3")}
+    NESTED = {
+        1: (0, "tmux"),
+        10: (1, "claude"),
+        20: (10, "zsh"),
+        21: (20, "timeout"),
+        22: (21, "grok"),
+        23: (22, "sh"),
+        24: (23, "bash"),
+        25: (24, "python3"),
+    }
 
     def _hh(self, td, procs):
-        hh = load_file(HANDLER, "hh_nested_%d" % id(procs),
-                       {"INSTALL_DIR": td, "AGENT_ID": "node/main:eng", "BOSS_ID": "node/main:Boss",
-                        "MYPEOPLE_BACKEND": "claude", "QUEUE_URL": "http://queue", "QUEUE_SECRET": "s"})
+        hh = load_file(
+            HANDLER,
+            "hh_nested_%d" % id(procs),
+            {
+                "INSTALL_DIR": td,
+                "AGENT_ID": "node/main:eng",
+                "BOSS_ID": "node/main:Boss",
+                "MYPEOPLE_BACKEND": "claude",
+                "QUEUE_URL": "http://queue",
+                "QUEUE_SECRET": "s",
+            },
+        )
         hh.process_table = lambda: procs
         sleep = mock.patch.object(hh.time, "sleep")
         sleep.start()
@@ -457,15 +542,20 @@ class NestedCliHookTests(unittest.TestCase):
 
     def _fire(self, hh, event, payload):
         sent = []
-        hh.C = mock.Mock(claim_notification_routes=lambda aid: [],
-                         open_notification_routes=lambda aid, text: None,
-                         read_json=lambda path, default=None: {}, write_json=lambda path, obj: None,
-                         read_json_tracked=lambda path, default=None: {},
-                         write_json_merged=lambda path, obj: None,
-                         http_json=lambda *a, **k: sent.append(a[2]["target_agent"]))
-        with mock.patch.object(sys, "stdin", __import__("io").StringIO(json.dumps(payload))), \
-                mock.patch.object(sys, "argv", ["hook-handler.py", event]), \
-                mock.patch.object(os, "getpid", return_value=hh.test_pid):
+        hh.C = mock.Mock(
+            claim_notification_routes=lambda aid: [],
+            open_notification_routes=lambda aid, text: None,
+            read_json=lambda path, default=None: {},
+            write_json=lambda path, obj: None,
+            read_json_tracked=lambda path, default=None: {},
+            write_json_merged=lambda path, obj: None,
+            http_json=lambda *a, **k: sent.append(a[2]["target_agent"]),
+        )
+        with (
+            mock.patch.object(sys, "stdin", __import__("io").StringIO(json.dumps(payload))),
+            mock.patch.object(sys, "argv", ["hook-handler.py", event]),
+            mock.patch.object(os, "getpid", return_value=hh.test_pid),
+        ):
             hh.main()
         return sent
 
@@ -474,7 +564,7 @@ class NestedCliHookTests(unittest.TestCase):
         nested = hh.fired_by_nested_cli
         self.assertFalse(nested(self.OWN, 13))
         self.assertTrue(nested(self.NESTED, 25))
-        self.assertFalse(nested({}, 13))                                  # ps failed: never drop events
+        self.assertFalse(nested({}, 13))  # ps failed: never drop events
         self.assertFalse(nested({5: (1, "python3"), 1: (0, "launchd")}, 5))  # CI: no agent CLI at all
         # a CLI that execs its own binary is one CLI, not two
         self.assertFalse(nested({1: (0, "tmux"), 9: (1, "codex"), 10: (9, "codex"), 11: (10, "bash")}, 11))
@@ -487,8 +577,7 @@ class NestedCliHookTests(unittest.TestCase):
             hh = self._hh(td, self.NESTED)
             for event in ("SessionStart", "UserPromptSubmit"):
                 self.assertEqual([], self._fire(hh, event, {"session_id": "child"}))
-            self.assertEqual([], self._fire(hh, "Stop", {"session_id": "child",
-                                                          "last_assistant_message": "157316"}))
+            self.assertEqual([], self._fire(hh, "Stop", {"session_id": "child", "last_assistant_message": "157316"}))
             self.assertFalse((Path(td) / "status").exists())
 
     def test_the_agents_own_cli_still_records_and_notifies(self):

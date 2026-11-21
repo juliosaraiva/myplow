@@ -5,6 +5,7 @@ entry as a new node's first Boss and spawns it with --master, so deleting a tomb
 turn `mp revive <long-dead-agent>` from "deliberately retired; not respawning" into spawning a
 second Boss. These tests pin that every key survives and only restore-only payload is dropped.
 """
+
 import glob
 import json
 import os
@@ -15,6 +16,7 @@ import time
 import unittest
 from unittest import mock
 import sandbox
+
 unittest.mock = mock
 
 
@@ -40,26 +42,24 @@ class PrunableTests(unittest.TestCase):
 
     def test_a_revivable_retirement_is_never_touched(self):
         """Accidental deaths are the only ones revive can restore -- they keep every field."""
-        self.assertFalse(self.slim(retired=True, retire_reason="died-no-window",
-                                   retired_ts=time.time() - 90 * DAY))
+        self.assertFalse(self.slim(retired=True, retire_reason="died-no-window", retired_ts=time.time() - 90 * DAY))
 
     def test_a_recent_retirement_is_never_touched(self):
-        self.assertFalse(self.slim(retired=True, retire_reason="killed",
-                                   retired_ts=time.time() - 2 * DAY))
+        self.assertFalse(self.slim(retired=True, retire_reason="killed", retired_ts=time.time() - 2 * DAY))
 
     def test_an_entry_with_no_timestamp_is_never_touched(self):
         """No age evidence, no action -- guessing here would drop a live agent's history."""
         self.assertFalse(self.slim(retired=True, retire_reason="killed"))
 
     def test_an_old_deliberate_retirement_is_pruned(self):
-        self.assertTrue(self.slim(retired=True, retire_reason="killed",
-                                  retired_ts=time.time() - 30 * DAY))
+        self.assertTrue(self.slim(retired=True, retire_reason="killed", retired_ts=time.time() - 30 * DAY))
 
     def test_a_retired_boss_is_never_pruned(self):
         """do_ensure_boss treats a MISSING Boss entry as a new node's first Boss and spawns one
         with --master. Removing a Boss tombstone would manufacture a second Boss."""
-        self.assertFalse(self.slim(retired=True, retire_reason="killed", is_master=True,
-                                   retired_ts=time.time() - 30 * DAY))
+        self.assertFalse(
+            self.slim(retired=True, retire_reason="killed", is_master=True, retired_ts=time.time() - 30 * DAY)
+        )
 
 
 class PruneRunTests(unittest.TestCase):
@@ -72,21 +72,35 @@ class PruneRunTests(unittest.TestCase):
         old = time.time() - 30 * DAY
         self.roster = {
             "n/main:live": {"agent_id": "n/main:live", "retired": False, "spawn_cmd": "x" * 500},
-            "n/main:old": {"agent_id": "n/main:old", "session": "main", "tab": "old",
-                           "retired": True, "retire_reason": "killed", "retired_ts": old,
-                           "is_master": False, "spawn_cmd": "y" * 5000,
-                           "role_bundle": {"big": "z" * 5000}, "session_id": "s-123"},
-            "n/main:crashed": {"agent_id": "n/main:crashed", "retired": True,
-                               "retire_reason": "died-no-window", "retired_ts": old,
-                               "spawn_cmd": "w" * 5000},
+            "n/main:old": {
+                "agent_id": "n/main:old",
+                "session": "main",
+                "tab": "old",
+                "retired": True,
+                "retire_reason": "killed",
+                "retired_ts": old,
+                "is_master": False,
+                "spawn_cmd": "y" * 5000,
+                "role_bundle": {"big": "z" * 5000},
+                "session_id": "s-123",
+            },
+            "n/main:crashed": {
+                "agent_id": "n/main:crashed",
+                "retired": True,
+                "retire_reason": "died-no-window",
+                "retired_ts": old,
+                "spawn_cmd": "w" * 5000,
+            },
         }
         Path(self.roster_path).write_text(json.dumps(self.roster), encoding="utf-8")
         self.p = load_prune()
 
     def run_prune(self, *extra):
         argv = ["roster-prune.py", "--install-dir", self.install] + list(extra)
-        with unittest.mock.patch.object(sys, "argv", argv), \
-             unittest.mock.patch("sys.stdout", new=open(os.devnull, "w")):
+        with (
+            unittest.mock.patch.object(sys, "argv", argv),
+            unittest.mock.patch("sys.stdout", new=open(os.devnull, "w")),
+        ):
             return self.p.main()
 
     def result(self):
@@ -103,9 +117,13 @@ class PruneRunTests(unittest.TestCase):
         self.assertIn("spawn_cmd", r["n/main:crashed"])
 
     def test_a_retired_boss_is_kept(self):
-        self.roster["n/main:Boss"] = {"agent_id": "n/main:Boss", "retired": True,
-                                      "retire_reason": "killed", "is_master": True,
-                                      "retired_ts": time.time() - 30 * DAY}
+        self.roster["n/main:Boss"] = {
+            "agent_id": "n/main:Boss",
+            "retired": True,
+            "retire_reason": "killed",
+            "is_master": True,
+            "retired_ts": time.time() - 30 * DAY,
+        }
         Path(self.roster_path).write_text(json.dumps(self.roster), encoding="utf-8")
         self.run_prune()
         self.assertIn("n/main:Boss", self.result())

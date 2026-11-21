@@ -36,11 +36,15 @@ def http_upload(url, fields, file_path, headers=None, timeout=60):
     ctype = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
     parts = []
     for k, v in (fields or {}).items():
-        parts.append(('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
-                      % (boundary, k, v)).encode("utf-8"))
-    parts.append(('--%s\r\nContent-Disposition: form-data; name="file"; filename="%s"\r\n'
-                  'Content-Type: %s\r\n\r\n' % (boundary, os.path.basename(file_path), ctype)
-                  ).encode("utf-8"))
+        parts.append(
+            ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (boundary, k, v)).encode("utf-8")
+        )
+    parts.append(
+        (
+            '--%s\r\nContent-Disposition: form-data; name="file"; filename="%s"\r\n'
+            "Content-Type: %s\r\n\r\n" % (boundary, os.path.basename(file_path), ctype)
+        ).encode("utf-8")
+    )
     parts.append(payload)
     parts.append(("\r\n--%s--\r\n" % boundary).encode("utf-8"))
     data = b"".join(parts)
@@ -62,4 +66,3 @@ def http_upload(url, fields, file_path, headers=None, timeout=60):
             return e.code, None
     except Exception:
         return 0, None
-

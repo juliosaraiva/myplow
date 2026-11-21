@@ -6,6 +6,7 @@ web viewer was the newest session the chooser drew a blank screen on any other s
 windows or 38. The client here is real: it runs in a pane of a second private tmux server, whose
 capture-pane is the terminal, and the keys travel its pty like a keyboard's.
 """
+
 import os
 from pathlib import Path
 import re
@@ -33,13 +34,23 @@ class Mux:
         test.addCleanup(shutil.rmtree, self.dir, True)
         self.conf = os.path.join(self.dir, "tmux.conf")
         Path(self.conf).write_text("".join(l for l in CONF.read_text().splitlines(True) if not l.startswith("run ")))
-        self.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TMUX_TMPDIR": self.dir, "HOME": self.dir,
-                    "TERM": "xterm-256color", "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8"}
+        self.env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "TMUX_TMPDIR": self.dir,
+            "HOME": self.dir,
+            "TERM": "xterm-256color",
+            "LANG": "en_US.UTF-8",
+            "LC_ALL": "en_US.UTF-8",
+        }
         test.addCleanup(self.stop)
 
     def t(self, *args, sock="fleet"):
-        return subprocess.run(["tmux", "-L", sock, "-f", self.conf if sock == "fleet" else "/dev/null"] + list(args),
-                              env=self.env, capture_output=True, text=True)
+        return subprocess.run(
+            ["tmux", "-L", sock, "-f", self.conf if sock == "fleet" else "/dev/null"] + list(args),
+            env=self.env,
+            capture_output=True,
+            text=True,
+        )
 
     def stop(self):
         self.t("kill-server", sock="term")
@@ -82,8 +93,12 @@ class ChooserTests(unittest.TestCase):
 
     def test_prefix_w_lists_the_windows_from_every_session(self):
         m = self.fleet()
-        for session, expected in (("mc-main", ["mc-main", "mc-rt"]), ("mc-rt", ["mc-main", "mc-rt"]),
-                                  ("_v_old", ["_v_old", "mc-rt"]), ("_v_newest", ["_v_newest", "mc-rt"])):
+        for session, expected in (
+            ("mc-main", ["mc-main", "mc-rt"]),
+            ("mc-rt", ["mc-main", "mc-rt"]),
+            ("_v_old", ["_v_old", "mc-rt"]),
+            ("_v_newest", ["_v_newest", "mc-rt"]),
+        ):
             with self.subTest(session=session):
                 m.attach(session)
                 m.keys("C-b", "w")
@@ -92,7 +107,9 @@ class ChooserTests(unittest.TestCase):
                 screen = m.screen()
                 self.assertEqual(expected, sorted(SESSION_ROW.findall(screen)), screen)
                 m.keys("q")
-                self.assertTrue(m.wait(lambda: m.t("display-message", "-p", "-t", session, "#{pane_in_mode}").stdout.strip() == "0"))
+                self.assertTrue(
+                    m.wait(lambda: m.t("display-message", "-p", "-t", session, "#{pane_in_mode}").stdout.strip() == "0")
+                )
 
     def test_prefix_s_lists_the_sessions(self):
         m = self.fleet()
@@ -122,18 +139,41 @@ class PaneInModeTests(unittest.TestCase):
         Path(self.script).write_text(RAW_LOG)
         with mock.patch.dict(os.environ, {"TMUX_TMPDIR": self.m.dir}):
             os.environ.pop("TMUX", None)
-            subprocess.run(["tmux", "-f", self.m.conf, "new-session", "-d", "-s", "mc-main", "-n", "eng-1",
-                            "-x", "120", "-y", "39", "%s %s %s" % (sys.executable, self.script, self.log)],
-                           check=True, env=dict(self.m.env))
-            subprocess.run(["tmux", "new-window", "-d", "-t", "mc-main", "-n", "eng-2", "sleep 300"], env=dict(self.m.env))
+            subprocess.run(
+                [
+                    "tmux",
+                    "-f",
+                    self.m.conf,
+                    "new-session",
+                    "-d",
+                    "-s",
+                    "mc-main",
+                    "-n",
+                    "eng-1",
+                    "-x",
+                    "120",
+                    "-y",
+                    "39",
+                    "%s %s %s" % (sys.executable, self.script, self.log),
+                ],
+                check=True,
+                env=dict(self.m.env),
+            )
+            subprocess.run(
+                ["tmux", "new-window", "-d", "-t", "mc-main", "-n", "eng-2", "sleep 300"], env=dict(self.m.env)
+            )
         self.addCleanup(subprocess.run, ["tmux", "kill-server"], env=dict(self.m.env), capture_output=True)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.C = sandbox.load(tmp.name, "mpcommon.py")
 
     def mode(self):
-        return subprocess.run(["tmux", "display-message", "-p", "-t", "mc-main:eng-1", "#{pane_mode}"],
-                              env=dict(self.m.env), capture_output=True, text=True).stdout.strip()
+        return subprocess.run(
+            ["tmux", "display-message", "-p", "-t", "mc-main:eng-1", "#{pane_mode}"],
+            env=dict(self.m.env),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
 
     def test_a_delivery_reaches_the_program_and_leaves_the_chooser_open(self):
         subprocess.run(["tmux", "choose-tree", "-Zw", "-t", "mc-main:eng-1"], env=dict(self.m.env), check=True)
@@ -165,8 +205,10 @@ class RetireTests(unittest.TestCase):
         return self.tmux("list-windows", "-t", "mc-main", "-F", "#W").stdout.split()
 
     def kill(self, tab):
-        with mock.patch.object(self.mp.C, "http_json", return_value=(200, {})), \
-             mock.patch.object(self.mp.C, "stop_recorder", return_value={}):
+        with (
+            mock.patch.object(self.mp.C, "http_json", return_value=(200, {})),
+            mock.patch.object(self.mp.C, "stop_recorder", return_value={}),
+        ):
             return self.mp.do_kill(["%s/main:%s" % (self.mp.HOST_ID, tab), "--reason", "done"])
 
     def test_killing_an_agent_closes_its_window_and_only_its_window(self):

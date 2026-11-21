@@ -4,6 +4,7 @@ Covers the contract that `mp spawn --role boss|engineer` composes a versioned, d
 bundle (personality + Skills + hooks + toolset + policy), mounts it through each backend's own
 native mechanism, and that no path can yield a Boss without one.
 """
+
 import json
 import os
 from pathlib import Path
@@ -30,8 +31,7 @@ def load_mp(home):
     module.ROLE_BUNDLE_DIR = str(state / "run" / "role-bundles")
     boss_doc = state / "mp-boss-doctrine.md"
     boss_doc.parent.mkdir(parents=True, exist_ok=True)
-    boss_doc.write_text("# Boss doctrine\nDrive the team off the board.\n",
-                        encoding="utf-8")
+    boss_doc.write_text("# Boss doctrine\nDrive the team off the board.\n", encoding="utf-8")
     module.BOSS_DOC = str(boss_doc)
     return module
 
@@ -56,8 +56,7 @@ def tearDownModule():
 class RoleStoreTests(unittest.TestCase):
     def test_registry_points_at_profiles_that_exist(self):
         reg = json.loads((ROLES / "registry.json").read_text())
-        self.assertEqual(set(reg["roles"]),
-                         {"boss", "engineer", "tester", "watchdog", "creator"})
+        self.assertEqual(set(reg["roles"]), {"boss", "engineer", "tester", "watchdog", "creator"})
         for role, rel in reg["roles"].items():
             self.assertTrue((ROLES / rel).is_file(), "%s -> missing %s" % (role, rel))
 
@@ -84,8 +83,7 @@ class RoleStoreTests(unittest.TestCase):
             mandatory = [s["ref"] for s in spec["skills"] if s.get("required")]
             # Same pair mprole.py accepts: the skill was renamed, both names are the system one.
             names = {r.split("/")[1] for r in mandatory if r.startswith("skills/")}
-            self.assertTrue(names & {"mp-system", "mypeople-system"},
-                            "%s does not require the system skill" % role)
+            self.assertTrue(names & {"mp-system", "mypeople-system"}, "%s does not require the system skill" % role)
 
     def test_no_skill_depends_on_something_the_product_does_not_ship(self):
         """A persona may only reference Skills that ship in this store.
@@ -101,9 +99,11 @@ class RoleStoreTests(unittest.TestCase):
                     continue
                 for word in ("Superpowers", "superpowers"):
                     self.assertNotIn(
-                        word, line,
+                        word,
+                        line,
                         "%s references a Skill this product does not ship (%r); shipped: %s"
-                        % (skill.relative_to(ROLES), line.strip()[:80], sorted(names)))
+                        % (skill.relative_to(ROLES), line.strip()[:80], sorted(names)),
+                    )
 
 
 class RoleResolutionTests(unittest.TestCase):
@@ -145,8 +145,11 @@ class RoleResolutionTests(unittest.TestCase):
             mp = load_mp(td)
             bundle = mp.materialize_role(mp.resolve_role("boss", "claude"), "t/main:Boss", "claude")
             shipped_doc = ROOT / "mypeople" / "runtime" / "mp-boss-doctrine.md"
-            self.assertEqual(Path(bundle["personality_path"]).read_bytes(),
-                             shipped_doc.read_bytes(), "Boss personality forked BOSS_DOC")
+            self.assertEqual(
+                Path(bundle["personality_path"]).read_bytes(),
+                shipped_doc.read_bytes(),
+                "Boss personality forked BOSS_DOC",
+            )
 
     def test_locked_ref_drift_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
@@ -157,25 +160,20 @@ class RoleResolutionTests(unittest.TestCase):
     def test_damaged_bundle_is_healed_from_the_canonical_store(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            bundle = mp.materialize_role(mp.resolve_role("engineer", "claude"),
-                                         "t/main:eng", "claude")
+            bundle = mp.materialize_role(mp.resolve_role("engineer", "claude"), "t/main:eng", "claude")
             victim = Path(bundle["plugin_path"]) / "skills" / "mypeople-system" / "SKILL.md"
             victim.chmod(0o644)
             victim.unlink()
-            healed = mp.materialize_role(mp.resolve_role("engineer", "claude"),
-                                         "t/main:eng", "claude")
-            self.assertTrue((Path(healed["plugin_path"]) / "skills" / "mypeople-system"
-                             / "SKILL.md").is_file())
+            healed = mp.materialize_role(mp.resolve_role("engineer", "claude"), "t/main:eng", "claude")
+            self.assertTrue((Path(healed["plugin_path"]) / "skills" / "mypeople-system" / "SKILL.md").is_file())
 
 
 class RoleLaunchTests(unittest.TestCase):
     def test_claude_mounts_via_flags(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            bundle = mp.materialize_role(mp.resolve_role("engineer", "claude"),
-                                         "t/main:eng", "claude")
-            launch = mp.build_launch("t/main:eng", td, "t/main:Boss", False, "m", "claude",
-                                     role_bundle=bundle)
+            bundle = mp.materialize_role(mp.resolve_role("engineer", "claude"), "t/main:eng", "claude")
+            launch = mp.build_launch("t/main:eng", td, "t/main:Boss", False, "m", "claude", role_bundle=bundle)
             words = shlex.split(launch)
             self.assertIn("--append-system-prompt-file", words)
             self.assertIn("--plugin-dir", words)
@@ -192,8 +190,7 @@ class RoleLaunchTests(unittest.TestCase):
             item = mp.resolve_role("engineer", "codex")
             item["personality_bytes"] += b'\nmatch \\d+ in C:\\work, never """ this\n'
             bundle = mp.materialize_role(item, "t/main:eng", "codex")
-            launch = mp.build_launch("t/main:eng", td, "t/main:Boss", False, "m", "codex",
-                                     role_bundle=bundle)
+            launch = mp.build_launch("t/main:eng", td, "t/main:Boss", False, "m", "codex", role_bundle=bundle)
             # codex 0.144+ refuses to start with --profile and a [profiles.x] table in config.toml
             self.assertNotIn("--profile", shlex.split(launch))
             self.assertIn("CODEX_HOME=", launch)
@@ -207,8 +204,7 @@ class RoleLaunchTests(unittest.TestCase):
             # #36: codex rejects any top-level key but "hooks" (and "description")
             hooks = json.loads((home / "hooks.json").read_text())
             self.assertEqual(list(hooks), ["hooks"])
-            self.assertIn("emit-event.sh SessionStart",
-                          hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"])
+            self.assertIn("emit-event.sh SessionStart", hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"])
             # #34: the operator's login, linked, so the agent does not open on the sign-in screen
             self.assertTrue((home / "auth.json").is_symlink())
             self.assertTrue((home / "auth.json").samefile(Path.home() / ".codex" / "auth.json"))
@@ -218,8 +214,10 @@ class RoleLaunchTests(unittest.TestCase):
     def test_codex_mount_without_a_login_fails_closed(self):
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
             mp = load_mp(td)
-            with mock.patch.dict(os.environ, {"HOME": bare}), \
-                 self.assertRaisesRegex(mp.mprole.RoleError, "codex/auth.json missing"):
+            with (
+                mock.patch.dict(os.environ, {"HOME": bare}),
+                self.assertRaisesRegex(mp.mprole.RoleError, "codex/auth.json missing"),
+            ):
                 mp.materialize_role(mp.resolve_role("engineer", "codex"), "t/main:eng", "codex")
 
     def test_grok_mounts_via_home_only(self):
@@ -237,8 +235,7 @@ class RoleLaunchTests(unittest.TestCase):
             self.assertTrue((home / "skills" / "mypeople-system" / "SKILL.md").is_file())
             self.assertTrue((home / "skills" / "boss-manager" / "SKILL.md").is_file())
             self.assertFalse((home / "GROK.md").exists(), "GROK.md is not read by grok")
-            self.assertEqual(mp.mprole.grok_flags(bundle), [],
-                             "grok takes no role flags; it mounts via GROK_HOME")
+            self.assertEqual(mp.mprole.grok_flags(bundle), [], "grok takes no role flags; it mounts via GROK_HOME")
             self.assertEqual(mp.mprole.role_env(bundle)["GROK_HOME"], str(home))
 
     def test_grok_is_a_product_backend(self):
@@ -262,9 +259,11 @@ class RoleLaunchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
             for backend in ("claude", "codex", "grok"):
-                for aid, boss, master, community in (("t/main:Boss", "", True, False),
-                                                     ("t/main:eng", "t/main:Boss", False, False),
-                                                     ("t/main:guest", "t/main:Boss", False, True)):
+                for aid, boss, master, community in (
+                    ("t/main:Boss", "", True, False),
+                    ("t/main:eng", "t/main:Boss", False, False),
+                    ("t/main:guest", "t/main:Boss", False, True),
+                ):
                     launch = mp.build_launch(aid, td, boss, master, "m", backend, community=community)
                     self.assertNotIn("QUEUE_SECRET", launch, (backend, aid))
                     self.assertNotIn("=secret", launch, (backend, aid))  # load_mp's secret value
@@ -287,8 +286,7 @@ class NoBundlelessBossTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
             for aid in ("test-node/main:Boss", "test-node/main:Boss2", "test-node/main:anything"):
-                self.assertEqual(mp.do_spawn([aid, "--master"]), 2,
-                                 "%s: a bundle-less Boss was allowed" % aid)
+                self.assertEqual(mp.do_spawn([aid, "--master"]), 2, "%s: a bundle-less Boss was allowed" % aid)
 
     def test_role_boss_requires_master(self):
         with tempfile.TemporaryDirectory() as td:
@@ -298,8 +296,7 @@ class NoBundlelessBossTests(unittest.TestCase):
     def test_role_engineer_cannot_be_master(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            self.assertEqual(
-                mp.do_spawn(["test-node/main:x", "--master", "--role", "engineer"]), 2)
+            self.assertEqual(mp.do_spawn(["test-node/main:x", "--master", "--role", "engineer"]), 2)
 
     def test_bad_role_creates_no_tmux_or_roster_side_effect(self):
         with tempfile.TemporaryDirectory() as td:
@@ -311,16 +308,14 @@ class NoBundlelessBossTests(unittest.TestCase):
         """A Boss recorded before roles existed must be UPGRADED, never restored bundle-less."""
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            args = mp.spawn_args_from_record("n/main:Boss", {"backend": "claude",
-                                                             "is_master": True})
+            args = mp.spawn_args_from_record("n/main:Boss", {"backend": "claude", "is_master": True})
             self.assertIn("--role", args)
             self.assertEqual(args[args.index("--role") + 1], "boss")
 
     def test_legacy_engineer_record_stays_legacy(self):
         with tempfile.TemporaryDirectory() as td:
             mp = load_mp(td)
-            args = mp.spawn_args_from_record("n/main:eng-1", {"backend": "claude",
-                                                              "is_master": False})
+            args = mp.spawn_args_from_record("n/main:eng-1", {"backend": "claude", "is_master": False})
             self.assertNotIn("--role", args)
 
 
@@ -340,8 +335,7 @@ class FirstRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             install = Path(td) / "install"
             firstrun.materialize(str(install))
-            self.assertTrue((install / "roles" / "registry.json").is_file(),
-                            "first-run did not install the role store")
+            self.assertTrue((install / "roles" / "registry.json").is_file(), "first-run did not install the role store")
             reg = json.loads((install / "roles" / "registry.json").read_text())
             for rel in reg["roles"].values():
                 self.assertTrue((install / "roles" / rel).is_file())

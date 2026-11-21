@@ -26,13 +26,14 @@ def install_tmux_conf(install):
     # home) must cost the look, not the whole `up`, which died here before starting any daemon.
     try:
         if not os.path.isdir(tpm) and shutil.which("git"):
-            subprocess.run(["git", "clone", "--depth", "1", "https://github.com/tmux-plugins/tpm",
-                            tpm], capture_output=True, timeout=60)
+            subprocess.run(
+                ["git", "clone", "--depth", "1", "https://github.com/tmux-plugins/tpm", tpm],
+                capture_output=True,
+                timeout=60,
+            )
         if os.path.exists(installer):
             subprocess.run([installer], capture_output=True, timeout=120)
     except (subprocess.TimeoutExpired, OSError) as e:
         _echo("[myplow] tmux plugins not installed (%s); continuing without the theme" % e)
     if shutil.which("tmux"):
         subprocess.run(["tmux", "source-file", dst], capture_output=True)
-
-

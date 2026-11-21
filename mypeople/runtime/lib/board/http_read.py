@@ -4,7 +4,7 @@ class _BoardRead:
 
     def _serve_page(self, path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 html = C.render_page(f.read())
         except Exception:
             html = C.render_page("<h1>MyPlow</h1>")
@@ -33,7 +33,7 @@ class _BoardRead:
         if p == "/favicon.ico":
             return self._send(204, raw=b"")
         # Brand fonts (bin/fonts, SIL OFL). Public like the pages that link them; basename only.
-        if p == "/textbox.js":   # the text box Access and Plugins share. No login: it holds no data.
+        if p == "/textbox.js":  # the text box Access and Plugins share. No login: it holds no data.
             with open(os.path.join(HTML_DIR, "textbox.js"), "rb") as f:
                 return self._send(200, raw=f.read(), ctype="text/javascript; charset=utf-8")
         if p.startswith("/fonts/"):
@@ -43,13 +43,11 @@ class _BoardRead:
             if not ctype or not os.path.isfile(fp):
                 return self._send(404, {"error": "no_file"})
             with open(fp, "rb") as f:
-                return self._send(200, raw=f.read(), ctype=ctype,
-                                  extra={"Cache-Control": "public, max-age=86400"})
+                return self._send(200, raw=f.read(), ctype=ctype, extra={"Cache-Control": "public, max-age=86400"})
         if p in ("/", "/todos"):
             return self._serve_page(TODOS_HTML)
         if p == "/terminal-graph":
-            return self._serve_page(TERMINAL_GRAPH_HTML if os.path.exists(TERMINAL_GRAPH_HTML)
-                                    else TODOS_HTML)
+            return self._serve_page(TERMINAL_GRAPH_HTML if os.path.exists(TERMINAL_GRAPH_HTML) else TODOS_HTML)
         if p == "/plugins":
             return self._serve_page(PLUGINS_HTML)
         if p == "/access":
@@ -108,18 +106,18 @@ class _BoardRead:
             code, agents = C.http_json("GET", CFG["QUEUE_URL"] + "/agents", None, {"X-Queue-Secret": SECRET})
             base = ""
             target = C.tmux_target(agent)
-            for a in (agents or []):
+            for a in agents or []:
                 if a.get("agent_id") == agent:
                     base = a.get("attach_base", "")
                     target = a.get("tmux_target", target)
-            return self._send(200, {"ok": True, "target": target, "base": base,
-                                    "port": int(CFG["TTYD_BROWSER_PORT"])})
+            return self._send(200, {"ok": True, "target": target, "base": base, "port": int(CFG["TTYD_BROWSER_PORT"])})
         return self._send(404, {"error": "not_found"})
 
     def _serve_file(self, fp):
         if not os.path.isfile(fp):
             return self._send(404, {"error": "no_file"})
         import mimetypes
+
         ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
         with open(fp, "rb") as f:
             data = f.read()

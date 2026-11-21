@@ -9,6 +9,7 @@ returned True and printed "sent").
 These tests drive real tmux panes. The receiver enables bracketed-paste mode and logs raw
 bytes, which is the only way to see the framing the composer actually gets.
 """
+
 import base64
 import json
 import os
@@ -24,7 +25,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "mypeople" / "runtime" / "bin"
 
-RECEIVER = r'''
+RECEIVER = r"""
 import os, sys, termios, tty
 out = open(sys.argv[1], "wb", buffering=0)
 fd = sys.stdin.fileno()
@@ -39,7 +40,7 @@ try:
         out.write(b)
 finally:
     termios.tcsetattr(fd, termios.TCSADRAIN, old)
-'''
+"""
 
 PASTE_START, PASTE_END = b"\x1b[200~", b"\x1b[201~"
 
@@ -54,6 +55,7 @@ class SendTransportTests(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, str(BIN))
         import mpcommon
+
         cls.C = mpcommon
 
     @classmethod
@@ -69,13 +71,27 @@ class SendTransportTests(unittest.TestCase):
         self.sess = "mptest-%d" % os.getpid()
         self._kill()
         self.addCleanup(self._kill)
-        subprocess.run(["tmux", "new-session", "-d", "-s", self.sess, "-x", "200", "-y", "50",
-                        "%s %s %s" % (sys.executable, self.script, self.recv)], check=True)
+        subprocess.run(
+            [
+                "tmux",
+                "new-session",
+                "-d",
+                "-s",
+                self.sess,
+                "-x",
+                "200",
+                "-y",
+                "50",
+                "%s %s %s" % (sys.executable, self.script, self.recv),
+            ],
+            check=True,
+        )
         time.sleep(0.8)
         self.target = subprocess.run(
-            ["tmux", "list-panes", "-t", self.sess, "-F",
-             "#{session_name}:#{window_index}.#{pane_index}"],
-            capture_output=True, text=True).stdout.split()[0]
+            ["tmux", "list-panes", "-t", self.sess, "-F", "#{session_name}:#{window_index}.#{pane_index}"],
+            capture_output=True,
+            text=True,
+        ).stdout.split()[0]
 
     def _kill(self):
         subprocess.run(["tmux", "kill-session", "-t", self.sess], capture_output=True)
@@ -125,7 +141,7 @@ class SendTransportTests(unittest.TestCase):
         self.assertFalse(self.C.tmux_send_message(self.target, "   "))
 
 
-SLOW_CLAUDE = r'''
+SLOW_CLAUDE = r"""
 import base64, json, os, sys, time, tty
 log, fd = open(sys.argv[1], "a"), sys.stdin.fileno()
 tty.setraw(fd)
@@ -145,7 +161,7 @@ while b"\x04" not in got:
     log.write(json.dumps(base64.b64encode(b).decode()) + "\n"); log.flush()
     got += b
     draw()
-'''
+"""
 
 
 @unittest.skipUnless(have_tmux(), "tmux not available")
@@ -157,13 +173,14 @@ class SlowClaudeTests(unittest.TestCase):
 
     def setUp(self):
         import sandbox
+
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.dir = Path(td.name)
         env = mock.patch.dict(os.environ, {"TMUX_TMPDIR": str(self.dir)})
         env.start()
         self.addCleanup(env.stop)
-        os.environ.pop("TMUX", None)   # an agent's shell would aim every tmux call at the live server
+        os.environ.pop("TMUX", None)  # an agent's shell would aim every tmux call at the live server
         sock = self.dir / ("tmux-%d" % os.getuid()) / "default"
         self.addCleanup(subprocess.run, ["tmux", "-S", str(sock), "kill-server"], capture_output=True)
         self.C = sandbox.load(str(self.dir), "mpcommon.py", HOST_ID="node")
@@ -172,8 +189,23 @@ class SlowClaudeTests(unittest.TestCase):
         (status / "boss.json").write_text(json.dumps({"backend": "claude"}))
         (self.dir / "claude.py").write_text(SLOW_CLAUDE, encoding="utf-8")
         self.reads = self.dir / "reads.jsonl"
-        subprocess.run(["tmux", "new-session", "-d", "-s", "mc-slow", "-n", "boss", "-x", "150", "-y", "40",
-                        "%s %s %s" % (sys.executable, self.dir / "claude.py", self.reads)], check=True)
+        subprocess.run(
+            [
+                "tmux",
+                "new-session",
+                "-d",
+                "-s",
+                "mc-slow",
+                "-n",
+                "boss",
+                "-x",
+                "150",
+                "-y",
+                "40",
+                "%s %s %s" % (sys.executable, self.dir / "claude.py", self.reads),
+            ],
+            check=True,
+        )
         for _ in range(50):
             if self.C.pane_input_state("mc-slow:boss") == "ready":
                 break
@@ -204,10 +236,11 @@ class SlowClaudeTests(unittest.TestCase):
         """11-07: another sender's Enter between two pieces submitted a [swarm chief] envelope to the
         Boss as two messages. Deliveries to one pane take turns."""
         import threading
+
         long_msg, short = "Long, ação: %s." % " ".join(["word"] * 400), "a short one"
         first = threading.Thread(target=self.C.tmux_send_message, args=("mc-slow:boss", long_msg))
         first.start()
-        time.sleep(0.2)   # the long one holds the pane and is still landing piece by piece
+        time.sleep(0.2)  # the long one holds the pane and is still landing piece by piece
         self.assertTrue(self.C.tmux_send_message("mc-slow:boss", short))
         first.join(30)
         time.sleep(1)

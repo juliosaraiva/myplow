@@ -9,6 +9,7 @@ VM, so a restart or an in-place update does not ask again.
 
 The login is printed on stdout only: never logged, never texted, never put in a beacon.
 """
+
 import fcntl
 import json
 import os
@@ -29,8 +30,10 @@ ANSI = re.compile(rb"\x1b\][^\x07]*\x07|\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[()][0-9A-
 OSC_LINK = re.compile(rb"\x1b\]8;[^;]*;(https://[^\x07\x1b]+)(?:\x07|\x1b\\)")
 LOGIN = re.compile(r"sk-ant-[A-Za-z0-9_-]{60,}")
 CURSOR_RIGHT = re.compile(rb"\x1b\[\d*C")
-FIRST = ("Hi, I'm your MyPlow. To start, tap this to log in with your own Claude (Pro or Max), "
-         "approve, then text me the code it shows: {url}")
+FIRST = (
+    "Hi, I'm your MyPlow. To start, tap this to log in with your own Claude (Pro or Max), "
+    "approve, then text me the code it shows: {url}"
+)
 AGAIN = "That code didn't work. Here's a fresh link; approve and text me the new code: {url}"
 
 
@@ -39,10 +42,12 @@ def log(msg):  # stderr only: claude-login.sh keeps it in its log; the login nev
 
 
 def api(method, path, body=None):
-    req = urllib.request.Request(API + path, method=method,
-                                 data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Authorization": "Bearer " + TOKEN,
-                                          "Content-Type": "application/json"})
+    req = urllib.request.Request(
+        API + path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"},
+    )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read() or b"{}")
 
@@ -125,9 +130,11 @@ def wait_for_code(chat, after_ids):
     while time.time() < end:
         time.sleep(5)
         try:
-            new = [m for m in messages(chat)
-                   if m.get("direction") == "inbound" and m.get("uid") not in after_ids
-                   and (m.get("body") or "").strip()]
+            new = [
+                m
+                for m in messages(chat)
+                if m.get("direction") == "inbound" and m.get("uid") not in after_ids and (m.get("body") or "").strip()
+            ]
         except OSError as e:
             log(f"chat read failed ({e})")
             continue
@@ -156,8 +163,11 @@ def main():
         os.write(fd, code.encode())
         time.sleep(1)
         os.write(fd, b"\r")
-        screen = read_until(fd, lambda b: b"Storethis" in ANSI.sub(b"", b).replace(b" ", b"")
-                            or b"error" in ANSI.sub(b"", b).lower(), 90)
+        screen = read_until(
+            fd,
+            lambda b: b"Storethis" in ANSI.sub(b"", b).replace(b" ", b"") or b"error" in ANSI.sub(b"", b).lower(),
+            90,
+        )
         os.kill(pid, 9)
         found = login_of(screen)
         if found:

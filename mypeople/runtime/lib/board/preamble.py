@@ -8,9 +8,20 @@ board-to-Boss ping, card ownership, proof classification, then Handler
 (GET/POST for the board, plugins, and access pages). Pages and fonts are read
 from this file's directory.
 """
-import os, sys, json, time, uuid, threading, shutil, subprocess, glob, re
+
+import os
+import sys
+import json
+import time
+import uuid
+import threading
+import shutil
+import subprocess
+import glob
+import re
 import copy
-import urllib.parse, urllib.request
+import urllib.parse
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -45,5 +56,3 @@ FULL_AGENT_ID = re.compile(r"^[^/\s]+/[^/:\s]+:[^/:\s]+$")
 BOSS_BACKENDS = ("claude", "codex", "grok")
 LOCK = threading.RLock()
 START = time.time()
-
-

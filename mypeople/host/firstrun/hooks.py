@@ -27,7 +27,7 @@ def _hook_installs(hooks):
                 except (ValueError, IndexError, AttributeError):
                     continue
                 if script.endswith(_HOOK_TAIL):
-                    found.add(script[:-len(_HOOK_TAIL)])
+                    found.add(script[: -len(_HOOK_TAIL)])
     return found
 
 
@@ -40,7 +40,7 @@ def _replace_mypeople_hooks(hooks, hook):
     """
     if not isinstance(hooks, dict):
         hooks = {}
-    mine = os.path.realpath(hook[:-len(_HOOK_TAIL)])
+    mine = os.path.realpath(hook[: -len(_HOOK_TAIL)])
     held = sorted(i for i in _hook_installs(hooks) if os.path.realpath(i) != mine and daemons_running(i))
     if held:
         _echo("[myplow] agent hooks belong to the running install at %s; leaving them" % held[0])
@@ -56,9 +56,7 @@ def _replace_mypeople_hooks(hooks, hook):
             hooks.pop(event, None)
     for event in LIFECYCLE_EVENTS:
         command = "%s %s" % (shlex.quote(hook), event)
-        hooks.setdefault(event, []).append({"hooks": [
-            {"type": "command", "command": command}
-        ]})
+        hooks.setdefault(event, []).append({"hooks": [{"type": "command", "command": command}]})
     return hooks
 
 
@@ -77,9 +75,14 @@ def write_claude_config(install):
         d = {}
     d["hasCompletedOnboarding"] = True
     proj = d.setdefault("projects", {})
-    for path in {os.path.expanduser("~"), install, os.path.join(install, "run"),
-                 os.path.join(install, "run", "boss"), os.path.join(install, "run", "eng"),
-                 os.path.join(install, "bin")}:
+    for path in {
+        os.path.expanduser("~"),
+        install,
+        os.path.join(install, "run"),
+        os.path.join(install, "run", "boss"),
+        os.path.join(install, "run", "eng"),
+        os.path.join(install, "bin"),
+    }:
         rec = proj.get(path, {})
         rec["hasTrustDialogAccepted"] = True
         proj[path] = rec
@@ -140,5 +143,3 @@ def _atomic_json(path, obj):
     with open(tmp, "w") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
-
-

@@ -6,6 +6,7 @@ CEO's 5.13.1 install back to 5.8.0 twice, taking Cmd+F search, live timestamps, 
 the PR watcher and owner-direct message delivery with it. The second time, his messages stopped
 reaching the agent that owned his card.
 """
+
 import os
 from pathlib import Path
 import tempfile
@@ -20,8 +21,9 @@ class RefuseDowngradeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.install = self.tmp.name
-        env = mock.patch.dict(os.environ, {k: v for k, v in os.environ.items()
-                                           if k != "MYPEOPLE_ALLOW_DOWNGRADE"}, clear=True)
+        env = mock.patch.dict(
+            os.environ, {k: v for k, v in os.environ.items() if k != "MYPEOPLE_ALLOW_DOWNGRADE"}, clear=True
+        )
         env.start()
         self.addCleanup(env.stop)
 
@@ -57,10 +59,11 @@ class RefuseDowngradeTests(unittest.TestCase):
             self.assertFalse(firstrun.refuse_downgrade(self.install))
 
     def test_it_compares_numerically_not_as_text(self):
-        self.installed("5.9.0")                      # "5.9.0" > "5.13.1" as strings
+        self.installed("5.9.0")  # "5.9.0" > "5.13.1" as strings
         with self.running("5.13.1"):
-            self.assertFalse(firstrun.refuse_downgrade(self.install),
-                             "5.13.1 is newer than 5.9.0 and must be allowed to upgrade")
+            self.assertFalse(
+                firstrun.refuse_downgrade(self.install), "5.13.1 is newer than 5.9.0 and must be allowed to upgrade"
+            )
 
     def test_a_deliberate_rollback_still_has_a_way_through(self):
         self.installed("5.13.1")
@@ -76,9 +79,11 @@ class RefuseDowngradeTests(unittest.TestCase):
 
     def test_an_old_app_does_not_cycle_a_newer_installs_daemons(self):
         self.installed("5.13.1")
-        with self.running("5.8.0"), \
-             mock.patch.object(cli, "_daemons_running", lambda i: True), \
-             mock.patch.object(cli, "cmd_down") as down:
+        with (
+            self.running("5.8.0"),
+            mock.patch.object(cli, "_daemons_running", lambda i: True),
+            mock.patch.object(cli, "cmd_down") as down,
+        ):
             self.assertFalse(cli.restart_if_serving_stale({}, self.install))
         down.assert_not_called()
 
@@ -95,9 +100,17 @@ class ChildEnvTests(unittest.TestCase):
     def test_daemons_carry_no_agent_identity(self):
         """card 8f490e73e5: the app, launched from eng-961's shell, handed every daemon
         AGENT_ID=eng-961, so each `mp send` a daemon made claimed to come from that agent."""
-        agent = {"AGENT_ID": "n/main:eng-961", "BOSS_ID": "n/main:Boss", "TMUX": "/tmp/t,1,0",
-                 "TMUX_PANE": "%1", "CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "s",
-                 "MYPEOPLE_BACKEND": "claude", "MYPEOPLE_ROLE": "eng", "HOME": "/home/x"}
+        agent = {
+            "AGENT_ID": "n/main:eng-961",
+            "BOSS_ID": "n/main:Boss",
+            "TMUX": "/tmp/t,1,0",
+            "TMUX_PANE": "%1",
+            "CLAUDECODE": "1",
+            "CLAUDE_CODE_SESSION_ID": "s",
+            "MYPEOPLE_BACKEND": "claude",
+            "MYPEOPLE_ROLE": "eng",
+            "HOME": "/home/x",
+        }
         with mock.patch.dict(os.environ, agent, clear=True):
             env = cli.child_env({"QUEUE_URL": "http://q"})
         self.assertEqual(set(), set(agent) - {"HOME"} & set(env))
@@ -106,9 +119,15 @@ class ChildEnvTests(unittest.TestCase):
     def test_a_cloud_login_reaches_the_fleet(self):
         """A cloud MyPlow's Claude login lives only in CLAUDE_CODE_OAUTH_TOKEN: stripping it with
         the identity keys logged every cloud Boss out ("Not logged in")."""
-        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-x",
-                                          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-                                          "CLAUDE_CODE_SESSION_ID": "s"}, clear=True):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-x",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+                "CLAUDE_CODE_SESSION_ID": "s",
+            },
+            clear=True,
+        ):
             env = cli.child_env({})
         self.assertEqual("sk-ant-x", env.get("CLAUDE_CODE_OAUTH_TOKEN"))
         self.assertEqual("1", env.get("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"))

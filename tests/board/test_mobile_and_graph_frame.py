@@ -9,6 +9,7 @@ never had them. Nothing failed loudly; the CEO just picked up a phone and found 
 These assertions are cheap because the real requirement is cheap: the patches have to be in
 the files we ship, not only in the files we run.
 """
+
 from pathlib import Path
 import re
 import unittest
@@ -62,7 +63,7 @@ class MobileModalTest(unittest.TestCase):
         while depth:
             depth += {"{": 1, "}": -1}.get(html[i], 0)
             i += 1
-        return html[start.end():i]
+        return html[start.end() : i]
 
 
 class GraphTileFrameTest(unittest.TestCase):

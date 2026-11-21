@@ -28,13 +28,17 @@ def unservable_proof_url(url):
     if not u:
         return "empty url"
     if u.startswith("file://"):
-        return ("file:// URLs cannot be loaded by the board (page is served over http). "
-                "Upload the file instead: mp proof <task_id> <path> [note]")
+        return (
+            "file:// URLs cannot be loaded by the board (page is served over http). "
+            "Upload the file instead: mp proof <task_id> <path> [note]"
+        )
     if u.startswith("/todo/") or u.startswith("http://") or u.startswith("https://"):
         return ""
     if u.startswith("/") or u.startswith("~") or u.startswith("./") or u.startswith("../"):
-        return ("local filesystem paths are not reachable from the board. "
-                "Upload the file instead: mp proof <task_id> <path> [note]")
+        return (
+            "local filesystem paths are not reachable from the board. "
+            "Upload the file instead: mp proof <task_id> <path> [note]"
+        )
     return ""
 
 
@@ -61,12 +65,10 @@ def parse_multipart(handler, ctype):
         htxt = head.decode("latin-1", "ignore")
         dm = re.search(r'name="([^"]+)"', htxt)
         fm = re.search(r'filename="([^"]*)"', htxt)
-        cm = re.search(r'Content-Type:\s*([^\r\n]+)', htxt, re.I)
+        cm = re.search(r"Content-Type:\s*([^\r\n]+)", htxt, re.I)
         nm = dm.group(1) if dm else "field"
         if fm and fm.group(1):
             fileobj = (fm.group(1), (cm.group(1).strip() if cm else ""), data)
         else:
             fields[nm] = data.decode("utf-8", "ignore")
     return fields, fileobj
-
-

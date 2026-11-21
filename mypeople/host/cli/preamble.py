@@ -12,7 +12,14 @@
 The runtime this command copies and supervises is mypeople/runtime/. The map
 is docs/ARCHITECTURE.md.
 """
-import os, sys, time, json, signal, subprocess, urllib.request
+
+import os
+import sys
+import time
+import json
+import signal
+import subprocess
+import urllib.request
 from . import firstrun, __version__
 
 CONFIG_PATH = firstrun.CONFIG_PATH
@@ -26,23 +33,33 @@ load_cfg = firstrun.load_cfg  # desktop/src-tauri/src/main.rs calls cli.load_cfg
 # Named, never by a vendor prefix: a cloud MyPlow's Claude login (CLAUDE_CODE_OAUTH_TOKEN) and its
 # settings (CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) live in CLAUDE_CODE_* variables too, and
 # stripping the prefix logged every cloud Boss out.
-AGENT_IDENTITY = ("AGENT_ID", "BOSS_ID", "MYPEOPLE_BACKEND", "TMUX", "TMUX_PANE",
-                  "CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT",
-                  "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH",
-                  "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
-                  "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_SESSION_ID")
+AGENT_IDENTITY = (
+    "AGENT_ID",
+    "BOSS_ID",
+    "MYPEOPLE_BACKEND",
+    "TMUX",
+    "TMUX_PANE",
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+)
 AGENT_IDENTITY_PREFIXES = ("MYPEOPLE_ROLE",)
 
 
 def child_env(cfg):
-    e = {k: v for k, v in os.environ.items()
-         if k not in AGENT_IDENTITY and not k.startswith(AGENT_IDENTITY_PREFIXES)}
+    e = {k: v for k, v in os.environ.items() if k not in AGENT_IDENTITY and not k.startswith(AGENT_IDENTITY_PREFIXES)}
     e.update(cfg)  # queue.env values available to daemons
     install = cfg.get("INSTALL_DIR", firstrun.install_dir())
     e["MYPEOPLE_CONFIG_PATH"] = CONFIG_PATH
     e["MYPEOPLE_HOME"] = install
-    e["PATH"] = "%s/.local/bin:%s/bin:%s" % (
-        os.path.expanduser("~"), install, e.get("PATH", "/usr/bin:/bin"))
+    e["PATH"] = "%s/.local/bin:%s/bin:%s" % (os.path.expanduser("~"), install, e.get("PATH", "/usr/bin:/bin"))
     # Authentication stays in the selected CLI's node-local credential store.
     return e
 
@@ -103,8 +120,10 @@ def restart_if_serving_stale(cfg, install):
         serving = ""
     if serving == __version__:
         return False
-    print("[myplow] daemons are serving %s, installed is %s — restarting them"
-          % (serving or "an older build", __version__))
+    print(
+        "[myplow] daemons are serving %s, installed is %s — restarting them"
+        % (serving or "an older build", __version__)
+    )
     cmd_down([])
     time.sleep(1)
     return True
@@ -124,9 +143,8 @@ def _stamp_serving_version(install):
 def urls(cfg):
     return {
         "board": "http://localhost:%s" % cfg.get("TODO_PORT", "9933"),
-        "HUD":   "http://localhost:%s/dashboard" % cfg.get("HUD_PORT", "9900"),
-        "term":  "http://localhost:%s" % cfg.get(
-            "TTYD_BROWSER_PORT", cfg.get("TTYD_PORT", "7681")),
+        "HUD": "http://localhost:%s/dashboard" % cfg.get("HUD_PORT", "9900"),
+        "term": "http://localhost:%s" % cfg.get("TTYD_BROWSER_PORT", cfg.get("TTYD_PORT", "7681")),
     }
 
 
@@ -148,5 +166,3 @@ def print_urls(cfg):
     print("    HUD    → %s" % u["HUD"])
     print("    term   → %s" % u["term"])
     print()
-
-

@@ -12,6 +12,7 @@ proven without loading anything:
 The stalled server here is a private one frozen with SIGSTOP. The integration resumes the private server on a bounded timer. Refusal is tested separately so
 coverage does not depend on the host kernel's listener backlog.
 """
+
 import json
 import os
 from pathlib import Path
@@ -47,13 +48,28 @@ class StalledTmuxTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(dir="/tmp")  # tmux sockets need a short path
         self.addCleanup(shutil.rmtree, self.dir, True)
-        self.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TMUX_TMPDIR": self.dir, "HOME": self.dir,
-                    "TERM": "xterm-256color"}
+        self.env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "TMUX_TMPDIR": self.dir,
+            "HOME": self.dir,
+            "TERM": "xterm-256color",
+        }
         self.log = os.path.join(self.dir, "raw.bin")
         self.script = os.path.join(self.dir, "r.py")
         Path(self.script).write_text(RAW_LOG)
-        self.tmux("new-session", "-d", "-s", "mc-main", "-n", "eng-1", "-x", "120", "-y", "39",
-                  "%s %s %s" % (sys.executable, self.script, self.log))
+        self.tmux(
+            "new-session",
+            "-d",
+            "-s",
+            "mc-main",
+            "-n",
+            "eng-1",
+            "-x",
+            "120",
+            "-y",
+            "39",
+            "%s %s %s" % (sys.executable, self.script, self.log),
+        )
         self.addCleanup(self.tmux, "kill-server")
         self.pid = int(self.tmux("display", "-p", "#{pid}").stdout)
         self.addCleanup(self.thaw)
@@ -115,8 +131,10 @@ class StalledTmuxTests(unittest.TestCase):
     def test_a_refused_client_is_what_a_stall_looks_like(self):
         refused = subprocess.CompletedProcess(["tmux"], 1, "", "no server running")
         ready = subprocess.CompletedProcess(["tmux"], 0, "mc-main:eng-1", "")
-        with mock.patch.object(self.C.subprocess, "run", side_effect=[refused, ready]) as run, \
-             mock.patch.object(self.C, "tmux_server_gone", return_value=False) as gone:
+        with (
+            mock.patch.object(self.C.subprocess, "run", side_effect=[refused, ready]) as run,
+            mock.patch.object(self.C, "tmux_server_gone", return_value=False) as gone,
+        ):
             self.assertEqual({"mc-main:eng-1"}, self.C.tmux_windows())
         self.assertEqual(2, run.call_count)
         gone.assert_called_once()
@@ -150,9 +168,11 @@ class StalledTmuxTests(unittest.TestCase):
         mp = sandbox.load(self.tmp, "mp")
         args = ["-d", "-s", "mc-other", "-n", "x", "sleep 300"]
         refused = subprocess.CompletedProcess(["tmux"], 1, "", "no server running")
-        with mock.patch.object(mp.C.subprocess, "run", return_value=refused) as run, \
-             mock.patch.object(mp.C, "TMUX_STALL_WAIT", 0), \
-             mock.patch.object(mp.C, "tmux_server_gone", return_value=False):
+        with (
+            mock.patch.object(mp.C.subprocess, "run", return_value=refused) as run,
+            mock.patch.object(mp.C, "TMUX_STALL_WAIT", 0),
+            mock.patch.object(mp.C, "tmux_server_gone", return_value=False),
+        ):
             self.assertNotEqual(0, mp.start_tmux_session(args, dict(self.env)).returncode)
         self.assertEqual(["tmux", "-N", "new-session", *args], run.call_args.args[0])
         run.assert_called_once()
@@ -161,7 +181,9 @@ class StalledTmuxTests(unittest.TestCase):
         self.assertEqual(0, r.returncode, r.stderr)
         self.assertEqual(self.inode, os.stat(self.sock).st_ino, "the socket was taken from the live server")
         self.assertEqual(str(self.pid), self.tmux("display", "-p", "#{pid}").stdout.strip())
-        self.assertEqual({"mc-main", "mc-other"}, set(self.tmux("list-sessions", "-F", "#{session_name}").stdout.splitlines()))
+        self.assertEqual(
+            {"mc-main", "mc-other"}, set(self.tmux("list-sessions", "-F", "#{session_name}").stdout.splitlines())
+        )
 
     def test_a_viewer_can_never_start_a_second_server(self):
         script = (BIN / "ttyd-attach.sh").read_text()
@@ -171,6 +193,7 @@ class StalledTmuxTests(unittest.TestCase):
 class AnyOtherTmuxFailureTests(unittest.TestCase):
     """review-watch on 4c2a59d: 5.22.154 returned "no windows" for any failure that was not a refused
     connection, so one odd error from a live server would retire every agent and respawn them."""
+
     FAILURE = mock.Mock(returncode=1, stdout="", stderr="protocol version mismatch (client 8, server 9)")
 
     def load(self, name, roster):
@@ -182,39 +205,54 @@ class AnyOtherTmuxFailureTests(unittest.TestCase):
         return module
 
     def alive(self):
-        return {"test-node/main:eng-1": {"agent_id": "test-node/main:eng-1", "session": "main", "tab": "eng-1",
-                                         "retired": False}}
+        return {
+            "test-node/main:eng-1": {
+                "agent_id": "test-node/main:eng-1",
+                "session": "main",
+                "tab": "eng-1",
+                "retired": False,
+            }
+        }
 
     def test_a_live_server_that_fails_oddly_is_unknown_not_empty(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         C = sandbox.load(tmp.name, "mpcommon.py")
-        with mock.patch.object(C.subprocess, "run", return_value=self.FAILURE), \
-             mock.patch.object(C, "tmux_server_gone", return_value=False):
+        with (
+            mock.patch.object(C.subprocess, "run", return_value=self.FAILURE),
+            mock.patch.object(C, "tmux_server_gone", return_value=False),
+        ):
             self.assertIsNone(C.tmux_windows())
 
     def test_a_server_really_gone_is_empty_so_a_crash_still_recovers(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         C = sandbox.load(tmp.name, "mpcommon.py")
-        with mock.patch.object(C.subprocess, "run", return_value=self.FAILURE), \
-             mock.patch.object(C, "tmux_server_gone", return_value=True):
+        with (
+            mock.patch.object(C.subprocess, "run", return_value=self.FAILURE),
+            mock.patch.object(C, "tmux_server_gone", return_value=True),
+        ):
             self.assertEqual(set(), C.tmux_windows())
 
     def test_the_heartbeat_retires_nobody_on_it(self):
         q = self.load("queue-client.py", self.alive())
-        with mock.patch.object(q.C.subprocess, "run", return_value=self.FAILURE), \
-             mock.patch.object(q.C, "tmux_server_gone", return_value=False), \
-             mock.patch.object(q, "auth_health", return_value={"state": "live"}):
+        with (
+            mock.patch.object(q.C.subprocess, "run", return_value=self.FAILURE),
+            mock.patch.object(q.C, "tmux_server_gone", return_value=False),
+            mock.patch.object(q, "auth_health", return_value={"state": "live"}),
+        ):
             self.assertEqual([], q.live_agents())
         self.assertFalse(json.loads(Path(q.ROSTER_PATH).read_text())["test-node/main:eng-1"]["retired"])
 
     def test_reconcile_respawns_nobody_on_it(self):
         mp = self.load("mp", self.alive())
-        with mock.patch.object(mp.subprocess, "run", return_value=self.FAILURE), \
-             mock.patch.object(mp.C, "tmux_server_gone", return_value=False), \
-             mock.patch.object(mp, "is_local", return_value=True), \
-             mock.patch.object(mp, "do_revive") as revive, mock.patch.object(mp, "do_spawn") as spawn:
+        with (
+            mock.patch.object(mp.subprocess, "run", return_value=self.FAILURE),
+            mock.patch.object(mp.C, "tmux_server_gone", return_value=False),
+            mock.patch.object(mp, "is_local", return_value=True),
+            mock.patch.object(mp, "do_revive") as revive,
+            mock.patch.object(mp, "do_spawn") as spawn,
+        ):
             self.assertEqual(0, mp.do_reconcile([]))
         revive.assert_not_called()
         spawn.assert_not_called()
@@ -232,10 +270,12 @@ class ServerGoneTests(unittest.TestCase):
         sock.parent.mkdir(exist_ok=True)
         if not sock.exists():
             left = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            left.bind(str(sock))        # what a crash leaves: the socket's file, and nothing listening on it
+            left.bind(str(sock))  # what a crash leaves: the socket's file, and nothing listening on it
             left.close()
-        with mock.patch.object(self.C.subprocess, "run", return_value=mock.Mock(stdout=lsof)) as run, \
-                mock.patch.object(self.C.sys, "platform", platform):
+        with (
+            mock.patch.object(self.C.subprocess, "run", return_value=mock.Mock(stdout=lsof)) as run,
+            mock.patch.object(self.C.sys, "platform", platform),
+        ):
             self.ran = run.called or None
             gone = self.C.tmux_server_gone({"TMUX_TMPDIR": self.dir})
             self.ran = run.called
@@ -271,11 +311,14 @@ class ServerGoneTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which("tmux") and hasattr(os, "getuid"), "needs tmux")
 class RealPrivateServerTests(unittest.TestCase):
     """A real private server running and the default socket dead: what a builder's Mac had (11-05)."""
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(dir="/tmp")
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
-        self.env = {k: v for k, v in os.environ.items() if k != "TMUX"}   # $TMUX would point tmux at the server this runs in
+        self.env = {
+            k: v for k, v in os.environ.items() if k != "TMUX"
+        }  # $TMUX would point tmux at the server this runs in
         self.env["TMUX_TMPDIR"] = self.dir
         self.C = sandbox.load(tmp.name, "mpcommon.py")
 
@@ -323,21 +366,34 @@ class CensusTests(unittest.TestCase):
         return q
 
     def roster(self, n=35):
-        return {"test-node/main:eng-%d" % i: {"agent_id": "test-node/main:eng-%d" % i, "session": "main",
-                                              "tab": "eng-%d" % i, "retired": False} for i in range(n)}
+        return {
+            "test-node/main:eng-%d" % i: {
+                "agent_id": "test-node/main:eng-%d" % i,
+                "session": "main",
+                "tab": "eng-%d" % i,
+                "retired": False,
+            }
+            for i in range(n)
+        }
 
     def test_an_unreadable_tmux_retires_nobody(self):
         q = self.queue(self.roster())
-        with mock.patch.object(q.C, "tmux_windows", return_value=None), \
-             mock.patch.object(q, "auth_health", return_value={"state": "live"}):
+        with (
+            mock.patch.object(q.C, "tmux_windows", return_value=None),
+            mock.patch.object(q, "auth_health", return_value={"state": "live"}),
+        ):
             self.assertEqual([], q.live_agents())
         self.assertFalse(any(r["retired"] for r in json.loads(Path(q.ROSTER_PATH).read_text()).values()))
 
     def test_the_census_costs_one_tmux_call_however_big_the_fleet(self):
         q = self.queue(self.roster())
         windows = "".join("mc-main:eng-%d\n" % i for i in range(35))
-        with mock.patch.object(q.C.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=windows, stderr="")) as run, \
-             mock.patch.object(q, "auth_health", return_value={"state": "live"}):
+        with (
+            mock.patch.object(
+                q.C.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=windows, stderr="")
+            ) as run,
+            mock.patch.object(q, "auth_health", return_value={"state": "live"}),
+        ):
             self.assertEqual(35, len(q.live_agents()))
         self.assertEqual(1, sum(c.args[0][0] == "tmux" for c in run.call_args_list))
 
@@ -354,26 +410,39 @@ class ReconcileTests(unittest.TestCase):
     def test_an_unreadable_tmux_revives_nobody(self):
         aid = "test-node/main:eng-1"
         mp = self.mp({aid: {"agent_id": aid, "session": "main", "tab": "eng-1", "retired": False}})
-        with mock.patch.object(mp.C, "tmux_windows", return_value=None), \
-             mock.patch.object(mp, "do_revive") as revive, mock.patch.object(mp, "do_spawn") as spawn:
+        with (
+            mock.patch.object(mp.C, "tmux_windows", return_value=None),
+            mock.patch.object(mp, "do_revive") as revive,
+            mock.patch.object(mp, "do_spawn") as spawn,
+        ):
             self.assertEqual(0, mp.do_reconcile([]))
         revive.assert_not_called()
         spawn.assert_not_called()
 
     def test_six_hundred_retired_agents_cost_no_tmux_calls(self):
-        mp = self.mp({"test-node/main:eng-%d" % i: {"agent_id": "test-node/main:eng-%d" % i, "session": "main",
-                                                    "tab": "eng-%d" % i, "retired": True, "retire_reason": "done"}
-                      for i in range(600)})
-        with mock.patch.object(mp.C, "tmux_windows", return_value=set()), \
-             mock.patch.object(mp.subprocess, "run") as run:
+        mp = self.mp(
+            {
+                "test-node/main:eng-%d" % i: {
+                    "agent_id": "test-node/main:eng-%d" % i,
+                    "session": "main",
+                    "tab": "eng-%d" % i,
+                    "retired": True,
+                    "retire_reason": "done",
+                }
+                for i in range(600)
+            }
+        )
+        with (
+            mock.patch.object(mp.C, "tmux_windows", return_value=set()),
+            mock.patch.object(mp.subprocess, "run") as run,
+        ):
             self.assertEqual(0, mp.do_reconcile([]))
         run.assert_not_called()
 
     def test_an_unreadable_tmux_leaves_the_boss_alone(self):
         aid = "test-node/main:Boss"
         mp = self.mp({aid: {"agent_id": aid, "session": "main", "tab": "Boss", "is_master": True, "retired": False}})
-        with mock.patch.object(mp.C, "tmux_windows", return_value=None), \
-             mock.patch.object(mp, "do_revive") as revive:
+        with mock.patch.object(mp.C, "tmux_windows", return_value=None), mock.patch.object(mp, "do_revive") as revive:
             self.assertEqual(0, mp.do_ensure_boss([aid]))
         revive.assert_not_called()
         self.assertFalse(json.loads(Path(mp.ROSTER_PATH).read_text())[aid]["retired"])
@@ -383,6 +452,7 @@ class SpawnOnAStalledServerTests(unittest.TestCase):
     """review-watch on 12b49de: new-window ran plain with its result ignored, so a refusal left a roster row
     and an /agents/register saying alive with no window. And window_exists read a refusal as "no window", so a
     spawn could start a second copy of a live agent once tmux answered again."""
+
     AID = "test-node/main:eng-9"
 
     def setUp(self):
@@ -417,13 +487,18 @@ class SpawnOnAStalledServerTests(unittest.TestCase):
                 return mock.Mock(returncode=1, stdout="", stderr="no server running on /tmp/tmux-501/default")
             out = "mc-main:Boss\n" if "-a" in argv else "Boss\n" if argv[1] == "list-windows" else ""
             return mock.Mock(returncode=0, stdout=out, stderr="")
+
         return mock.patch.object(self.mp.subprocess, "run", side_effect=run)
 
     def spawn(self, refuse=()):
-        with self.fake_tmux(refuse), mock.patch.object(self.mp.C, "tmux_server_gone", return_value=False), \
-             mock.patch.object(self.mp.C, "TMUX_STALL_WAIT", 0), mock.patch.object(self.mp.C.time, "sleep"), \
-             mock.patch.object(self.mp, "wait_for_backend_ready", return_value=("", "pane")), \
-             mock.patch.object(self.mp, "is_local", return_value=True):
+        with (
+            self.fake_tmux(refuse),
+            mock.patch.object(self.mp.C, "tmux_server_gone", return_value=False),
+            mock.patch.object(self.mp.C, "TMUX_STALL_WAIT", 0),
+            mock.patch.object(self.mp.C.time, "sleep"),
+            mock.patch.object(self.mp, "wait_for_backend_ready", return_value=("", "pane")),
+            mock.patch.object(self.mp, "is_local", return_value=True),
+        ):
             return self.mp.do_spawn([self.AID, "--temporary", "--role", "engineer", "--backend", "claude"])
 
     def assert_nothing_happened(self):
@@ -449,12 +524,23 @@ class SpawnOnAStalledServerTests(unittest.TestCase):
             if argv[1] == "new-window":
                 created.append(argv)
             names = ["Boss"] + (["eng-9"] if created else [])
-            out = "".join("mc-main:%s\n" % n for n in names) if "-a" in argv else "\n".join(names) if argv[1] == "list-windows" else ""
+            out = (
+                "".join("mc-main:%s\n" % n for n in names)
+                if "-a" in argv
+                else "\n".join(names)
+                if argv[1] == "list-windows"
+                else ""
+            )
             return mock.Mock(returncode=0, stdout=out, stderr="")
-        with mock.patch.object(self.mp.subprocess, "run", side_effect=run), \
-             mock.patch.object(self.mp, "wait_for_backend_ready", return_value=("", "pane")), \
-             mock.patch.object(self.mp, "is_local", return_value=True):
-            self.assertEqual(0, self.mp.do_spawn([self.AID, "--temporary", "--role", "engineer", "--backend", "claude"]))
+
+        with (
+            mock.patch.object(self.mp.subprocess, "run", side_effect=run),
+            mock.patch.object(self.mp, "wait_for_backend_ready", return_value=("", "pane")),
+            mock.patch.object(self.mp, "is_local", return_value=True),
+        ):
+            self.assertEqual(
+                0, self.mp.do_spawn([self.AID, "--temporary", "--role", "engineer", "--backend", "claude"])
+            )
         self.assertEqual(1, len(created))
         self.assertIn(self.AID, self.mp.load_roster())
 
@@ -476,22 +562,61 @@ class HeartbeatSurvivesASlowCensus(unittest.TestCase):
         Path(tmp + "/delay").write_text("0")
         Path(tmp + "/bin/tmux").write_text(
             '#!/bin/bash\nsleep "$(cat %s/delay)"\ncase "$*" in *list-windows*-a*) for n in %s; do echo "mc-main:$n"; done;; '
-            '*list-windows*) for n in %s; do echo "$n"; done;; *) exit 1;; esac\n' % (tmp, " ".join(names), " ".join(names)))
+            '*list-windows*) for n in %s; do echo "$n"; done;; *) exit 1;; esac\n'
+            % (tmp, " ".join(names), " ".join(names))
+        )
         os.chmod(tmp + "/bin/tmux", 0o755)
-        Path(tmp + "/state/run/roster.json").write_text(json.dumps(
-            {"far-mac/main:%s" % n: {"agent_id": "far-mac/main:%s" % n, "session": "main", "tab": n, "backend": "codex",
-                                     "retired": False} for n in names}))
-        keys = dict(INSTALL_DIR=tmp + "/state", QUEUE_URL="http://127.0.0.1:%d" % port, QUEUE_SECRET="t", HUD_PORT=port,
-                    TODO_PORT=port + 1, BIND_ADDR="127.0.0.1", QUEUE_DEAD_AFTER=6, HEARTBEAT_INTERVAL=1,
-                    DEFAULT_BACKEND="codex", DEFAULT_ENG_MODEL="x", HOST_ID="far-mac")
+        Path(tmp + "/state/run/roster.json").write_text(
+            json.dumps(
+                {
+                    "far-mac/main:%s" % n: {
+                        "agent_id": "far-mac/main:%s" % n,
+                        "session": "main",
+                        "tab": n,
+                        "backend": "codex",
+                        "retired": False,
+                    }
+                    for n in names
+                }
+            )
+        )
+        keys = dict(
+            INSTALL_DIR=tmp + "/state",
+            QUEUE_URL="http://127.0.0.1:%d" % port,
+            QUEUE_SECRET="t",
+            HUD_PORT=port,
+            TODO_PORT=port + 1,
+            BIND_ADDR="127.0.0.1",
+            QUEUE_DEAD_AFTER=6,
+            HEARTBEAT_INTERVAL=1,
+            DEFAULT_BACKEND="codex",
+            DEFAULT_ENG_MODEL="x",
+            HOST_ID="far-mac",
+        )
         Path(tmp + "/queue.env").write_text("".join('export %s="%s"\n' % kv for kv in keys.items()))
-        env = {"PATH": tmp + "/bin:/usr/bin:/bin", "HOME": tmp, "MYPEOPLE_CONFIG_PATH": tmp + "/queue.env",
-               "LANG": "en_US.UTF-8"}
+        env = {
+            "PATH": tmp + "/bin:/usr/bin:/bin",
+            "HOME": tmp,
+            "MYPEOPLE_CONFIG_PATH": tmp + "/queue.env",
+            "LANG": "en_US.UTF-8",
+        }
         env.update({k: str(v) for k, v in keys.items()})
-        procs = [subprocess.Popen([sys.executable, str(BIN / "queue-server.py")], env=dict(env, HOST_ID="central"), cwd=tmp,
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
-                 subprocess.Popen([sys.executable, str(BIN / "queue-client.py")], env=env, cwd=tmp,
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+        procs = [
+            subprocess.Popen(
+                [sys.executable, str(BIN / "queue-server.py")],
+                env=dict(env, HOST_ID="central"),
+                cwd=tmp,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ),
+            subprocess.Popen(
+                [sys.executable, str(BIN / "queue-client.py")],
+                env=env,
+                cwd=tmp,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ),
+        ]
         for p in procs:
             self.addCleanup(p.wait)
             self.addCleanup(p.kill)
@@ -502,6 +627,7 @@ class HeartbeatSurvivesASlowCensus(unittest.TestCase):
                 return len(json.load(urllib.request.urlopen(req, timeout=2)))
             except OSError:
                 return -1
+
         self.assertTrue(wait_for(lambda: agents() == 5, 15), "never registered")
         Path(tmp + "/delay").write_text("60")  # the census now outlasts the 6 s TTL many times over
         end = time.time() + 14

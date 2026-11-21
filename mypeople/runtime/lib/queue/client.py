@@ -2,7 +2,13 @@
 """MyPlow queue-client (INNER plane): heartbeat + re-announce agents + task poll->tmux relay.
 Owns the durable roster (run/roster.json) and re-announces live agents every heartbeat so a
 server restart / false-prune self-heals within one cycle. Python stdlib only."""
-import os, sys, time, subprocess, threading, urllib.parse
+
+import os
+import sys
+import time
+import subprocess
+import threading
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mpcommon as C
@@ -75,8 +81,11 @@ def live_agents():
         if "mc-%s:%s" % (sess, tab) not in windows:
             gone.append((aid, sess, tab))
             continue
-        current_recorder = (C.current_recorder(sess, tab, HOST_ID)
-                            if C.recorder_identity(sess, tab, HOST_ID)["session"] in tmux_sessions else None)
+        current_recorder = (
+            C.current_recorder(sess, tab, HOST_ID)
+            if C.recorder_identity(sess, tab, HOST_ID)["session"] in tmux_sessions
+            else None
+        )
         if current_recorder and rr.get("recorder", {}).get("pid") != current_recorder["pid"]:
             prior_recorder = rr.get("recorder")
             if prior_recorder:
@@ -86,14 +95,23 @@ def live_agents():
         # Only the backend whose credential we actually validated is downgraded; a codex agent on
         # a node with a dead claude token is still alive.
         starved = node_unauthenticated and backend == CFG.get("DEFAULT_BACKEND", "claude")
-        out.append({
-            "agent_id": aid, "host": HOST_ID, "session": sess, "tab": tab,
-            "backend": backend, "state": "unauthenticated" if starved else "alive",
-            "auth_detail": health.get("detail", "") if starved else "",
-            "boss_id": rr.get("boss_id", ""), "is_master": rr.get("is_master", False),
-            "summary": status_summary(aid), "spawn_cmd": rr.get("spawn_cmd", ""),
-            "model": rr.get("model", ""), "tmux_target": "mc-%s:%s" % (sess, tab),
-        })
+        out.append(
+            {
+                "agent_id": aid,
+                "host": HOST_ID,
+                "session": sess,
+                "tab": tab,
+                "backend": backend,
+                "state": "unauthenticated" if starved else "alive",
+                "auth_detail": health.get("detail", "") if starved else "",
+                "boss_id": rr.get("boss_id", ""),
+                "is_master": rr.get("is_master", False),
+                "summary": status_summary(aid),
+                "spawn_cmd": rr.get("spawn_cmd", ""),
+                "model": rr.get("model", ""),
+                "tmux_target": "mc-%s:%s" % (sess, tab),
+            }
+        )
     if gone or recorders:
         # The probes above take seconds across the fleet, so apply what they found to the roster
         # as it is NOW. Written from the read above, a record killed meanwhile came back as
@@ -105,8 +123,7 @@ def live_agents():
             if not rr or rr.get("retired") or "mc-%s:%s" % (sess, tab) in windows:
                 continue
             try:
-                rr["recorder_stop"] = C.stop_recorder(
-                    sess, tab, rr.get("recorder"), HOST_ID)
+                rr["recorder_stop"] = C.stop_recorder(sess, tab, rr.get("recorder"), HOST_ID)
             except Exception as exc:
                 rr["recorder_stop"] = {"error": str(exc), "requested_ts": time.time()}
             rr["retired"] = True
@@ -121,17 +138,26 @@ def live_agents():
 
 
 def heartbeat(agents=()):
-    C.http_json("POST", QUEUE_URL + "/heartbeat", {
-        "hostname": HOST_ID, "attach_base": attach_base(), "substrate_ready": True,
-        "purpose": CFG.get("NODE_PURPOSE", "mypeople"),
-        "node_type": CFG.get("NODE_TYPE", "system-agent"),
-        "recording_url": CFG.get("NODE_RECORDING_URL", ""),
-        "state": "ready", "agents": list(agents),
-    }, HDR, timeout=8)
+    C.http_json(
+        "POST",
+        QUEUE_URL + "/heartbeat",
+        {
+            "hostname": HOST_ID,
+            "attach_base": attach_base(),
+            "substrate_ready": True,
+            "purpose": CFG.get("NODE_PURPOSE", "mypeople"),
+            "node_type": CFG.get("NODE_TYPE", "system-agent"),
+            "recording_url": CFG.get("NODE_RECORDING_URL", ""),
+            "state": "ready",
+            "agents": list(agents),
+        },
+        HDR,
+        timeout=8,
+    )
 
 
 def liveness_loop():
-    """"This host is up" never waits for the census below: a slow tmux or a 90 s auth probe in there
+    """ "This host is up" never waits for the census below: a slow tmux or a 90 s auth probe in there
     held the only heartbeat past the queue's 45 s, and it dropped the whole host (card a4607576c1)."""
     while True:
         heartbeat()
@@ -197,8 +223,9 @@ def dispatch(task):
             r = subprocess.run(args, capture_output=True, text=True, timeout=60)
             ok, result = (r.returncode == 0), (r.stdout + r.stderr)[-1000:]
         elif typ == "answer":
-            r = subprocess.run(["mp", "answer", ta, str(payload.get("n", 1))],
-                               capture_output=True, text=True, timeout=30)
+            r = subprocess.run(
+                ["mp", "answer", ta, str(payload.get("n", 1))], capture_output=True, text=True, timeout=30
+            )
             ok, result = (r.returncode == 0), (r.stdout + r.stderr)[-500:]
         else:
             result = "unknown_type:%s" % typ
@@ -210,13 +237,17 @@ def dispatch(task):
 def poll_loop():
     while True:
         try:
-            code, tasks = C.http_json("GET", QUEUE_URL + "/task/poll?hostname=%s" % HOST_ID,
-                                      None, HDR, timeout=8)
+            code, tasks = C.http_json("GET", QUEUE_URL + "/task/poll?hostname=%s" % HOST_ID, None, HDR, timeout=8)
             if code == 200 and isinstance(tasks, list):
                 for t in tasks:
                     ok, result = dispatch(t)
-                    C.http_json("POST", QUEUE_URL + "/task/result",
-                                {"task_id": t["task_id"], "ok": ok, "result": result}, HDR, timeout=8)
+                    C.http_json(
+                        "POST",
+                        QUEUE_URL + "/task/result",
+                        {"task_id": t["task_id"], "ok": ok, "result": result},
+                        HDR,
+                        timeout=8,
+                    )
         except Exception:
             pass
         time.sleep(1.5)

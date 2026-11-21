@@ -11,8 +11,7 @@ def recorder_identity(sess, tab, host=None):
 
 def _ps(pid, field):
     try:
-        r = subprocess.run(["ps", "-p", str(int(pid)), "-o", field + "="],
-                           capture_output=True, text=True, timeout=2)
+        r = subprocess.run(["ps", "-p", str(int(pid)), "-o", field + "="], capture_output=True, text=True, timeout=2)
         return r.stdout.strip() if r.returncode == 0 else ""
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return ""
@@ -32,14 +31,12 @@ def _recorder_pid_matches(pid, target, cast):
         return False
     if tokens:
         tokens[0] = os.path.basename(tokens[0])
-    return tokens == ["asciinema", "rec", "--quiet", "--append", "-c", "TMUX=",
-                      "tmux", "attach", "-rt", target, cast]
+    return tokens == ["asciinema", "rec", "--quiet", "--append", "-c", "TMUX=", "tmux", "attach", "-rt", target, cast]
 
 
 def _recorder_child_pids(pid):
     try:
-        r = subprocess.run(["pgrep", "-P", str(int(pid))], capture_output=True, text=True,
-                           timeout=2)
+        r = subprocess.run(["pgrep", "-P", str(int(pid))], capture_output=True, text=True, timeout=2)
         return [int(x) for x in r.stdout.split() if x.isdigit()]
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return []
@@ -62,9 +59,10 @@ def current_recorder(sess, tab, host=None):
     ident = recorder_identity(sess, tab, host)
     try:
         r = subprocess.run(
-            ["tmux", "list-panes", "-t", "=" + ident["session"],
-             "-F", "#{pane_pid}|#{pid}|#{pane_dead}"],
-            capture_output=True, text=True, timeout=3,
+            ["tmux", "list-panes", "-t", "=" + ident["session"], "-F", "#{pane_pid}|#{pid}|#{pane_dead}"],
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         if r.returncode != 0:
             return None
@@ -102,12 +100,10 @@ def stop_recorder(sess, tab, metadata=None, host=None, include_current=True):
             pid = int(metadata.get("pid", 0))
         except (TypeError, ValueError):
             pid = 0
-        if (pid and metadata.get("target") == ident["target"] and
-                metadata.get("cast") == ident["cast"]):
+        if pid and metadata.get("target") == ident["target"] and metadata.get("cast") == ident["cast"]:
             candidates.append(pid)
     candidates = list(dict.fromkeys(candidates))
-    validated = [pid for pid in candidates
-                 if _recorder_pid_matches(pid, ident["target"], ident["cast"])]
+    validated = [pid for pid in candidates if _recorder_pid_matches(pid, ident["target"], ident["cast"])]
     child_terms = []
     for pid in validated:
         for child in _recorder_child_pids(pid):
@@ -120,20 +116,24 @@ def stop_recorder(sess, tab, metadata=None, host=None, include_current=True):
     _wait_for_exit(validated)
     parent_terms = []
     for pid in validated:
-        if (_process_alive(pid) and
-                _recorder_pid_matches(pid, ident["target"], ident["cast"])):
+        if _process_alive(pid) and _recorder_pid_matches(pid, ident["target"], ident["cast"]):
             try:
                 os.kill(pid, signal.SIGTERM)
                 parent_terms.append(pid)
             except ProcessLookupError:
                 pass
     _wait_for_exit(parent_terms)
-    survivors = [pid for pid in validated
-                 if _process_alive(pid) and
-                 _recorder_pid_matches(pid, ident["target"], ident["cast"])]
-    return {"requested_ts": time.time(), "validated": validated,
-            "child_terms": child_terms, "parent_terms": parent_terms,
-            "survivors": survivors}
+    survivors = [
+        pid for pid in validated if _process_alive(pid) and _recorder_pid_matches(pid, ident["target"], ident["cast"])
+    ]
+    return {
+        "requested_ts": time.time(),
+        "validated": validated,
+        "child_terms": child_terms,
+        "parent_terms": parent_terms,
+        "survivors": survivors,
+    }
+
 
 def export_repo_path(cfg=None):
     """PER-INSTANCE git backup repo (§3 boardgit). Path carries an instance discriminator
@@ -147,4 +147,3 @@ def export_repo_path(cfg=None):
     port = cfg.get("TODO_PORT", "9933")
     disc = hashlib.sha1(cfg.get("INSTALL_DIR", "").encode()).hexdigest()[:8]
     return os.path.expanduser("~/.mypeople/board-backup/%s-%s-%s" % (host, port, disc))
-

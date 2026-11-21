@@ -3,6 +3,7 @@
 A fresh materialize() only ever writes into an empty dir, so nothing here was exercised until
 0.4.0 was installed over the CEO's live install and died half-way with EACCES.
 """
+
 import json
 import os
 from pathlib import Path
@@ -39,8 +40,7 @@ class MaterializeOverExistingInstallTests(unittest.TestCase):
 
         self.assertTrue(os.path.exists(registry))
         mode = stat.S_IMODE(os.stat(registry).st_mode)
-        self.assertFalse(mode & stat.S_IWUSR,
-                         "the role store must stay read-only to the runtime agent after upgrade")
+        self.assertFalse(mode & stat.S_IWUSR, "the role store must stay read-only to the runtime agent after upgrade")
 
     def test_upgrade_refreshes_daemon_code(self):
         firstrun.materialize(self.install)
@@ -56,6 +56,7 @@ class MaterializeOverExistingInstallTests(unittest.TestCase):
         app's 5.21.33 mpcommon after 5.22.0 replaced mpcommon.py beside them: the release was
         byte-identical on disk and not running. No cache may travel in, and none may stay."""
         import shutil
+
         rt = os.path.join(self.tmp.name, "runtime")
         shutil.copytree(firstrun.runtime_dir(), rt, ignore=shutil.ignore_patterns("__pycache__", "node_modules"))
         shipped = os.path.join(rt, "bin", "__pycache__", "mpcommon.cpython-313.pyc")
@@ -74,6 +75,7 @@ class MaterializeOverExistingInstallTests(unittest.TestCase):
         """Mac 2 kept latch-reconnect's files after 5.22.126 dropped it, and Mac 1 an empty folder
         copied from a checkout where `git rm` had left only its __pycache__ (10-29)."""
         import shutil
+
         rt = os.path.join(self.tmp.name, "runtime")
         shutil.copytree(firstrun.runtime_dir(), rt, ignore=shutil.ignore_patterns("__pycache__", "node_modules"))
         os.makedirs(os.path.join(rt, "plugins", "left-in-checkout", "__pycache__"))
@@ -107,7 +109,7 @@ class MaterializeOverExistingInstallTests(unittest.TestCase):
         profile.write_text("{}")
         data = json.loads(reg.read_text())
         data["roles"]["piada-pirata"] = "profiles/piada-pirata/1.0.0.json"
-        data["roles"]["ghost"] = "profiles/ghost/9.9.9.json"   # profile never existed
+        data["roles"]["ghost"] = "profiles/ghost/9.9.9.json"  # profile never existed
         os.chmod(reg, 0o644)
         reg.write_text(json.dumps(data))
 
@@ -135,7 +137,6 @@ class MaterializeOverExistingInstallTests(unittest.TestCase):
         firstrun.materialize(self.install)
         self.assertEqual(json.loads(reg.read_text())["roles"]["boss"], own, "a restart moved the Boss off its own role")
 
-
     def test_scripts_stay_executable_after_upgrade(self):
         firstrun.materialize(self.install)
         firstrun.materialize(self.install)
@@ -148,13 +149,18 @@ class TmuxThemeTests(unittest.TestCase):
     def test_a_hung_theme_download_does_not_stop_up(self):
         """install_tmux_conf runs inside ensure(), before any daemon starts: a hung tpm clone on a
         fresh home raised TimeoutExpired there and `mypeople up` started nothing."""
+
         def run(cmd, **kw):
             if cmd[0] != "tmux":
                 raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
-        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"HOME": home}), \
-                mock.patch.object(firstrun, "CONFIG_DIR", os.path.join(home, "cfg")), \
-                mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/x"), \
-                mock.patch.object(firstrun.subprocess, "run", side_effect=run) as ran:
+
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict(os.environ, {"HOME": home}),
+            mock.patch.object(firstrun, "CONFIG_DIR", os.path.join(home, "cfg")),
+            mock.patch.object(firstrun.shutil, "which", return_value="/usr/bin/x"),
+            mock.patch.object(firstrun.subprocess, "run", side_effect=run) as ran,
+        ):
             install = os.path.join(home, "install")
             os.makedirs(os.path.join(install, "config"))
             Path(install, "config", "tmux.conf").write_text("set -g mouse on\n")
@@ -168,6 +174,7 @@ class LiveDriftTests(unittest.TestCase):
         """5.21.26-28 reached the CEO's Mac by cp/patch while VERSION still read 5.21.23. The
         manifest materialize writes is what lets `mp status` say so (card 8f490e73e5)."""
         from auth.test_login_required import load_mpcommon
+
         with tempfile.TemporaryDirectory() as td:
             install = os.path.join(td, "install")
             firstrun.materialize(install)

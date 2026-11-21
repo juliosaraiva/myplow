@@ -7,6 +7,7 @@ install, the per-agent loop took 149ms and one batched call took 5ms.
 The regression these guard against is silent — a per-agent loop still returns correct sizes,
 it just gets slower the more agents there are, which is exactly when it hurts.
 """
+
 import os
 import tempfile
 import unittest

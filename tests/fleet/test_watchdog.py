@@ -4,6 +4,7 @@ The gate is re-checked at fire time, not schedule time, so the interesting cases
 what happened in between. A gate that is too eager nudges the Watchdog about cards that are fine
 (noise the CEO pays for); one that is too shy is the whole reason the subsystem exists.
 """
+
 import json
 import tempfile
 import time
@@ -76,8 +77,9 @@ class TaskCreateGateTests(unittest.TestCase):
         self.assertTrue(self.holds(assignee="test-node/main:eng-1", comments=[comment(BOSS)]))
 
     def test_an_owner_who_spoke_does_not_fire(self):
-        self.assertFalse(self.holds(assignee="test-node/main:eng-1",
-                                    comments=[comment(BOSS), comment("test-node/main:eng-1")]))
+        self.assertFalse(
+            self.holds(assignee="test-node/main:eng-1", comments=[comment(BOSS), comment("test-node/main:eng-1")])
+        )
 
     def test_a_done_card_never_fires(self):
         """Terminal cards need no nudge, however silent their owner was."""
@@ -109,8 +111,7 @@ class ScheduleTests(unittest.TestCase):
     def test_the_two_kinds_coexist_on_one_card(self):
         self.ts.wd_schedule_taskcreate("c")
         self.ts.wd_schedule_unanswered("c", "c1", "CEO")
-        self.assertEqual({"taskcreate", "unanswered"},
-                         {j["kind"] for j in self.ts.wd_load_store()["jobs"]})
+        self.assertEqual({"taskcreate", "unanswered"}, {j["kind"] for j in self.ts.wd_load_store()["jobs"]})
 
     def test_a_corrupt_store_does_not_take_the_server_down(self):
         with open(self.ts.JOBS_PATH, "w") as fh:
@@ -119,12 +120,18 @@ class ScheduleTests(unittest.TestCase):
 
     def test_junk_jobs_are_dropped_on_load(self):
         with open(self.ts.JOBS_PATH, "w") as fh:
-            json.dump({"version": 1, "jobs": [
-                {"card": "ok", "fire_at": 1.0, "kind": "unanswered"},
-                {"card": "no-fire-at", "kind": "unanswered"},
-                {"card": "bad-kind", "fire_at": 1.0, "kind": "nonsense"},
-                "not-even-a-dict",
-            ]}, fh)
+            json.dump(
+                {
+                    "version": 1,
+                    "jobs": [
+                        {"card": "ok", "fire_at": 1.0, "kind": "unanswered"},
+                        {"card": "no-fire-at", "kind": "unanswered"},
+                        {"card": "bad-kind", "fire_at": 1.0, "kind": "nonsense"},
+                        "not-even-a-dict",
+                    ],
+                },
+                fh,
+            )
         jobs = self.ts.wd_load_store()["jobs"]
         self.assertEqual(["ok"], [j["card"] for j in jobs])
 
@@ -142,33 +149,39 @@ class ResolveDueTests(unittest.TestCase):
 
     def test_a_due_job_fires_once_and_leaves_the_store(self):
         """Jobs are popped BEFORE dispatch, so a concurrent scan cannot double-send."""
-        store = {"version": 1, "jobs": [
-            {"id": "j", "card": "c", "comment_id": "c1", "by": "CEO", "fire_at": 1.0,
-             "kind": "unanswered"}]}
+        store = {
+            "version": 1,
+            "jobs": [{"id": "j", "card": "c", "comment_id": "c1", "by": "CEO", "fire_at": 1.0, "kind": "unanswered"}],
+        }
         fire = self.ts.wd_resolve_due(store, self.board(), 100.0)
         self.assertEqual(1, len(fire))
         self.assertEqual([], store["jobs"])
 
     def test_a_job_that_is_not_due_stays(self):
-        store = {"version": 1, "jobs": [
-            {"id": "j", "card": "c", "comment_id": "c1", "by": "CEO", "fire_at": 999.0,
-             "kind": "unanswered"}]}
+        store = {
+            "version": 1,
+            "jobs": [{"id": "j", "card": "c", "comment_id": "c1", "by": "CEO", "fire_at": 999.0, "kind": "unanswered"}],
+        }
         self.assertEqual([], self.ts.wd_resolve_due(store, self.board(), 100.0))
         self.assertEqual(1, len(store["jobs"]))
 
     def test_a_job_whose_gate_went_stale_is_cancelled_not_fired(self):
         """Answered between schedule and fire: drop it silently rather than nudge."""
-        store = {"version": 1, "jobs": [
-            {"id": "j", "card": "c", "comment_id": "c1", "by": "CEO", "fire_at": 1.0,
-             "kind": "unanswered"}]}
+        store = {
+            "version": 1,
+            "jobs": [{"id": "j", "card": "c", "comment_id": "c1", "by": "CEO", "fire_at": 1.0, "kind": "unanswered"}],
+        }
         answered = self.board(comments=[comment("CEO"), comment("test-node/main:eng-1")])
         self.assertEqual([], self.ts.wd_resolve_due(store, answered, 100.0))
         self.assertEqual([], store["jobs"])
 
     def test_a_job_for_a_deleted_card_is_dropped(self):
-        store = {"version": 1, "jobs": [
-            {"id": "j", "card": "gone", "comment_id": "c1", "by": "CEO", "fire_at": 1.0,
-             "kind": "unanswered"}]}
+        store = {
+            "version": 1,
+            "jobs": [
+                {"id": "j", "card": "gone", "comment_id": "c1", "by": "CEO", "fire_at": 1.0, "kind": "unanswered"}
+            ],
+        }
         self.assertEqual([], self.ts.wd_resolve_due(store, self.board(), 100.0))
         self.assertEqual([], store["jobs"])
 
@@ -187,15 +200,19 @@ class IncidentTextTests(unittest.TestCase):
 
     def test_an_owned_silent_card_names_the_owner(self):
         job = {"kind": "taskcreate", "card": "c", "by": "CEO"}
-        text = self.ts.wd_incident_text(
-            job, {"id": "c", "assignee": "test-node/main:eng-1", "text": "ship it"})
+        text = self.ts.wd_incident_text(job, {"id": "c", "assignee": "test-node/main:eng-1", "text": "ship it"})
         self.assertIn("owner assigned but silent", text)
         self.assertIn("test-node/main:eng-1", text)
 
     def test_an_unanswered_incident_quotes_the_comment_it_was_armed_for(self):
         job = {"kind": "unanswered", "card": "c", "comment_id": "c1", "by": "CEO"}
-        t = {"id": "c", "comments": [{"id": "c1", "by": "CEO", "body": "THE-QUOTED-ONE"},
-                                     {"id": "c2", "by": "CEO", "body": "later"}]}
+        t = {
+            "id": "c",
+            "comments": [
+                {"id": "c1", "by": "CEO", "body": "THE-QUOTED-ONE"},
+                {"id": "c2", "by": "CEO", "body": "later"},
+            ],
+        }
         self.assertIn("THE-QUOTED-ONE", self.ts.wd_incident_text(job, t))
 
 

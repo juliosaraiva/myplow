@@ -14,7 +14,8 @@ def do_send(argv):
             print("ERROR: mp send --card needs a card id and $AGENT_ID: the thread shows who said it", file=sys.stderr)
             return 2
     if not argv:
-        print(SEND_USAGE, file=sys.stderr); return 2
+        print(SEND_USAGE, file=sys.stderr)
+        return 2
     aid = full_aid(argv[0])
     rest = argv[1:]
     # --card, first, is the only option, so any other flag standing alone as its own argv token is never part
@@ -26,12 +27,15 @@ def do_send(argv):
     # argument, so it never appears as a standalone token and is not caught.
     stray = [a for a in rest if a.startswith("--")]
     if stray:
-        print("ERROR: mp send takes the message as ARGUMENTS, not flags — there is no --by "
-              "flag; reply_to comes from $AGENT_ID.\n"
-              "  got:     mp send %s %s\n"
-              "  correct: mp send %s \"your message here\"   (or pipe the body on stdin)\n"
-              "  if the message really contains %s, quote the whole message as one argument."
-              % (argv[0], " ".join(rest), argv[0], stray[0]), file=sys.stderr)
+        print(
+            "ERROR: mp send takes the message as ARGUMENTS, not flags — there is no --by "
+            "flag; reply_to comes from $AGENT_ID.\n"
+            "  got:     mp send %s %s\n"
+            '  correct: mp send %s "your message here"   (or pipe the body on stdin)\n'
+            "  if the message really contains %s, quote the whole message as one argument."
+            % (argv[0], " ".join(rest), argv[0], stray[0]),
+            file=sys.stderr,
+        )
         return 2
     msg = " ".join(rest).strip()
     # Gated on isatty exactly as do_comment is: an interactive `mp send <agent>` must print
@@ -39,7 +43,8 @@ def do_send(argv):
     if not msg and not sys.stdin.isatty():
         msg = sys.stdin.read().strip()
     if not msg:
-        print(SEND_USAGE, file=sys.stderr); return 2
+        print(SEND_USAGE, file=sys.stderr)
+        return 2
     # supervise.sh names the plugin it starts: the one place nearly every plugin's message passes through.
     msg += C.owner_rule(os.environ.get("MP_PLUGIN", ""))
     reply_to = os.environ.get("AGENT_ID", "").strip()
@@ -59,8 +64,11 @@ def do_send(argv):
     route_token = C.enqueue_notification_route(aid, reply_to, msg)
     # A Claude session still starting (or behind a dialog) is waited for briefly, then REFUSED
     # with rc 3: a paste there could vanish while this printed "sent". Retrying senders retry.
-    why = C.send_when_ready(C.tmux_target(aid), msg + (C.card_note(card, reply_to) if card else ""),
-                            float(os.environ.get("MP_SEND_READY_WAIT", "10")))
+    why = C.send_when_ready(
+        C.tmux_target(aid),
+        msg + (C.card_note(card, reply_to) if card else ""),
+        float(os.environ.get("MP_SEND_READY_WAIT", "10")),
+    )
     ok = why == "sent"
     if not ok and route_token:
         C.cancel_notification_route(aid, route_token)
@@ -72,7 +80,9 @@ def do_send(argv):
 
 def on_thread(card, by, to, msg):
     """What mp send --card just delivered, on that card's thread. A card on another MyPlow is its board's to show."""
-    code, res = C.http_json("POST", TODO_URL + "/todo/comment", {"task_id": card, "by": by, "to": to, "body": msg}, HDR, timeout=12)
+    code, res = C.http_json(
+        "POST", TODO_URL + "/todo/comment", {"task_id": card, "by": by, "to": to, "body": msg}, HDR, timeout=12
+    )
     if code != 200 or not (isinstance(res, dict) and res.get("ok")):
         print("card %s is not on this board: its thread is on the MyPlow that has it" % card)
 
@@ -96,7 +106,8 @@ def classify(pane, backend=None):
 
 def do_peek(argv):
     if not argv:
-        print(USAGE["peek"], file=sys.stderr); return 2
+        print(USAGE["peek"], file=sys.stderr)
+        return 2
     aid = full_aid(argv[0])
     if not is_local(aid):
         ok, result = remote_task("peek", aid, {}, timeout=30)
@@ -111,12 +122,13 @@ def do_peek(argv):
 
 def do_kill(argv):
     if not argv:
-        print(USAGE["kill"], file=sys.stderr); return 2
+        print(USAGE["kill"], file=sys.stderr)
+        return 2
     aid = full_aid(argv[0])
     reason = ""
     if "--reason" in argv:
         idx = argv.index("--reason")
-        reason = " ".join(argv[idx + 1:])
+        reason = " ".join(argv[idx + 1 :])
     if not is_local(aid):
         ok, result = remote_task("kill", aid, {"reason": reason}, timeout=60)
         print(result)
@@ -142,7 +154,8 @@ def do_kill(argv):
 
 def do_answer(argv):
     if len(argv) < 2:
-        print(USAGE["answer"], file=sys.stderr); return 2
+        print(USAGE["answer"], file=sys.stderr)
+        return 2
     aid = full_aid(argv[0])
     n = argv[1]
     if not is_local(aid):
@@ -160,6 +173,7 @@ def do_answer(argv):
 def session_files(backend, session_id):
     """Return persisted transcript files proving that a backend session can be resumed."""
     import glob
+
     if backend == "claude":
         pattern = os.path.expanduser("~/.claude/projects/**/%s.jsonl" % session_id)
     elif backend == "codex":
@@ -170,5 +184,3 @@ def session_files(backend, session_id):
     else:
         return []
     return glob.glob(pattern, recursive=True)
-
-

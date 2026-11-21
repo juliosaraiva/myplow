@@ -4,10 +4,11 @@
 
 def _load_implementation():
     import os
+
     here = os.path.dirname(os.path.abspath(__file__))
-    base = os.path.normpath(os.path.join(here, '../lib'))
+    base = os.path.normpath(os.path.join(here, "../lib"))
     namespace = globals()
-    path = os.path.join(base, 'authcheck.py')
+    path = os.path.join(base, "authcheck.py")
     with open(path, encoding="utf-8") as source:
         exec(compile(source.read(), path, "exec"), namespace)
 

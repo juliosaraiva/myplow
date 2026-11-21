@@ -67,9 +67,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(plugin["say"][-2], value.python)
         for item in agents.values():
             self.assertEqual(plistlib.loads(plistlib.dumps(item)), item)
-            self.assertEqual(
-                item["EnvironmentVariables"]["MYPLOW_VOICE_CONFIG"], str(self.source)
-            )
+            self.assertEqual(item["EnvironmentVariables"]["MYPLOW_VOICE_CONFIG"], str(self.source))
             self.assertEqual(
                 item["EnvironmentVariables"]["MYPEOPLE_CONFIG_PATH"],
                 value.mypeople_config,
@@ -84,9 +82,7 @@ class SettingsTests(unittest.TestCase):
         source = self.home / 'voice "quoted" and apostrophe\'.json'
         agents = installer.launch_agents(self.settings(), source)
         script = agents["com.myplow.voice.microphone"]["ProgramArguments"][-1]
-        command = json.loads(
-            script.removeprefix('tell application "Terminal" to do script ')
-        )
+        command = json.loads(script.removeprefix('tell application "Terminal" to do script '))
         args = shlex.split(command)
         self.assertEqual(args[1], f"MYPLOW_VOICE_CONFIG={source}")
         self.assertEqual(args[-2], "/bin/bash")
@@ -131,16 +127,12 @@ class SettingsTests(unittest.TestCase):
         installer.install(value, self.source)
         self.assertEqual(json.loads(plugin.read_text())["custom_setting"], "keep")
         self.assertEqual(plugin.stat().st_mode & 0o777, 0o600)
-        backup = plugin.with_name(
-            plugin.name + ".backup-" + hashlib.sha256(old).hexdigest()[:12]
-        )
+        backup = plugin.with_name(plugin.name + ".backup-" + hashlib.sha256(old).hexdigest()[:12])
         self.assertEqual(backup.read_bytes(), old)
         files = [p for p in self.home.rglob("*") if p.is_file()]
         before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in files}
         installer.install(value, self.source)
-        self.assertEqual(
-            before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in files}
-        )
+        self.assertEqual(before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in files})
 
     def test_install_refuses_missing_environment_before_writing_services(self):
         with self.assertRaises(ValueError):
@@ -166,11 +158,7 @@ class SettingsTests(unittest.TestCase):
         }
         (roles / "profiles/boss/2.5.0.json").write_text(json.dumps(profile))
         registry = roles / "registry.json"
-        registry.write_text(
-            json.dumps(
-                {"roles": {"boss": "profiles/boss/2.5.0.json", "engineer": "keep"}}
-            )
-        )
+        registry.write_text(json.dumps({"roles": {"boss": "profiles/boss/2.5.0.json", "engineer": "keep"}}))
         registry.chmod(0o444)
         return value, roles, original, registry
 

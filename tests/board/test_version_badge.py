@@ -5,6 +5,7 @@ bare interpreter, so `import mypeople` is not reachable from them. These tests p
 in that chain: materialize() stamps the version into the install, and the page renderer puts that
 stamp on every page it serves.
 """
+
 import os
 from pathlib import Path
 import sys
@@ -16,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 import mypeople  # noqa: E402
 from mypeople import firstrun  # noqa: E402
-from sandbox import load_mpcommon_standalone as load_mpcommon
+from sandbox import load_mpcommon_standalone as load_mpcommon  # noqa: E402
 
 
 class VersionStampTests(unittest.TestCase):
@@ -37,16 +38,16 @@ class VersionStampTests(unittest.TestCase):
         with open(os.path.join(self.install, "VERSION"), "w") as f:
             f.write("0.0.1-stale\n")
         firstrun.materialize(self.install)
-        self.assertEqual(open(os.path.join(self.install, "VERSION")).read().strip(),
-                         mypeople.__version__)
+        self.assertEqual(open(os.path.join(self.install, "VERSION")).read().strip(), mypeople.__version__)
 
     def test_runtime_reads_the_stamp_of_the_install_it_serves(self):
         firstrun.materialize(self.install)
         with open(os.path.join(self.install, "VERSION"), "w") as f:
             f.write("9.9.9\n")
         C = load_mpcommon(self.install)
-        self.assertEqual(C.version(), "9.9.9",
-                         "the runtime must report the install serving it, not a compiled-in guess")
+        self.assertEqual(
+            C.version(), "9.9.9", "the runtime must report the install serving it, not a compiled-in guess"
+        )
 
     def test_version_never_raises_without_a_stamp(self):
         """A missing stamp must degrade to a label, not 500 the page."""
@@ -79,14 +80,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("v1.2.3", out)
 
     def test_no_placeholder_leaks_to_the_browser(self):
-        out = self.C.render_page(open(os.path.join(self.install, "bin", "todos.html"),
-                                      encoding="utf-8").read())
+        out = self.C.render_page(open(os.path.join(self.install, "bin", "todos.html"), encoding="utf-8").read())
         for placeholder in ("__MP_VERSION__", "__TTYD_PORT__", "__HOST_ID__"):
             self.assertNotIn(placeholder, out)
 
     def test_badge_is_not_injected_twice(self):
-        once = self.C.render_page(open(os.path.join(self.install, "bin", "todos.html"),
-                                       encoding="utf-8").read())
+        once = self.C.render_page(open(os.path.join(self.install, "bin", "todos.html"), encoding="utf-8").read())
         twice = self.C.render_page(once)
         self.assertEqual(twice.count('id="mp-version-badge"'), 1)
 
@@ -113,8 +112,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("Terminals", out)
 
     def test_nav_is_not_injected_twice(self):
-        once = self.C.render_page(open(os.path.join(self.install, "bin", "todos.html"),
-                                       encoding="utf-8").read())
+        once = self.C.render_page(open(os.path.join(self.install, "bin", "todos.html"), encoding="utf-8").read())
         twice = self.C.render_page(once)
         self.assertEqual(twice.count('id="mp-nav"'), 1)
 

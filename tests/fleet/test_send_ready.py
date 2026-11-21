@@ -6,6 +6,7 @@ on 2026-10-03 a Boss `/exit` stopped at "You have 4 unsent feedback drafts: Ente
 review & send", where the Enter after any paste would have sent them. These tests hold
 the readiness rule to real screens, and the send path to it, with tmux faked.
 """
+
 import json
 from pathlib import Path
 import tempfile
@@ -19,14 +20,20 @@ READY = "● done.\n✻ Worked for 2s\n%s\n❯ \n%s\n%s\n" % (RULE, RULE, FOOT)
 MID_TURN = "✻ Thinking… (3s · esc to interrupt)\n%s\n❯ \n%s\n%s\n" % (RULE, RULE, FOOT)
 SUGGESTION = "%s\n❯ \x1b[2mwhat's\x1b[0m \x1b[2mthe\x1b[0m \x1b[2mstatus\x1b[0m\n%s\n" % (RULE, RULE)
 STARTUP = " ▐▛███▜▌   Claude Code v2.1.286\n▝▜█████▛▘  Opus 5.5\n"
-EXIT_DIALOG = ("%s Goal discussion ─\nYou have 4 unsent feedback drafts\n"
-               "Enter to review & send · Esc to discard and exit\n" % RULE)
+EXIT_DIALOG = (
+    "%s Goal discussion ─\nYou have 4 unsent feedback drafts\nEnter to review & send · Esc to discard and exit\n" % RULE
+)
 MCP_PANEL = "%s\n  Manage MCP servers\n    Local MCPs (/x)\n  ❯ ✘ domo\n    ✔ plow  15 tools\n" % RULE
 MENU = "Do you want to proceed?\n❯ 1. Yes\n  2. No\n"
 # eng-955 on 2026-10-03, 8.6h on an unanswered question; and its last option under the separator.
-QUESTION = ("%s\n\u2502 Where should the PR go?\n\u276f 1. New repo (Recommended)\n  2. Unarchive\n%s\n"
-            "  5. Chat about this\nEnter to select \u00b7 Tab/Arrow keys to navigate \u00b7 Esc to cancel\n" % (RULE, RULE))
-QUESTION_LAST = "%s\n  1. New repo\n%s\n\u276f 5. Chat about this\nEnter to select \u00b7 Esc to cancel\n" % (RULE, RULE)
+QUESTION = (
+    "%s\n\u2502 Where should the PR go?\n\u276f 1. New repo (Recommended)\n  2. Unarchive\n%s\n"
+    "  5. Chat about this\nEnter to select \u00b7 Tab/Arrow keys to navigate \u00b7 Esc to cancel\n" % (RULE, RULE)
+)
+QUESTION_LAST = "%s\n  1. New repo\n%s\n\u276f 5. Chat about this\nEnter to select \u00b7 Esc to cancel\n" % (
+    RULE,
+    RULE,
+)
 
 
 class FakeTmux:
@@ -52,9 +59,15 @@ class ComposerReadyTest(unittest.TestCase):
         ready = self.C.claude_composer_ready
         for name, screen in [("idle", READY), ("mid-turn", MID_TURN), ("dimmed suggestion", SUGGESTION)]:
             self.assertTrue(ready(screen), name)
-        for name, screen in [("starting", STARTUP), ("exit dialog", EXIT_DIALOG),
-                             ("/mcp panel", MCP_PANEL), ("menu", MENU), ("question", QUESTION),
-                             ("question, last option", QUESTION_LAST), ("blank", "")]:
+        for name, screen in [
+            ("starting", STARTUP),
+            ("exit dialog", EXIT_DIALOG),
+            ("/mcp panel", MCP_PANEL),
+            ("menu", MENU),
+            ("question", QUESTION),
+            ("question, last option", QUESTION_LAST),
+            ("blank", ""),
+        ]:
             self.assertFalse(ready(screen), name)
 
     def agent(self, backend):
@@ -65,8 +78,7 @@ class ComposerReadyTest(unittest.TestCase):
 
     def send(self, target, screen, pane=True):
         fake = FakeTmux(screen, pane)
-        with mock.patch.object(self.C.subprocess, "run", side_effect=fake), \
-             mock.patch.object(self.C.time, "sleep"):
+        with mock.patch.object(self.C.subprocess, "run", side_effect=fake), mock.patch.object(self.C.time, "sleep"):
             return self.C.tmux_send_message(target, "hello"), fake.calls
 
     def test_a_claude_session_not_at_its_box_is_refused_and_nothing_is_pasted(self):
@@ -116,10 +128,21 @@ class ComposerReadyTest(unittest.TestCase):
         target = self.agent("claude")
         run = Path(self.C.CFG["INSTALL_DIR"]) / "run"
         run.mkdir()
-        (run / "roster.json").write_text(json.dumps({"node/main:eng-1": {
-            "retired": True, "retire_reason": "killed", "retired_ts": self.C.time.time() - 4 * 3600}}))
-        with mock.patch.object(self.C.time, "sleep"), \
-                mock.patch.object(self.C.subprocess, "run", side_effect=FakeTmux(READY, pane=False)):
+        (run / "roster.json").write_text(
+            json.dumps(
+                {
+                    "node/main:eng-1": {
+                        "retired": True,
+                        "retire_reason": "killed",
+                        "retired_ts": self.C.time.time() - 4 * 3600,
+                    }
+                }
+            )
+        )
+        with (
+            mock.patch.object(self.C.time, "sleep"),
+            mock.patch.object(self.C.subprocess, "run", side_effect=FakeTmux(READY, pane=False)),
+        ):
             why = self.C.send_when_ready(target, "hi", 0)
         self.assertIn("node/main:eng-1 was retired 4 h ago (killed)", why)
         self.assertIn("mp revive node/main:eng-1", why)
@@ -129,11 +152,15 @@ class MpSendExitCodeTest(unittest.TestCase):
     def test_mp_send_exits_3_on_not_ready_so_a_retrying_sender_retries(self):
         with tempfile.TemporaryDirectory() as td:
             mp = sandbox.load(td, "mp", HOST_ID="node")
-            with mock.patch.object(mp.C, "send_when_ready", return_value="not_ready"), \
-                 mock.patch.object(mp.C, "enqueue_notification_route", return_value=None):
+            with (
+                mock.patch.object(mp.C, "send_when_ready", return_value="not_ready"),
+                mock.patch.object(mp.C, "enqueue_notification_route", return_value=None),
+            ):
                 self.assertEqual(mp.do_send(["node/main:eng-1", "hi"]), 3)
-            with mock.patch.object(mp.C, "send_when_ready", return_value="sent"), \
-                 mock.patch.object(mp.C, "enqueue_notification_route", return_value=None):
+            with (
+                mock.patch.object(mp.C, "send_when_ready", return_value="sent"),
+                mock.patch.object(mp.C, "enqueue_notification_route", return_value=None),
+            ):
                 self.assertEqual(mp.do_send(["node/main:eng-1", "hi"]), 0)
 
 

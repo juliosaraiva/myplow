@@ -16,6 +16,7 @@ The plugin's own lines stay: they carry the reply commands and the sender's trus
 state/<name>/off exists = off: supervise.sh won't start it. Setup stays in each plugin's header, so nothing here
 writes queue.env or shows a value from it, only whether a key is set.
 """
+
 import os
 import re
 import secrets
@@ -122,8 +123,18 @@ def listing(everything=False):
         # A labelled second bridge (`serve whatsapp`) is started from elsewhere, so it is shown and never switched.
         also = sorted({m.group(1) for m in (re.search(re.escape(serve) + r" ([\w-]+)$", line) for line in ps) if m})
         state = _state(name, p, ps)
-        rows.append({"name": name, "state": state, "desc": p["conf"].get("desc", ""), "installed": p["installed"],
-                     "also": also, "rule": rule(name), "custom": C.saved_template(name), "asking": bool(_open_ask(name))})
+        rows.append(
+            {
+                "name": name,
+                "state": state,
+                "desc": p["conf"].get("desc", ""),
+                "installed": p["installed"],
+                "also": also,
+                "rule": rule(name),
+                "custom": C.saved_template(name),
+                "asking": bool(_open_ask(name)),
+            }
+        )
     return rows
 
 
@@ -166,9 +177,14 @@ def messages():
         if kind in ("template", "yes"):
             words = _words(p)
         if words:
-            out[name] = {"kind": kind, "default": words, "text": (saved_text(name) or words) + C.owner_rule(name),
-                         "required": C.in_template(C.REQUIRED_VARIABLES, words), "warned": C.in_template(C.WARNED_VARIABLES, words),
-                         "identity": C.in_template(C.IDENTITY_VARIABLES, words)}
+            out[name] = {
+                "kind": kind,
+                "default": words,
+                "text": (saved_text(name) or words) + C.owner_rule(name),
+                "required": C.in_template(C.REQUIRED_VARIABLES, words),
+                "warned": C.in_template(C.WARNED_VARIABLES, words),
+                "identity": C.in_template(C.IDENTITY_VARIABLES, words),
+            }
     return out
 
 
@@ -256,8 +272,17 @@ def rule_ask(name, words, send):
     if kind == "access":
         raise PluginError("each person's message is on the Access page")
     if kind == "template":
-        send(TEMPLATE_ASK % {"name": name, "words": words, "text": (saved_text(name) or said) + C.owner_rule(name), "code": code,
-                             "keep": ", ".join("{%s}" % v for v in C.in_template(C.REQUIRED_VARIABLES, said))}, words)
+        send(
+            TEMPLATE_ASK
+            % {
+                "name": name,
+                "words": words,
+                "text": (saved_text(name) or said) + C.owner_rule(name),
+                "code": code,
+                "keep": ", ".join("{%s}" % v for v in C.in_template(C.REQUIRED_VARIABLES, said)),
+            },
+            words,
+        )
     else:
         send(RULE_ASK % {"name": name, "words": words, "said": said, "text": rule(name), "code": code}, words)
     os.makedirs(os.path.dirname(_ask_file(name)), exist_ok=True)
@@ -318,8 +343,11 @@ def install(src):
     name = re.sub(r"\.git$", "", os.path.basename(src.rstrip("/")))
     if not NAME.match(name):
         raise PluginError("bad plugin name: %s" % name)
-    if name in _plugins() or os.path.exists(os.path.join(INSTALL, "plugins", name)) \
-            or os.path.exists(os.path.join(plugins_d, name)):
+    if (
+        name in _plugins()
+        or os.path.exists(os.path.join(INSTALL, "plugins", name))
+        or os.path.exists(os.path.join(plugins_d, name))
+    ):
         raise PluginError("%s already exists" % name)
     tmp = tempfile.mkdtemp(prefix=".new-", dir=plugins_d)  # hidden: supervise.sh's glob and _plugins skip it
     try:
@@ -327,8 +355,9 @@ def install(src):
         if os.path.isdir(src):
             shutil.copytree(src, new, ignore=shutil.ignore_patterns(".git", "__pycache__"))
         else:
-            r = subprocess.run(["git", "clone", "--depth", "1", "--", src, new],
-                               capture_output=True, text=True, timeout=300)
+            r = subprocess.run(
+                ["git", "clone", "--depth", "1", "--", src, new], capture_output=True, text=True, timeout=300
+            )
             if r.returncode:
                 raise PluginError("git clone failed: %s" % r.stderr.strip()[-300:])
             shutil.rmtree(os.path.join(new, ".git"), ignore_errors=True)

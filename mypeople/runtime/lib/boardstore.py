@@ -24,6 +24,7 @@ Design (lossless by construction):
 
 stdlib only (sqlite3, json, hashlib, os, time). No new dependencies.
 """
+
 import os
 import json
 import time
@@ -87,7 +88,7 @@ def db_path_for(board_path):
     """Derive the SQLite path from a board.v2.json path, so callers that only know BOARD_PATH
     (including the existing test harness that overrides module.BOARD_PATH) route to the right DB."""
     if board_path.endswith(".json"):
-        return board_path[:-len(".json")] + ".sqlite3"
+        return board_path[: -len(".json")] + ".sqlite3"
     return board_path + ".sqlite3"
 
 
@@ -120,8 +121,8 @@ def connect(db_path):
     conn.execute("PRAGMA busy_timeout=10000")
     conn.executescript(_DDL)
     conn.execute(
-        "INSERT INTO meta(key,value) VALUES('__schema__',?) "
-        "ON CONFLICT(key) DO NOTHING", (json.dumps(SCHEMA_VERSION),))
+        "INSERT INTO meta(key,value) VALUES('__schema__',?) ON CONFLICT(key) DO NOTHING", (json.dumps(SCHEMA_VERSION),)
+    )
     return conn
 
 
@@ -225,6 +226,7 @@ def save_board(db_path, board, shrink_guard=True):
             with open(sp, "w") as fh:
                 json.dump(board, fh, ensure_ascii=False)
             import sys
+
             sys.stderr.write("SUSPECT shrink refused: %d->%d, wrote %s\n" % (old_n, new_n, sp))
             return False
 
@@ -239,7 +241,9 @@ def save_board(db_path, board, shrink_guard=True):
                 " VALUES(:id,:state,:assignee,:pinned,:pin_rank,:created,:updated,:done,:verified,:hash,:data)"
                 " ON CONFLICT(id) DO UPDATE SET state=:state,assignee=:assignee,pinned=:pinned,"
                 " pin_rank=:pin_rank,created=:created,updated=:updated,done=:done,verified=:verified,"
-                " hash=:hash,data=:data", r)
+                " hash=:hash,data=:data",
+                r,
+            )
         # delete cards no longer present
         for tid in existing:
             if tid not in new_tasks:
@@ -247,8 +251,7 @@ def save_board(db_path, board, shrink_guard=True):
         # rewrite meta (tiny): every top-level board key except `tasks`, plus internal markers
         conn.execute("DELETE FROM meta")
         conn.execute("INSERT INTO meta(key,value) VALUES('__schema__',?)", (json.dumps(SCHEMA_VERSION),))
-        conn.execute("INSERT INTO meta(key,value) VALUES('__task_order__',?)",
-                     (json.dumps(list(new_tasks.keys())),))
+        conn.execute("INSERT INTO meta(key,value) VALUES('__task_order__',?)", (json.dumps(list(new_tasks.keys())),))
         for k, v in board.items():
             if k == "tasks":
                 continue
@@ -286,6 +289,7 @@ def save_changes(db_path, board, upsert_ids, delete_ids=(), shrink_guard=True):
             with open(sp, "w") as fh:
                 json.dump(board, fh, ensure_ascii=False)
             import sys
+
             sys.stderr.write("SUSPECT shrink refused: %d->%d, wrote %s\n" % (old_n, new_n, sp))
             return False
         conn.execute("BEGIN IMMEDIATE")
@@ -299,13 +303,14 @@ def save_changes(db_path, board, upsert_ids, delete_ids=(), shrink_guard=True):
                 " VALUES(:id,:state,:assignee,:pinned,:pin_rank,:created,:updated,:done,:verified,:hash,:data)"
                 " ON CONFLICT(id) DO UPDATE SET state=:state,assignee=:assignee,pinned=:pinned,"
                 " pin_rank=:pin_rank,created=:created,updated=:updated,done=:done,verified=:verified,"
-                " hash=:hash,data=:data", r)
+                " hash=:hash,data=:data",
+                r,
+            )
         for tid in delete_ids:
             conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
         conn.execute("DELETE FROM meta")
         conn.execute("INSERT INTO meta(key,value) VALUES('__schema__',?)", (json.dumps(SCHEMA_VERSION),))
-        conn.execute("INSERT INTO meta(key,value) VALUES('__task_order__',?)",
-                     (json.dumps(list(new_tasks.keys())),))
+        conn.execute("INSERT INTO meta(key,value) VALUES('__task_order__',?)", (json.dumps(list(new_tasks.keys())),))
         for k, v in board.items():
             if k == "tasks":
                 continue
