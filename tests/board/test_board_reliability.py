@@ -98,7 +98,8 @@ class NagleAndTimeoutTests(ServerMixin, unittest.TestCase):
             self.mod.Handler.setup = orig
         self.assertEqual(200, status)
         self.assertEqual({"status": "ok"}["status"], body["status"])
-        self.assertEqual(1, seen["nodelay"], "TCP_NODELAY must be set on the accepted socket")
+        # Linux reports 1, macOS reports the flag bit (4); any non-zero value means on.
+        self.assertTrue(seen["nodelay"], "TCP_NODELAY must be set on the accepted socket")
         self.assertIsNotNone(seen["timeout"])
         self.assertLessEqual(seen["timeout"], 0.4)
 
