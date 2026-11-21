@@ -1,6 +1,6 @@
 {
   "myplow-auth-probe": {
-    "path": "mypeople/runtime/bin/authcheck.py",
+    "path": "mypeople/runtime/lib/authcheck.py",
     "sha256": "102e45d009b88ee9f6cde6e8a37040ad2e1559f386145f8b65357dbf786c850f",
     "symbol": "PROBE_PROMPT"
   },

@@ -1,14 +1,11 @@
 # Tests
 
-`make test` runs every `test_*.py` in this directory as a top-level module, in
-both orders, in one process. They stay flat so that command and the
-`parents[1]` path back to the repo root keep working. `sandbox.py` is the
-helper that loads a runtime script against a throwaway install. It is not a
-test module.
+`make test` runs every `test_*.py` under this directory as a package module
+(`board.test_board_store`, and so on), in both orders, in one process.
+`sandbox.py` stays here and loads a runtime script against a throwaway install.
+It is not a test module. A test's repo root is `Path(__file__).parents[2]`.
 
-Group is by what the test watches, not a package.
-
-## Board, pages, and the graph
+## board
 
 `test_board_design.py`, `test_board_reliability.py`, `test_board_search.py`,
 `test_board_store.py`, `test_cancelled_row.py`, `test_card_thread.py`,
@@ -18,7 +15,7 @@ Group is by what the test watches, not a package.
 `test_notification_verbatim.py`, `test_proof_attach.py`, `test_relative_times_tick.py`,
 `test_version_badge.py`
 
-## Queue, roster, send, and the fleet
+## fleet
 
 `test_cron.py`, `test_overload.py`, `test_ownership.py`, `test_recorders.py`,
 `test_revive_follows_registry.py`, `test_roster_lock.py`, `test_roster_merge.py`,
@@ -27,23 +24,24 @@ Group is by what the test watches, not a package.
 `test_status_live_model.py`, `test_ttyd_attach_viewer.py`, `test_watchdog.py`,
 `test_zombie.py`
 
-## Login, backends, and roles
+## auth
 
 `test_agent_backend_default.py`, `test_auth_gate.py`, `test_auth_state_writers.py`,
 `test_backend_choice.py`, `test_backend_ready.py`, `test_backends.py`,
 `test_codex_trust.py`, `test_login_required.py`, `test_roles.py`, `test_tcc.py`,
 `test_tmux_chooser.py`, `test_yolo_seed.py`
 
-## Plugins
+## plugins
 
 `test_a2a.py`, `test_access_page.py`, `test_discord_agent.py`, `test_discord_chat.py`,
 `test_github_prs_plugin.py`, `test_instagram_comments_plugin.py`, `test_plow_chat.py`,
 `test_plugins.py`, `test_plugins_page.py`, `test_swarm_plugin.py`,
 `test_voice_call_plugin.py`, `test_voice_plugin.py`, `test_web_chat_plugin.py`
 
-## Install, package, and cloud
+## host
 
 `test_bundle_launcher.py`, `test_cloud_image_model.py`, `test_cloud_login.py`,
 `test_cloud_pool.py`, `test_cloud_tools.py`, `test_cloud_update.py`,
 `test_make_released_guard.py`, `test_materialize_upgrade.py`,
-`test_mp_help_and_dash_names.py`, `test_no_downgrade.py`
+`test_mp_help_and_dash_names.py`, `test_no_downgrade.py`,
+`test_prompt_lineage.py`, `test_runtime_contract.py`
