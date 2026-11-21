@@ -61,6 +61,28 @@ def default_board():
     return {"version": 2, "order": [], "pinSeq": 0, "tasks": {}}
 
 
+def reload_mark_path(board_or_db_path):
+    """Sibling file a running todo-server stats to notice a restore from another process."""
+    return board_or_db_path + ".reload"
+
+
+def note_external_write(board_or_db_path):
+    """Record that `board_or_db_path` was replaced outside the server that has it cached.
+
+    The server keeps an in-memory snapshot. Its own saves do not touch this file, so a
+    change here means the next read must load the database again instead of serving or
+    editing the pre-restore board.
+    """
+    mark = reload_mark_path(board_or_db_path)
+    os.makedirs(os.path.dirname(mark) or ".", exist_ok=True)
+    tmp = "%s.%d.tmp" % (mark, os.getpid())
+    with open(tmp, "wb") as fh:
+        fh.write(str(time.time_ns()).encode())
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, mark)
+
+
 def db_path_for(board_path):
     """Derive the SQLite path from a board.v2.json path, so callers that only know BOARD_PATH
     (including the existing test harness that overrides module.BOARD_PATH) route to the right DB."""

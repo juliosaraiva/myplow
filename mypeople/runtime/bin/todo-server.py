@@ -278,6 +278,9 @@ def seed_board_if_missing():
 # LOCK; the others, and later polls, send the cached bytes.
 _SNAP = None
 _SNAP_JSON = None
+# mtime of the sibling "<db>.reload" file. board-restore writes that file; our own saves
+# do not, so a change means the snapshot is someone else's board and must be loaded again.
+_SNAP_MARK = None
 # Serializes the one reader that rebuilds _SNAP_JSON. Not LOCK, so a writer is not
 # stuck behind that encode.
 _ENCODE = threading.Lock()
@@ -302,17 +305,32 @@ def _load_disk():
     return b
 
 
+def _board_disk_path():
+    return _sqlite_path() if BOARD_BACKEND == "sqlite" else BOARD_PATH
+
+
+def _reload_mark():
+    try:
+        st = os.stat(BS.reload_mark_path(_board_disk_path()))
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
 def _ensure_snap():
-    """Caller holds LOCK. Cold load only; the JSON cache is filled by board_json."""
-    global _SNAP
-    if _SNAP is None:
+    """Caller holds LOCK. Loads from disk on first use and after board-restore."""
+    global _SNAP, _SNAP_JSON, _SNAP_MARK
+    mark = _reload_mark()
+    if _SNAP is None or mark != _SNAP_MARK:
         _SNAP = _load_disk()
+        _SNAP_JSON = None
+        _SNAP_MARK = mark
     return _SNAP
 
 
 def board_snapshot():
     """The last committed board object. No lock on the hit path: the object is immutable."""
-    if _SNAP is not None:
+    if _SNAP is not None and _reload_mark() == _SNAP_MARK:
         return _SNAP
     with LOCK:
         return _ensure_snap()
@@ -322,13 +340,14 @@ def board_json():
     """The last committed board as JSON bytes. One encode per commit, shared by every reader.
 
     The encode does not hold LOCK, so a writer is not queued behind it. The bytes match
-    JSONHandler._send's encoding of the same dict.
+    JSONHandler._send's encoding of the same dict. A restore from another process drops
+    the cache; the mark file is how that process tells us the database moved.
     """
     global _SNAP_JSON
-    if _SNAP is not None and _SNAP_JSON is not None:
+    if _SNAP is not None and _SNAP_JSON is not None and _reload_mark() == _SNAP_MARK:
         return _SNAP_JSON
     with _ENCODE:
-        if _SNAP is not None and _SNAP_JSON is not None:
+        if _SNAP is not None and _SNAP_JSON is not None and _reload_mark() == _SNAP_MARK:
             return _SNAP_JSON
         with LOCK:
             snap = _ensure_snap()
@@ -398,8 +417,13 @@ def save_board(board, changed=None, deleted=None):
     SQLite: pass `changed` (and `deleted`) to write only those cards. Omit them for a full
     diff, which is what a caller that mutated an arbitrary copy still needs. JSON installs
     still rewrite the file; the snapshot update is the same either way. Durable backups
-    come from the decoupled board-exporter. Returns False when the shrink guard refuses.
+    come from the decoupled board-exporter. Returns False when the shrink guard refuses,
+    or when board-restore replaced the database after this snapshot was taken.
     """
+    if _SNAP is not None and _reload_mark() != _SNAP_MARK:
+        with LOCK:
+            _ensure_snap()
+        return False
     if BOARD_BACKEND == "sqlite":
         os.makedirs(TODOS_DIR, exist_ok=True)
         if changed is None:

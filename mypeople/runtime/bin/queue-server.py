@@ -278,7 +278,12 @@ class Handler(C.JSONHandler):
         if p.startswith("/todo/"):
             return C.proxy_request(self, "127.0.0.1", TODO_PORT)
         if not self._auth():
+            # Do not read the body. Close so those bytes are not the next request.
+            if self._declared_length():
+                self.close_connection = True
             return self._send(401, {"error": "unauthorized"})
+        if self._enforce_body_limit(C.max_json_bytes()):
+            return
         body = self._body()
         if p == "/heartbeat":
             hn = body.get("hostname", "")

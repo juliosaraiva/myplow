@@ -407,6 +407,89 @@ class ReadDoesNotBlockWriteTests(ServerMixin, unittest.TestCase):
         self.assertLess(elapsed, 0.8, "the writer waited on the in-flight read")
 
 
+class ExternalRestoreTests(ServerMixin, unittest.TestCase):
+    """board-restore writes the database from another process. The live snapshot must notice."""
+
+    env = {"MP_HANDLER_TIMEOUT": "5"}
+
+    def test_a_restore_replaces_the_cached_board_and_later_edits_keep_it(self):
+        status, body, _ = self.request(
+            "POST", "/todo/update", {"op": "add", "text": "live", "test": True})
+        self.assertEqual(200, status)
+        self.assertTrue(body["ok"])
+        restored = {"version": 2, "order": ["r1"], "pinSeq": 0,
+                    "tasks": {"r1": {"id": "r1", "text": "restored-only", "state": "working",
+                                     "comments": [], "proofs": [], "test": True}}}
+        db = self.mod._sqlite_path()
+        self.assertTrue(self.mod.BS.save_board(db, restored, shrink_guard=False))
+        self.mod.BS.note_external_write(db)
+        status, board, _ = self.request("GET", "/todo/board")
+        self.assertEqual(200, status)
+        self.assertEqual(["restored-only"], [t.get("text") for t in board["tasks"].values()])
+        status, added, _ = self.request(
+            "POST", "/todo/update", {"op": "add", "text": "after", "test": True})
+        self.assertEqual(200, status)
+        fresh = self.mod.BS.load_board(db)
+        self.assertEqual("restored-only", fresh["tasks"]["r1"]["text"])
+        self.assertIn(added["id"], fresh["tasks"])
+
+    def test_board_restore_marks_both_backends(self):
+        text = (BIN / "board-restore").read_text(encoding="utf-8")
+        self.assertEqual(2, text.count("BS.note_external_write("))
+
+
+class QueueBodyLimitTests(unittest.TestCase):
+    """The queue uses the same handler. An oversized body must be 413, not an empty success."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mod = sandbox.load(self.tmp.name, "queue-server.py", MP_MAX_JSON_BYTES="64",
+                                MP_HANDLER_TIMEOUT="5")
+        server_cls = getattr(self.mod.C, "BoundedThreadingHTTPServer", None)
+        if server_cls is None:
+            from http.server import ThreadingHTTPServer as server_cls
+        self.httpd = server_cls(("127.0.0.1", 0), self.mod.Handler)
+        self.httpd.daemon_threads = True
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.addCleanup(self.httpd.shutdown)
+        self.addCleanup(self.httpd.server_close)
+
+    def _post(self, path, payload, secret=SECRET):
+        so = socket.create_connection(("127.0.0.1", self.port))
+        so.settimeout(3)
+        headers = ["POST %s HTTP/1.1" % path, "Host: x", "Content-Type: application/json",
+                   "Content-Length: %d" % len(payload), "Connection: close"]
+        if secret:
+            headers.append("X-Queue-Secret: %s" % secret)
+        so.sendall(("\r\n".join(headers) + "\r\n\r\n").encode() + payload)
+        data = b""
+        while True:
+            chunk = so.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        so.close()
+        return data.split(b"\r\n", 1)[0].decode()
+
+    def test_a_small_heartbeat_is_accepted(self):
+        line = self._post("/heartbeat", b'{"hostname":"h1"}')
+        self.assertIn("200", line)
+        self.assertIn("h1", self.mod.CLIENTS)
+
+    def test_an_oversized_heartbeat_is_413_and_stores_nothing(self):
+        line = self._post("/heartbeat", b'{"hostname":"huge","pad":"' + b"x" * 80 + b'"}')
+        self.assertIn("413", line)
+        self.assertNotIn("huge", self.mod.CLIENTS)
+
+    def test_an_oversized_task_result_does_not_complete_the_task(self):
+        self.mod.TASKS["t1"] = {"task_id": "t1", "type": "x", "ok": None, "result": None}
+        line = self._post("/task/result", b'{"task_id":"t1","ok":true,"result":"' + b"y" * 80 + b'"}')
+        self.assertIn("413", line)
+        self.assertIsNone(self.mod.TASKS["t1"]["ok"])
+
+
 class BindDefaultTests(unittest.TestCase):
     def test_a_fresh_queue_env_binds_loopback(self):
         import sys

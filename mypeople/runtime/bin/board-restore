@@ -42,6 +42,7 @@ def main():
             print("saved current live board -> %s" % pre)
         # bypass the shrink guard: a restore is a deliberate operator action
         BS.save_board(db, obj, shrink_guard=False)
+        BS.note_external_write(db)
         print("restored %s:board.v2.json (%d tasks) -> %s [sqlite]" % (ref, len(obj.get("tasks", {})), db))
         return 0
     # snapshot current live board first (reversible)
@@ -53,6 +54,7 @@ def main():
         print("saved current live board -> %s" % pre)
     # write atomically
     C.atomic_write(BOARD_PATH, json.dumps(obj, ensure_ascii=False).encode())
+    BS.note_external_write(BOARD_PATH)
     print("restored %s:board.v2.json (%d tasks) -> %s" % (ref, len(obj.get("tasks", {})), BOARD_PATH))
     return 0
 
