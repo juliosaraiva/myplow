@@ -1330,7 +1330,10 @@ class DurableInboxTests(unittest.TestCase):
         msgs[:] = [newer, older]
         # Reversed API order is sorted and routed oldest first after startup seeding.
         self.assertEqual(2, self.pc.poll_chat({"token": "t"}, "synthetic-chat", seed=False))
-        self.assertLess(sent[0].index("older"), sent[1].index("newer"))
+        stamp = "[plowchat] from synthetic in synthetic-chat:"
+        delivered = [line for envelope in sent for line in envelope.splitlines()
+                     if line.startswith(stamp)]
+        self.assertEqual([f"{stamp} older", f"{stamp} newer"], delivered)
         self.assertEqual(["2026-11-21T12:00:03.000000Z", "synthetic-m3"],
                          self.pc.read_json(self.pc.STATE, {})["marks"]["synthetic-chat"])
 
