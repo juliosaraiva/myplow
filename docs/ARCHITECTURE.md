@@ -18,9 +18,12 @@ They put their own directory on `sys.path` and import siblings by filename
 against `INSTALL_DIR/bin`. `mp` is the file `INSTALL_DIR/bin/mp` on `PATH`.
 HTML, JavaScript, and fonts are read from the directory of `todo-server.py`.
 
-`materialize()` copies five trees and nothing else: `bin/`, `plugins/`, `verify/`,
+`materialize()` refreshes five code trees: `bin/`, `plugins/`, `verify/`,
 `config/`, and `roles/`. A file added under one of those is shipped. A file moved
-out of them is not, unless the copy list changes too.
+out of them is not, unless the copy list changes too. It also copies
+`mp-boss-doctrine.md` to the install root, writes `VERSION` and
+`run/manifest.json`, and creates empty `todos/`, `run/`, `status/`, and `logs/`
+without replacing a board, roster, or log that is already there.
 
 Because of that, the source path **is** the installed path. This fork does not
 relocate those trees. A shim in the old place would still have to ship, and every
@@ -57,7 +60,7 @@ mypeople up
     ttyd                     browser terminals
     boss-supervisor.sh       mp ensure-boss once a login exists
   plugins                    each plugins/*/plugin.conf and plugins.d/*/plugin.conf
-mp                           the command agents use: spawn, send, card, comment, ...
+mp                           agent CLI; verbs are the list under runtime/bin below
 ```
 
 `queue-server` and `todo-server` proxy each other's routes, so either port serves
@@ -92,7 +95,7 @@ and the pages all resolve next to the daemon.
 | `queue-client.py` | Heartbeat and task relay for a worker node. |
 | `board-exporter.py` | Read-only git export of the board. |
 | `board-restore` | Put an exported snapshot back. The live server reloads when this writes. |
-| `mp` | Agent CLI. Verbs are the `do_*` functions: spawn, send, peek, kill, answer, revive, ensure-boss, reconcile, status, board, card, comment, owner, proof, cron, tcc, plugins. |
+| `mp` | Agent CLI. Verbs registered in `main()`, in that order: status, spawn, send, peek, kill, answer, revive, ensure-boss, reconcile, stop-recorders, board, card, comment, proof, owner, cron, tcc, pair, access, plugins. |
 | `supervise.sh` | Starts the daemons and the plugins. |
 | `boss-supervisor.sh` | Keeps a Boss running after login. |
 | `ttyd-attach.sh` | Attaches a browser terminal. |
