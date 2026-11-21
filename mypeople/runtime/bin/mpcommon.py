@@ -987,7 +987,13 @@ def tmux_windows(wait=None):
     """
     env = dict(os.environ)
     env.pop("TMUX", None)
-    r = tmux_run("list-windows", "-a", "-F", "#{session_name}:#{window_name}", env=env, wait=wait, text=True)
+    # A client can block inside tmux on Linux before the retry loop sees a result.
+    timeout = max(0.1, TMUX_STALL_WAIT if wait is None else wait)
+    try:
+        r = tmux_run("list-windows", "-a", "-F", "#{session_name}:#{window_name}",
+                     env=env, wait=wait, timeout=timeout, text=True)
+    except subprocess.TimeoutExpired:
+        return None
     if r.returncode == 0:
         return set(r.stdout.splitlines())
     return set() if tmux_server_gone(env) else None

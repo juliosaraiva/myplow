@@ -21,6 +21,8 @@ released:
 	  { echo "uncommitted changes under mypeople/ would ship as v$(VERSION)" >&2; exit 1; }
 
 APP_RT := /Applications/MyPlow.app/Contents/Resources/runtime
+# Resolve before RT_ENV replaces PATH; in CI this is setup-python's selected interpreter.
+PYTHON ?= $(shell command -v python3)
 # What daemons (and the tests) run in: env -i, because an agent's shell carries its own AGENT_ID, TMUX
 # and session; PATH is the one the desktop app gives them (desktop/src-tauri/src/main.rs).
 RT_ENV = env -i HOME="$$HOME" USER="$$USER" LOGNAME="$$LOGNAME" SHELL="$$SHELL" TMPDIR="$$TMPDIR" \
@@ -35,8 +37,8 @@ RT_ENV = env -i HOME="$$HOME" USER="$$USER" LOGNAME="$$LOGNAME" SHELL="$$SHELL" 
 # TERM: the tmux tests need it. A Mac without node skips the .test.mjs files, as tmux tests skip without tmux.
 test:
 	cd tests && mods="$$(ls test_*.py | sed 's/\.py$$//')" && none="$$(mktemp -d)" && \
-	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" python3 -m unittest -q $$mods && \
-	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" python3 -m unittest -q $$(printf '%s\n' $$mods | sort -r)
+	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$mods && \
+	  $(RT_ENV) INSTALL_DIR="$$none" TERM=xterm-256color PYTHONPATH="$(CURDIR)" "$(PYTHON)" -m unittest -q $$(printf '%s\n' $$mods | sort -r)
 	@command -v node >/dev/null || { echo "make test: no node, plugin .test.mjs files skipped"; exit 0; }; \
 	for t in mypeople/runtime/plugins/*/*.test.mjs; do node --test "$$t" || exit 1; done
 # boss-supervisor's login gate runs the `mypeople` on PATH, a separate `uv tool` install that no
