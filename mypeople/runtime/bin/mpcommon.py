@@ -8,7 +8,8 @@ import mimetypes
 import shlex, signal
 import copy
 import fcntl
-from http.server import BaseHTTPRequestHandler
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 def config_path():
     explicit = os.environ.get("MYPEOPLE_CONFIG_PATH")
@@ -57,6 +58,8 @@ def load_env():
         "MYPEOPLE_RECORD",
         "QUEUE_DEAD_AFTER", "HEARTBEAT_INTERVAL", "UPSTREAM_QUEUE_URL",
         "UPSTREAM_QUEUE_SECRET", "NODE_PURPOSE", "NODE_TYPE", "NODE_RECORDING_URL",
+        "MP_HANDLER_TIMEOUT", "MP_MAX_CONNECTIONS", "MP_MAX_JSON_BYTES",
+        "MP_MAX_UPLOAD_BYTES", "MP_SESSION_TTL",
     }
     for k in known:
         if os.environ.get(k) is not None:
@@ -71,7 +74,10 @@ def load_env():
     # Read-only ttyd: the Terminal Graph's tiles are views, not consoles. Stock ttyd is readonly
     # unless -W, so this is a second plain ttyd rather than a special build.
     cfg.setdefault("TTYD_RO_PORT", str(int(cfg["TTYD_PORT"]) + 1))
-    cfg.setdefault("BIND_ADDR", "0.0.0.0")
+    # Loopback unless the operator publishes the port. A reachable listener hands the
+    # owner UI a session cookie (see mint_session); binding every interface makes that
+    # cookie available to the network. Docker sets BIND_ADDR=0.0.0.0 itself.
+    cfg.setdefault("BIND_ADDR", "127.0.0.1")
     cfg.setdefault("QUEUE_URL", "http://127.0.0.1:%s" % cfg["HUD_PORT"])
     cfg.setdefault("DEFAULT_ENG_MODEL", "claude-opus-5-5")
     cfg.setdefault("DEFAULT_BACKEND", "claude")
@@ -80,6 +86,16 @@ def load_env():
     cfg.setdefault("DEFAULT_CODEX_MODEL", "")
     cfg.setdefault("QUEUE_DEAD_AFTER", "45")
     cfg.setdefault("HEARTBEAT_INTERVAL", "10")
+    # Idle socket timeout (seconds). 0 disables. A partial or abandoned connection
+    # otherwise pins a thread for the life of the process.
+    cfg.setdefault("MP_HANDLER_TIMEOUT", "30")
+    # Simultaneous accepted connections. 0 disables the cap.
+    cfg.setdefault("MP_MAX_CONNECTIONS", "128")
+    # JSON API bodies, and multipart proof uploads. Oversized requests are 413.
+    cfg.setdefault("MP_MAX_JSON_BYTES", str(1024 * 1024))
+    cfg.setdefault("MP_MAX_UPLOAD_BYTES", str(32 * 1024 * 1024))
+    # Page-load session lifetime. The token itself carries the expiry.
+    cfg.setdefault("MP_SESSION_TTL", str(12 * 3600))
     return cfg
 
 CFG = load_env()
@@ -289,15 +305,75 @@ def render_page(html):
 def _hmac(msg):
     return hmac.new(CFG.get("QUEUE_SECRET", "").encode(), msg.encode(), hashlib.sha256).hexdigest()[:24]
 
-def mint_session():
-    rnd = base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip("=")
-    return "%s.%s" % (rnd, _hmac(rnd))
 
-def valid_session(tok):
-    if not tok or "." not in tok:
+def _cfg_number(name, default):
+    """A config/env number. The file wins unless the live env set the key; garbage falls back."""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        raw = CFG.get(name, "")
+    if raw is None or raw == "":
+        return float(default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def handler_timeout():
+    """Seconds a handler socket may block. None disables, matching BaseHTTPRequestHandler."""
+    value = _cfg_number("MP_HANDLER_TIMEOUT", 30)
+    if value <= 0:
+        return None
+    return value
+
+
+def connection_cap():
+    """Accepted connections in flight. 0 means the historical uncapped thread-per-connection."""
+    value = int(_cfg_number("MP_MAX_CONNECTIONS", 128))
+    return value if value > 0 else 0
+
+
+def max_json_bytes():
+    value = int(_cfg_number("MP_MAX_JSON_BYTES", 1024 * 1024))
+    return value if value > 0 else 1024 * 1024
+
+
+def max_upload_bytes():
+    value = int(_cfg_number("MP_MAX_UPLOAD_BYTES", 32 * 1024 * 1024))
+    return value if value > 0 else 32 * 1024 * 1024
+
+
+def session_ttl():
+    """Seconds a page-load session stays valid. The cookie Max-Age and the signed expiry match."""
+    value = int(_cfg_number("MP_SESSION_TTL", 12 * 3600))
+    return value if value > 0 else 12 * 3600
+
+
+def mint_session(ttl=None, now=None):
+    """nonce.expiry.hmac. The signature covers the expiry, so a client cannot extend it."""
+    if ttl is None:
+        ttl = session_ttl()
+    if now is None:
+        now = time.time()
+    nonce = base64.urlsafe_b64encode(os.urandom(12)).decode().rstrip("=")
+    exp = int(now + ttl)
+    msg = "%s.%d" % (nonce, exp)
+    return "%s.%s" % (msg, _hmac(msg))
+
+def valid_session(tok, now=None):
+    if not tok or tok.count(".") != 2:
         return False
-    rnd, sig = tok.rsplit(".", 1)
-    return hmac.compare_digest(sig, _hmac(rnd))
+    nonce, exp, sig = tok.split(".", 2)
+    mac = _hmac("%s.%s" % (nonce, exp))
+    if len(sig) != len(mac) or not hmac.compare_digest(sig, mac):
+        return False
+    try:
+        exp_i = int(exp)
+    except ValueError:
+        return False
+    if now is None:
+        now = time.time()
+    return exp_i >= now
 
 def parse_cookies(header):
     out = {}
@@ -1274,7 +1350,9 @@ def proxy_request(handler, inner_host, inner_port):
     Preserves Cookie / X-Queue-Secret / Set-Cookie so auth + sessions survive the proxy."""
     path = handler.path
     url = "http://%s:%s%s" % (inner_host, inner_port, path)
-    length = int(handler.headers.get("Content-Length", 0) or 0)
+    if handler._enforce_body_limit(max_upload_bytes()):
+        return
+    length = handler._declared_length() or 0
     body = handler.rfile.read(length) if length else None
     fwd = {}
     for k, v in handler.headers.items():
@@ -1317,9 +1395,55 @@ def proxy_request(handler, inner_host, inner_port):
 # ---------- HTTP server side (the board and the queue share this plumbing) ----------
 class JSONHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # Keep-alive responses are two writes (headers, then body). With Nagle left on, the
+    # body waits for the client's delayed ACK of the headers: about 40 ms on Linux, which
+    # pinned every keep-alive client near 22 requests/second.
+    disable_nagle_algorithm = True
+
+    def setup(self):
+        # Per connection, so a test config and a live env both apply without a class default
+        # frozen at import. None leaves the socket blocking, which is the old behavior.
+        self.timeout = handler_timeout()
+        super().setup()
 
     def log_message(self, *a):
         pass
+
+    def _declared_length(self):
+        """Content-Length as a non-negative int, or None when the header is not a length."""
+        raw = self.headers.get("Content-Length")
+        if raw is None or str(raw).strip() == "":
+            return 0
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if n < 0:
+            return None
+        return n
+
+    def _discard(self, n):
+        """Read and drop n bytes. A fixed buffer, so a rejected body does not land in RSS."""
+        left = n
+        while left > 0:
+            chunk = self.rfile.read(min(left, 65536))
+            if not chunk:
+                break
+            left -= len(chunk)
+
+    def _enforce_body_limit(self, limit):
+        """Reject an oversized or unreadable Content-Length. True means the response was sent."""
+        n = self._declared_length()
+        if n is None:
+            self.close_connection = True
+            self._send(400, {"error": "bad_content_length"})
+            return True
+        if limit and n > limit:
+            self._discard(n)
+            self.close_connection = True
+            self._send(413, {"error": "payload_too_large", "limit": limit})
+            return True
+        return False
 
     def _send(self, code, obj=None, ctype="application/json", raw=None, extra=None):
         if raw is None:
@@ -1339,8 +1463,8 @@ class JSONHandler(BaseHTTPRequestHandler):
             pass
 
     def _body(self):
-        n = int(self.headers.get("Content-Length", 0) or 0)
-        if not n:
+        n = self._declared_length()
+        if not n or n > max_json_bytes():
             return {}
         raw = self.rfile.read(n)
         try:
@@ -1349,8 +1473,70 @@ class JSONHandler(BaseHTTPRequestHandler):
             return {}
 
     def _page_extra(self):
+        # Opening the page is the owner UI's login: the secret must not be in the HTML
+        # (verify J30), and the browser then calls the API with this cookie. It expires,
+        # and a token minted before expiry was signed cannot be extended by editing Max-Age.
+        ttl = session_ttl()
         return {
-            "Set-Cookie": "mp_session=%s; HttpOnly; Path=/; SameSite=Lax" % mint_session(),
+            "Set-Cookie": "mp_session=%s; HttpOnly; Path=/; SameSite=Lax; Max-Age=%d" % (
+                mint_session(), ttl),
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache", "Expires": "0",
         }
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that refuses new connections once `max_connections` are in flight.
+
+    The stock server starts a thread per accepted socket and never reaps an idle one, so a
+    few hundred slow clients pinned a thread each. Excess sockets get 503 on the accept
+    thread and are closed; they do not take a handler thread.
+    """
+
+    def __init__(self, server_address, RequestHandlerClass, max_connections=None):
+        super().__init__(server_address, RequestHandlerClass)
+        if max_connections is None:
+            max_connections = connection_cap()
+        self.max_connections = max_connections
+        self._inflight = 0
+        self._gate = threading.Lock()
+
+    def process_request(self, request, client_address):
+        if self.max_connections:
+            with self._gate:
+                if self._inflight >= self.max_connections:
+                    self._reject(request)
+                    return
+                self._inflight += 1
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._release()
+
+    def _release(self):
+        if not self.max_connections:
+            return
+        with self._gate:
+            if self._inflight:
+                self._inflight -= 1
+
+    def _reject(self, request):
+        body = b'{"error":"over_cap"}'
+        try:
+            request.settimeout(1.0)
+            request.sendall(
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: %d\r\n"
+                b"Connection: close\r\n\r\n" % len(body) + body)
+        except Exception:
+            pass
+        finally:
+            self.shutdown_request(request)

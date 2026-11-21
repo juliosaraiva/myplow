@@ -514,7 +514,7 @@ def write_queue_env(install, backend):
         # read-only ttyd behind the Terminal Graph's tiles (stock ttyd, no -W)
         "TTYD_RO_PORT": os.environ.get(
             "TTYD_RO_PORT", str(int(os.environ.get("TTYD_PORT", "7681")) + 1)),
-        "BIND_ADDR": os.environ.get("BIND_ADDR", "0.0.0.0"),
+        "BIND_ADDR": os.environ.get("BIND_ADDR", "127.0.0.1"),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "DEFAULT_BACKEND": backend,

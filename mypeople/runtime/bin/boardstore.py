@@ -61,6 +61,28 @@ def default_board():
     return {"version": 2, "order": [], "pinSeq": 0, "tasks": {}}
 
 
+def reload_mark_path(board_or_db_path):
+    """Sibling file a running todo-server stats to notice a restore from another process."""
+    return board_or_db_path + ".reload"
+
+
+def note_external_write(board_or_db_path):
+    """Record that `board_or_db_path` was replaced outside the server that has it cached.
+
+    The server keeps an in-memory snapshot. Its own saves do not touch this file, so a
+    change here means the next read must load the database again instead of serving or
+    editing the pre-restore board.
+    """
+    mark = reload_mark_path(board_or_db_path)
+    os.makedirs(os.path.dirname(mark) or ".", exist_ok=True)
+    tmp = "%s.%d.tmp" % (mark, os.getpid())
+    with open(tmp, "wb") as fh:
+        fh.write(str(time.time_ns()).encode())
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, mark)
+
+
 def db_path_for(board_path):
     """Derive the SQLite path from a board.v2.json path, so callers that only know BOARD_PATH
     (including the existing test harness that overrides module.BOARD_PATH) route to the right DB."""
@@ -223,6 +245,63 @@ def save_board(db_path, board, shrink_guard=True):
             if tid not in new_tasks:
                 conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
         # rewrite meta (tiny): every top-level board key except `tasks`, plus internal markers
+        conn.execute("DELETE FROM meta")
+        conn.execute("INSERT INTO meta(key,value) VALUES('__schema__',?)", (json.dumps(SCHEMA_VERSION),))
+        conn.execute("INSERT INTO meta(key,value) VALUES('__task_order__',?)",
+                     (json.dumps(list(new_tasks.keys())),))
+        for k, v in board.items():
+            if k == "tasks":
+                continue
+            conn.execute("INSERT INTO meta(key,value) VALUES(?,?)", (k, json.dumps(v, ensure_ascii=False)))
+        conn.execute("COMMIT")
+        return True
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def save_changes(db_path, board, upsert_ids, delete_ids=(), shrink_guard=True):
+    """Write only the named cards, plus the small meta row. Same durability as save_board.
+
+    Callers that already know which cards they edited use this so a comment on a large board
+    does not hash every other card. The shrink guard still compares total card counts. A full
+    save_board remains the path for a caller that does not know the diff.
+    """
+    if not isinstance(board, dict):
+        return False
+    new_tasks = board.get("tasks", {})
+    if not isinstance(new_tasks, dict):
+        new_tasks = {}
+    conn = connect(db_path)
+    try:
+        old_n = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        new_n = len(new_tasks)
+        if shrink_guard and old_n > 5 and new_n < 0.5 * old_n:
+            sp = "%s.SUSPECT.%d" % (db_path, int(time.time()))
+            with open(sp, "w") as fh:
+                json.dump(board, fh, ensure_ascii=False)
+            import sys
+            sys.stderr.write("SUSPECT shrink refused: %d->%d, wrote %s\n" % (old_n, new_n, sp))
+            return False
+        conn.execute("BEGIN IMMEDIATE")
+        for tid in upsert_ids:
+            task = new_tasks.get(tid)
+            if not isinstance(task, dict):
+                continue
+            r = _row_for(task)
+            conn.execute(
+                "INSERT INTO tasks(id,state,assignee,pinned,pin_rank,created,updated,done,verified,hash,data)"
+                " VALUES(:id,:state,:assignee,:pinned,:pin_rank,:created,:updated,:done,:verified,:hash,:data)"
+                " ON CONFLICT(id) DO UPDATE SET state=:state,assignee=:assignee,pinned=:pinned,"
+                " pin_rank=:pin_rank,created=:created,updated=:updated,done=:done,verified=:verified,"
+                " hash=:hash,data=:data", r)
+        for tid in delete_ids:
+            conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
         conn.execute("DELETE FROM meta")
         conn.execute("INSERT INTO meta(key,value) VALUES('__schema__',?)", (json.dumps(SCHEMA_VERSION),))
         conn.execute("INSERT INTO meta(key,value) VALUES('__task_order__',?)",
