@@ -7,6 +7,9 @@ implemented runtime; installing it does not hydrate or generate code from the SE
 Each machine authenticates its selected agent backend independently. MyPlow never copies,
 mounts, or reuses another node's credential store.
 
+The repository map is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). How to run the
+suite, and how this fork stays mergeable with upstream Plow, is [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Docker (recommended)
 
 Requirements: Docker Desktop/Engine with Compose. Choose one backend and authenticate it in this
