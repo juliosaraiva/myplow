@@ -171,11 +171,11 @@ jobs:
             MYPLOW_RELEASE=${{ needs.merge.outputs.version }}
           tags: |
             ${{ env.IMAGE }}:cloud-${{ needs.merge.outputs.version }}
-            ghcr.io/delattre1/myplow-cloud:${{ needs.merge.outputs.version }}
-            ghcr.io/delattre1/myplow-cloud:latest
+            ghcr.io/${{ github.repository_owner }}/myplow-cloud:${{ needs.merge.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/myplow-cloud:latest
           provenance: false
           push: true
 
       - name: Plow image reference
         run: |
-          echo "Plow image: ghcr.io/delattre1/myplow-cloud@${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Plow image: ghcr.io/${{ github.repository_owner }}/myplow-cloud@${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"

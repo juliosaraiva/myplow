@@ -202,7 +202,10 @@ class Voice(unittest.TestCase):
         with mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
             for n in range(4):
                 self.assertEqual(self.v.say(f"linha {n}"), 0)
-        run.assert_called_with(["speak", "--voice", "x", "linha 3"])
+        args, kwargs = run.call_args
+        self.assertEqual(args, (["speak", "--voice", "x", "linha 3"],))
+        self.assertIs(kwargs.get("check"), False)
+        self.assertIn("PATH", kwargs.get("env", {}))
         start, end = map(float, Path(self.state, "speaking").read_text().split())
         self.assertLessEqual(start, end)
         self.assertEqual(Path(self.state, "said.txt").read_text().splitlines(), ["linha 1", "linha 2", "linha 3"])

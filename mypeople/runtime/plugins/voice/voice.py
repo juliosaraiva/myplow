@@ -45,6 +45,7 @@ from pathlib import Path
 INSTALL = Path(os.environ.get("INSTALL_DIR") or os.environ.get("MYPEOPLE_HOME") or Path(__file__).resolve().parents[2])
 STATE_DIR = Path(os.environ.get("VOICE_STATE_DIR") or INSTALL / "state" / "voice")
 CONFIG = STATE_DIR / "config.json"
+PENDING_TRACES = STATE_DIR / "pending-traceparents.json"
 SAID = STATE_DIR / "said.txt"  # the last lines `say` spoke, for the echo filter
 OFF = STATE_DIR / "off"  # exists: the owner turned the mic off, so no thought reaches the Boss
 SPEAKING = STATE_DIR / "speaking"  # "<start> <end>" of the last `say`; no end yet while it plays
@@ -52,7 +53,9 @@ HOST_ID = os.environ.get("HOST_ID") or os.uname().nodename.split(".")[0]
 BOSS_AGENT = os.environ.get("BOSS_AGENT") or f"{HOST_ID}/main:Boss"
 MP_BIN = os.environ.get("MP_BIN") or str(INSTALL / "bin" / "mp")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bin"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mpcommon import SEND_TIMEOUT, plugin_text  # noqa: E402
+from voice_trace import start_span  # noqa: E402
 
 RUN = f"{sys.executable} {Path(__file__).resolve()}"  # the Boss answers with the python that runs the bridge
 SILENCE_MS = 1500  # a finished sentence ('.', '?', '!') ships after this pause
@@ -232,10 +235,13 @@ class Thoughts:
         self.overlap = False  # the line being built heard the speaker too: strip its words before sending
         self.was_overlap = False  # that flag for the line due() just returned
         self.in_speaker = False
+        self.traceparent = ""
         self.changed = self.began = None
         self.marks = []  # (when, buffer length) at each caption change since the line began: where his pauses are
 
-    def update(self, t: str, now: float, muted: bool = False):
+    def update(self, t: str, now: float, muted: bool = False, traceparent: str = ""):
+        if traceparent:
+            self.traceparent = traceparent
         if self.text is None:
             self.text, self.cut, self.sent = t, len(t), t
             return
@@ -311,7 +317,15 @@ class Thoughts:
         return best
 
 
-def deliver(line: str, who: str, last: list, cue: str = "", before_speaker: bool = False, overlap: bool = False):
+def deliver(
+    line: str,
+    who: str,
+    last: list,
+    cue: str = "",
+    before_speaker: bool = False,
+    overlap: bool = False,
+    traceparent: str = "",
+):
     line = trim_repeat(" ".join(line.split()), last[0])[-MAX_CHARS:].strip()
     if overlap:  # heard while the speaker played: keep his words, drop the speaker's
         kept = strip_echo(line)
@@ -328,7 +342,21 @@ def deliver(line: str, who: str, last: list, cue: str = "", before_speaker: bool
     if OFF.exists():  # paused: the transcription is kept in the log and goes to nobody
         log(f"paused, not sent: {line!r}")
         return
-    if send_to_agent(envelope(who, line, cue)):
+    with start_span(
+        "voice.bridge.send_to_agent",
+        parent=traceparent,
+        attributes={
+            "voice.message.characters": len(line),
+            "voice.message.words": len(line.split()),
+        },
+    ) as span:
+        started = time.perf_counter()
+        sent = send_to_agent(envelope(who, line, cue))
+        span.set_attribute("voice.bridge.success", sent)
+        span.set_attribute("voice.bridge.duration_ms", (time.perf_counter() - started) * 1000)
+        if sent:
+            remember_traceparent(span.traceparent)
+    if sent:
         log(f"-> {BOSS_AGENT}: {line[:80]!r}")
 
 
@@ -343,7 +371,35 @@ def events(host: str):
             raw, buf = buf.split(b"\n\n", 1)
             line = raw.decode("utf-8", "replace").strip()
             if line.startswith("data: "):
-                yield json.loads(line[6:]).get("text") or ""
+                yield json.loads(line[6:])
+
+
+def remember_traceparent(traceparent: str) -> None:
+    """Keep trace IDs for the next spoken response; never persist caption text."""
+    if not traceparent:
+        return
+    try:
+        records = json.loads(PENDING_TRACES.read_text()) if PENDING_TRACES.exists() else []
+        records = [record for record in records if time.time() - record["time"] < 600]
+        records.append({"time": time.time(), "traceparent": traceparent})
+        temporary = PENDING_TRACES.with_suffix(".tmp")
+        temporary.write_text(json.dumps(records[-20:]))
+        temporary.replace(PENDING_TRACES)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
+
+def take_traceparent() -> str:
+    """Use latest recent incoming thought to link async TTS response to its request."""
+    try:
+        records = json.loads(PENDING_TRACES.read_text()) if PENDING_TRACES.exists() else []
+        PENDING_TRACES.unlink(missing_ok=True)
+        for record in reversed(records):
+            if time.time() - record["time"] < 600:
+                return record["traceparent"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return ""
 
 
 def flip(off: bool, cfg: dict):
@@ -389,8 +445,9 @@ def serve():
                     thoughts.in_speaker = speaking(now)  # also between caption events
                     line = thoughts.due(now)
                     before, overlap = thoughts.before_speaker, thoughts.was_overlap
+                    traceparent = thoughts.traceparent
                 if line and not heard_switch(line, cfg):
-                    deliver(line, who, last, cue, before, overlap)
+                    deliver(line, who, last, cue, before, overlap, traceparent)
             except Exception as e:  # noqa: BLE001
                 log(f"ERROR ship: {type(e).__name__}: {e}")
 
@@ -398,10 +455,12 @@ def serve():
     log(f"up: captions {cfg['sse']} -> {BOSS_AGENT}")
     while True:
         try:
-            for t in events(cfg["sse"]):
+            for event in events(cfg["sse"]):
+                t = event.get("text") or ""
+                traceparent = event.get("traceparent") or ""
                 now = time.time()
                 with lock:
-                    thoughts.update(t, now, muted=speaking(now))
+                    thoughts.update(t, now, muted=speaking(now), traceparent=traceparent)
         except Exception as e:  # noqa: BLE001 - the caption server restarts; so do we
             log(f"captions dropped ({type(e).__name__}: {e}); retry in 3 s")
         with lock:
@@ -417,7 +476,11 @@ def say(text: str) -> int:
     start = time.time()
     SPEAKING.write_text(f"{start} ")
     try:
-        return subprocess.run(config()["say"] + [text]).returncode  # returns once playback ends
+        env = os.environ.copy()
+        parent = take_traceparent()
+        if parent:
+            env["VOICE_TRACEPARENT"] = parent
+        return subprocess.run(config()["say"] + [text], check=False, env=env).returncode  # returns once playback ends
     finally:
         SPEAKING.write_text(f"{start} {time.time()}")
 
