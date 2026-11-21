@@ -1,6 +1,21 @@
 #!/usr/bin/env python3
 """MyPlow shared helpers: config, auth/session, json io, tmux delivery, http proxy.
-Python 3 stdlib only."""
+Python 3 stdlib only.
+
+Imported as a sibling (`import mpcommon`) by the daemons and by `mp`. The banners
+in this file are the layout; the pieces stay here because the install copies
+`bin/` flat.
+
+  load_env, version, live_drift     config and the serving version
+  render_page                       badge, nav, login banner
+  mint_session, caller_identity     the page-load cookie
+  atomic_write, read_json           json on disk
+  parse_agent_id and below          agent ids, notification routes, plugin text
+  current_recorder, stop_recorder   the read-only terminal recorder
+  tmux_run, tmux_send_message       delivery into a pane
+  http_json, WebSocket              clients used by the bridges
+  JSONHandler                       body limits, sessions, proxying, the thread cap
+"""
 import os, sys, json, hmac, hashlib, base64, html, time, socket, ssl, subprocess, shutil, urllib.request, urllib.parse
 import errno
 import re

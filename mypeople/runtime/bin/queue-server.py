@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """MyPlow queue-server: HTTP queue + registry + reaper + /dashboard + /roster.
 Binds BIND_ADDR:HUD_PORT (9900). Reverse-proxies TODO routes to TODO_PORT so both
-front doors serve both pages (symmetric cross-nav, §ITEM-2). Python stdlib only."""
+front doors serve both pages (symmetric cross-nav, §ITEM-2). Python stdlib only.
+
+Helpers above Handler own the roster file, per-agent status, and the reaper.
+Handler serves /health, the HUD, /agents, /clients, /roster, /heartbeat, and
+/task/*, and proxies board routes to the todo server.
+"""
 import os, sys, time, threading, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

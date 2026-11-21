@@ -8,6 +8,9 @@
   mypeople auth-check [--quiet]                        re-check this node's AI login (exit 0 = ready)
   mypeople verify                                      run the shipped acceptance harness
   mypeople logs [name]                                 tail INSTALL_DIR/logs/*.log
+
+The runtime this command copies and supervises is mypeople/runtime/. The map
+is docs/ARCHITECTURE.md.
 """
 import os, sys, time, json, signal, subprocess, urllib.request
 from . import firstrun, __version__

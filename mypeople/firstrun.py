@@ -4,7 +4,11 @@ ensure() is idempotent: safe on every `up` / container restart. It materializes 
 INSTALL_DIR from the packaged runtime, resolves the selected backend's auth, writes the single
 config file (~/.config/mypeople/queue.env, fresh QUEUE_SECRET per install), wires Claude/Codex
 lifecycle hooks, and installs the functional tmux.conf. Starting daemons + spawning the Boss is
-the CLI's job (see cli.up)."""
+the CLI's job (see cli.up).
+
+The steps below are marked in order: materialize, auth, queue.env, backend
+hooks, tmux.conf, then ensure() which runs them.
+"""
 import os, sys, json, shutil, secrets, socket, stat, subprocess, shlex, time, hashlib
 
 VALID_BACKENDS = ("claude", "codex", "grok")

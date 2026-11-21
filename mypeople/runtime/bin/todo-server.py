@@ -2,7 +2,13 @@
 """MyPlow todo-server (:9933): board API + board->Boss ping.
 Serves todos.html at / and /todos, and reverse-proxies the HUD routes so the
 cross-nav works from either front door. Python 3 stdlib only.
-MODULE-LEVEL imports of every stdlib a handler uses (§5.3b UnboundLocalError guard)."""
+MODULE-LEVEL imports of every stdlib a handler uses (§5.3b UnboundLocalError guard).
+
+Sections, in order: watchdog jobs, the board store (JSON or SQLite), the
+board-to-Boss ping, card ownership, proof classification, then Handler
+(GET/POST for the board, plugins, and access pages). Pages and fonts are read
+from this file's directory.
+"""
 import os, sys, json, time, uuid, threading, shutil, subprocess, glob, re
 import copy
 import urllib.parse, urllib.request
