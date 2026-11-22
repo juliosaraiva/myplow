@@ -23,6 +23,7 @@ import secrets
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -307,12 +308,14 @@ def connect_ask(words, send):
 def _stop(p):
     # Same anchored pattern as supervise.sh's ensure: a one-shot `reply` or a labelled bridge is not this daemon.
     pattern = _script(p) + " serve$"
-    subprocess.run(["pkill", "-f", pattern], capture_output=True)
+    # Homebrew proctools can miss a live daemon on macOS even with the exact pattern.
+    pgrep, pkill = ("/usr/bin/pgrep", "/usr/bin/pkill") if sys.platform == "darwin" else ("pgrep", "pkill")
+    subprocess.run([pkill, "-f", pattern], capture_output=True)
     for _ in range(50):
-        if subprocess.run(["pgrep", "-f", pattern], capture_output=True).returncode:
+        if subprocess.run([pgrep, "-f", pattern], capture_output=True).returncode:
             return
         time.sleep(0.1)
-    subprocess.run(["pkill", "-9", "-f", pattern], capture_output=True)
+    subprocess.run([pkill, "-9", "-f", pattern], capture_output=True)
 
 
 def set_on(name, on):

@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 import sandbox
+from plugins.process_tools_fixture import shadow_tools
 
 ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "mypeople" / "runtime" / "bin"
@@ -306,8 +307,14 @@ class Switch(unittest.TestCase):
         )
         self.assertEqual("running", self.row("p")["state"])
         self.assertEqual(["whatsapp"], self.row("p")["also"])
-        self.m.set_on("p", False)
+        path, calls = shadow_tools(self.tmp.name)
+        with mock.patch.dict(os.environ, {"PATH": path}):
+            self.m.set_on("p", False)
         main.wait(timeout=5)
+        if sys.platform == "darwin":
+            self.assertFalse(calls.exists())
+        else:
+            self.assertIn("pkill", calls.read_text().splitlines())
         self.assertIsNone(bridge.poll(), "a labelled bridge is not this daemon")
         self.assertIsNone(oneshot.poll(), "a one-shot run is not this daemon")
         self.assertTrue(self.off_file("p").exists())
@@ -614,8 +621,14 @@ class Switch(unittest.TestCase):
         self.m.install(str(self._source()))
         Path(self.install_dir, "state", "mine", "creds.json").write_text("{}")
         running = self.daemon(Path(self.install_dir, "plugins.d", "mine", "p.py"), "serve")
-        self.m.remove("mine")
+        path, calls = shadow_tools(self.tmp.name)
+        with mock.patch.dict(os.environ, {"PATH": path}):
+            self.m.remove("mine")
         running.wait(timeout=5)
+        if sys.platform == "darwin":
+            self.assertFalse(calls.exists())
+        else:
+            self.assertIn("pkill", calls.read_text().splitlines())
         self.assertFalse(Path(self.install_dir, "plugins.d", "mine").exists())
         self.assertTrue(Path(self.install_dir, "state", "mine", "creds.json").exists())
 

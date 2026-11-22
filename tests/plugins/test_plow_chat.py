@@ -27,6 +27,7 @@ import time
 import unittest
 from unittest import mock
 import sandbox
+from plugins.process_tools_fixture import shadow_tools
 
 PLUGINS = Path(__file__).resolve().parents[2] / "mypeople" / "runtime" / "plugins"
 
@@ -1911,9 +1912,9 @@ class WiringTest(unittest.TestCase):
         script, supervise's liveness check matched it, and the dead main bridge was never restarted:
         the owner's texts went unanswered for 51 minutes. A labelled second bridge or a one-shot
         `reply` must not count as the main bridge; the main bridge itself still must."""
-        fn = re.search(
-            r"^ensure_plugins\(\)\{.*?^\}", (PLUGINS.parent / "bin" / "supervise.sh").read_text(), re.S | re.M
-        ).group(0)
+        source = (PLUGINS.parent / "bin" / "supervise.sh").read_text()
+        fn = re.search(r"^ensure_plugins\(\)\{.*?^\}", source, re.S | re.M).group(0)
+        ensure = re.search(r"^ensure\(\)\{.*?^\}", source, re.S | re.M).group(0)
         with tempfile.TemporaryDirectory() as idir:
             script = f"{idir}/plugins/plow-chat/plow-chat.py"
             Path(script).parent.mkdir(parents=True)
@@ -1929,19 +1930,39 @@ class WiringTest(unittest.TestCase):
                 return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", script, *argv])
 
             def seen():
-                return subprocess.run(["pgrep", "-f", pat], capture_output=True, text=True).stdout.split()
+                pgrep = "/usr/bin/pgrep" if sys.platform == "darwin" else "pgrep"
+                return subprocess.run([pgrep, "-f", pat], capture_output=True, text=True).stdout.split()
+
+            path, calls = shadow_tools(idir)
+            marker = Path(idir, "spawned")
+            env = {**os.environ, "PATH": path, "LOG": idir, "MARK": str(marker)}
+            command = f'OS="$(uname)"\nsetsid(){{ echo spawn >> "$MARK"; }}\n{ensure}\nensure "$1" ":"\nwait'
+
+            def check_supervisor():
+                subprocess.run(["bash", "-c", command, "fixture", pat], env=env, check=True, timeout=5)
 
             others = [running("serve", "whatsapp"), running("reply", "cht_x", "hi")]
             try:
                 self.assertEqual([], seen())
+                check_supervisor()
+                self.assertEqual(["spawn"], marker.read_text().splitlines())
                 main = running("serve")
                 try:
                     self.assertEqual([str(main.pid)], seen())
+                    check_supervisor()
+                    self.assertEqual(["spawn"], marker.read_text().splitlines())
+                    self.assertTrue(all(p.poll() is None for p in [main, *others]))
+                    if sys.platform == "darwin":
+                        self.assertFalse(calls.exists())
+                    else:
+                        self.assertEqual(["pgrep", "pgrep"], calls.read_text().splitlines())
                 finally:
                     main.kill()
+                    main.wait(timeout=5)
             finally:
                 for p in others:
                     p.kill()
+                    p.wait(timeout=5)
 
 
 if __name__ == "__main__":
