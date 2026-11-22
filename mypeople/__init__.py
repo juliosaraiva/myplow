@@ -9,4 +9,4 @@ The command is mypeople.cli. The tree it copies onto a machine is mypeople.runti
 docs/ARCHITECTURE.md is the map.
 """
 
-__version__ = "5.22.185"
+__version__ = "5.22.186"
