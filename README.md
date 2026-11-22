@@ -118,7 +118,10 @@ mp spawn my-host/main:eng-claude --backend claude --boss my-host/main:Boss
 Both backends use the same lifecycle contract: `SessionStart`, `UserPromptSubmit`, and `Stop`.
 `Stop` persists the backend session ID and updates the summary. A task sent with `mp send` from one
 agent routes the target's next completion notification back to that sender; otherwise the target's
-configured Boss is notified. `mp revive` resumes that exact Claude or Codex session.
+configured Boss is notified. `mp revive` resumes that exact Claude, Codex or Grok session.
+`mp model <agent_id> <model_id>` changes the model of an agent that is still running, Boss
+included, by resuming that same session. It does not retire the agent. `mp revive --model` remains
+the way to choose a model for an agent that is already stopped.
 
 ## Worker/client mode
 

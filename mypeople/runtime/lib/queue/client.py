@@ -79,7 +79,11 @@ def live_agents():
         if not (sess and tab):
             continue
         if "mc-%s:%s" % (sess, tab) not in windows:
-            gone.append((aid, sess, tab))
+            # A live model switch respawns the process in place. For the moment tmux is
+            # replacing it the window can be missing; that is not a death, and retiring it
+            # here is what made reconcile bring the agent back on the old model.
+            if float(rr.get("model_switch_until") or 0) <= time.time():
+                gone.append((aid, sess, tab))
             continue
         current_recorder = (
             C.current_recorder(sess, tab, HOST_ID)
@@ -185,7 +189,9 @@ def dispatch(task):
             route_token = C.enqueue_notification_route(ta, payload.get("reply_to", ""), msg)
             # Notifications to an agent that is restarting wait for it instead of vanishing.
             result = C.send_when_ready(tgt, msg, 20)
-            ok = result == "sent"
+            # "held" is parked for a live model switch and delivered after it; the sender
+            # must not retry, or the drain and the retry would both paste it.
+            ok = result in ("sent", "held")
             if not ok and route_token:
                 C.cancel_notification_route(ta, route_token)
         elif typ == "peek":
@@ -213,6 +219,11 @@ def dispatch(task):
                 args += ["--model", payload["model"]]
             r = subprocess.run(args, capture_output=True, text=True, timeout=120)
             ok, result = (r.returncode == 0), (r.stdout + r.stderr)[-2000:]
+        elif typ == "model":
+            r = subprocess.run(
+                ["mp", "model", ta, payload.get("model") or ""], capture_output=True, text=True, timeout=180
+            )
+            ok, result = (r.returncode == 0), (r.stdout + r.stderr)[-1000:]
         elif typ == "revive":
             r = subprocess.run(["mp", "revive", ta], capture_output=True, text=True, timeout=120)
             ok, result = (r.returncode == 0), (r.stdout + r.stderr)[-1000:]

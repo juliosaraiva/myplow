@@ -22,6 +22,7 @@ VERBS = {
     "kill",
     "answer",
     "revive",
+    "model",
     "ensure-boss",
     "reconcile",
     "stop-recorders",

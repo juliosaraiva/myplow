@@ -20,6 +20,7 @@ def _load_implementation():
         "jsonio.py",
         "agents.py",
         "recorders.py",
+        "hold.py",
         "tmux.py",
         "http_client.py",
         "websocket.py",

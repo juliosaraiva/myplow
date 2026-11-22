@@ -17,6 +17,7 @@ def _load_implementation():
         "messaging.py",
         "revive.py",
         "fleet.py",
+        "model.py",
         "status.py",
         "board.py",
         "cron.py",

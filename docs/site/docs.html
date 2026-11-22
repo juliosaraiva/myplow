@@ -230,6 +230,8 @@ A task sent with `mp send` from one agent sends the target's next finished notic
 ## Bringing one back
 
 The `Stop` hook saves each session's id. `mp revive` resumes that exact session. `mp reconcile` brings back agents whose window vanished without an `mp kill`.
+
+`mp model <agent_id> <model_id>` switches a live agent, including the Boss, onto another model. The same session resumes in the same window, so the conversation stays and the agent is not retired. Messages that arrive during the switch are held and delivered after it. `mp revive --model` is only for an agent that is already stopped.
 </script>
 
 <script type="text/markdown" data-slug="use-plugin" data-group="Plugins">
@@ -592,7 +594,8 @@ Agents have `mp` on their PATH. It lives in `$INSTALL_DIR/bin`: add that folder 
 | `mp peek <agent_id>` | Read an agent's live terminal. |
 | `mp answer <agent_id> <N>` | Pick option N of a question it is waiting on. |
 | `mp kill <agent_id> [--reason ...]` | Stop an agent, on purpose. It stays stopped. |
-| `mp revive <agent_id> [--model <id>]` | Resume its saved session. |
+| `mp revive <agent_id> [--model <id>]` | Resume a stopped agent's saved session. |
+| `mp model <agent_id> <model_id>` | Switch a live agent, Boss included, onto another model. The same session resumes; messages in flight during the switch are delivered after it. |
 | `mp reconcile` | Bring back agents whose window vanished without `mp kill`. |
 | `mp ensure-boss [<agent_id>] [--backend claude\|codex\|grok] [--master] [--role ...]` | Keep the one Boss alive without replacing a session it can resume. |
 | `mp stop-recorders [--keep-intent]` | Stop session recorders. Agents stay up. |

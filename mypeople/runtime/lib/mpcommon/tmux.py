@@ -88,9 +88,29 @@ def pane_input_state(target):
 
 def send_when_ready(target, message, wait):
     """tmux_send_message, after waiting up to `wait` seconds for a Claude target to reach its
-    input box. Returns "sent", "not_ready", "no_pane", or for a retired agent a sentence saying
-    so, so a caller that can retry later knows to, and one that cannot at least says why instead
-    of printing "sent"."""
+    input box. Returns "sent", "held", "not_ready", "no_pane", or for a retired agent a sentence
+    saying so, so a caller that can retry later knows to, and one that cannot at least says why
+    instead of printing "sent".
+
+    "held" means the text is parked for a model switch (or behind a message that is) and will
+    be delivered, so the caller must not send it again.
+    """
+    aid = model_hold_agent(target)
+    gate = model_hold_prepare(aid, message) if aid else "send"
+    if gate == "held":
+        return "held"
+    try:
+        if gate == "drain":
+            # The message is already at the tail of the backlog. release pastes it once.
+            left = release_model_hold(aid, lambda text: _deliver_when_ready(target, text, wait) == "sent")
+            return "held" if left else "sent"
+        return _deliver_when_ready(target, message, wait)
+    finally:
+        if aid and gate != "held":
+            model_hold_finish_delivery(aid)
+
+
+def _deliver_when_ready(target, message, wait):
     deadline = time.time() + wait
     while pane_input_state(target) == "not_ready" and time.time() < deadline:
         time.sleep(1)
