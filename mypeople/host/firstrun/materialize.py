@@ -1,36 +1,201 @@
 # ---------------------------------------------------------------- step 1: materialize
-def _replace_file(src, dst):
-    """copytree's default copy2 writes THROUGH the destination, which fails on an install that
-    mprole has already published to: the role store is chmod 444 so a runtime agent cannot rewrite
-    its own personality. Replace the file and put that mode back, so upgrading an install that has
-    ever spawned a role doesn't die half-way with EACCES."""
-    mode = None
-    if os.path.lexists(dst):
-        try:
-            mode = stat.S_IMODE(os.lstat(dst).st_mode)
-        except OSError:
-            mode = None
-        try:
-            os.unlink(dst)
-        except OSError:
-            pass
-    shutil.copy2(src, dst)
-    if mode is not None and not mode & stat.S_IWUSR:
-        try:
-            os.chmod(dst, mode)
-        except OSError:
-            pass
+import ast
+import fcntl
+import tempfile
+
+_CODE_TREES = ("bin", "lib", "plugins", "verify", "config", "roles")
+_RUNTIME_CURRENT = ".runtime-current"
+_RUNTIME_GENERATIONS = ".runtime-generations"
+_RUNTIME_PENDING = "runtime-install.pending"
+_RUNTIME_LAUNCHER = """#!/usr/bin/env python3
+# Stable installed launcher. Resolve the generation once before opening any code.
+def _run_installed():
+    import os
+    import sys
+
+    namespace = globals()
+    front = os.path.abspath(namespace["__file__"])
+    install = os.path.dirname(os.path.dirname(front))
+    current = os.path.realpath(os.path.join(install, ".runtime-current"))
+    entrypoint = os.path.join(current, "bin", os.path.basename(front))
+    if not os.path.isfile(entrypoint):
+        print(f"{os.path.basename(front)} is unavailable in the active runtime", file=sys.stderr)
+        raise SystemExit(127)
+    namespace["__file__"] = entrypoint
+    sys.path.insert(0, os.path.dirname(entrypoint))
+    sys.dont_write_bytecode = True
+    with open(entrypoint, "rb") as source:
+        exec(compile(source.read(), entrypoint, "exec"), namespace)
+
+_run_installed()
+del _run_installed
+"""
 
 
-def _write_file(dst, text):
-    """Same replace-don't-write-through discipline as _replace_file, for content we generate
-    rather than copy."""
+def _sync_dir(path):
+    fd = os.open(path, os.O_RDONLY)
     try:
-        os.unlink(dst)
-    except OSError:
-        pass
-    with open(dst, "w", encoding="utf-8") as f:
-        f.write(text)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _replace_file(src, dst):
+    """Replace one complete file without writing through a published role or symlink."""
+    folder = os.path.dirname(dst)
+    fd, temp = tempfile.mkstemp(dir=folder)
+    os.close(fd)
+    try:
+        shutil.copy2(src, temp)
+        if os.path.isfile(dst) and not os.path.islink(dst):
+            mode = stat.S_IMODE(os.stat(dst).st_mode)
+            if not mode & stat.S_IWUSR:
+                os.chmod(temp, mode)
+        with open(temp, "rb") as file:
+            os.fsync(file.fileno())
+        os.replace(temp, dst)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+
+
+def _write_file(dst, text, mode=0o644):
+    folder = os.path.dirname(dst)
+    fd, temp = tempfile.mkstemp(dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(text)
+            os.fchmod(file.fileno(), mode)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp, dst)
+        _sync_dir(folder)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+
+
+def _is_python_entry(name):
+    return name.endswith(".py") or name in ("mp", "board-restore")
+
+
+def _walk_runtime(root, trees):
+    for sub in trees:
+        for folder, dirs, names in os.walk(os.path.join(root, sub)):
+            dirs[:] = sorted(d for d in dirs if d not in ("__pycache__", "node_modules"))
+            for name in sorted(names):
+                path = os.path.join(folder, name)
+                if not name.endswith(".pyc") and os.path.isfile(path):
+                    yield os.path.relpath(path, root)
+
+
+def _runtime_hashes(root, trees):
+    result = {}
+    for rel in _walk_runtime(root, trees):
+        with open(os.path.join(root, rel), "rb") as file:
+            result[rel] = hashlib.sha256(file.read()).hexdigest()
+    return result
+
+
+def _validate_generation(stage):
+    """Check the static fragment references used by shipped Python loaders."""
+    for name in os.listdir(os.path.join(stage, "bin")):
+        path = os.path.join(stage, "bin", name)
+        if not _is_python_entry(name) or not os.path.isfile(path):
+            continue
+        with open(path, "rb") as file:
+            syntax = ast.parse(file.read(), filename=path)
+        for node in syntax.body:
+            if not isinstance(node, ast.FunctionDef) or node.name != "_load_implementation":
+                continue
+            strings = [
+                item.value for item in ast.walk(node) if isinstance(item, ast.Constant) and isinstance(item.value, str)
+            ]
+            folder = next((item for item in strings if item == "../lib" or item.startswith("../lib/")), None)
+            if folder is None:
+                continue
+            for fragment in (item for item in strings if item.endswith(".py")):
+                path = os.path.join(stage, "bin", folder, fragment)
+                with open(path, "rb") as file:
+                    compile(file.read(), path, "exec")
+
+
+def _python_entries(root):
+    bindir = os.path.join(root, "bin")
+    return {
+        name for name in os.listdir(bindir) if _is_python_entry(name) and os.path.isfile(os.path.join(bindir, name))
+    }
+
+
+def _stage_generation(source, install, version, *, legacy=False):
+    root = os.path.join(install, _RUNTIME_GENERATIONS)
+    os.makedirs(root, exist_ok=True)
+    trees = ("bin", "lib") if legacy else _CODE_TREES
+    identity = json.dumps([legacy, version, _runtime_hashes(source, trees)], sort_keys=True).encode()
+    generation = os.path.join(root, hashlib.sha256(identity).hexdigest())
+    if os.path.isdir(generation):
+        return generation
+    with tempfile.TemporaryDirectory(dir=root, prefix=".stage-") as stage:
+        for sub in ("bin", "lib"):
+            src = os.path.join(source, sub)
+            if os.path.isdir(src):
+                shutil.copytree(
+                    src,
+                    os.path.join(stage, sub),
+                    copy_function=_replace_file,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "node_modules"),
+                )
+        _validate_generation(stage)
+        fronts = os.path.join(stage, "launchers")
+        os.mkdir(fronts)
+        for name in sorted(_python_entries(stage)):
+            _write_file(os.path.join(fronts, name), _RUNTIME_LAUNCHER, 0o755)
+        _write_file(os.path.join(stage, "VERSION"), version + "\n")
+        if legacy:
+            old_manifest = os.path.join(source, "run", "manifest.json")
+            if os.path.isfile(old_manifest):
+                _replace_file(old_manifest, os.path.join(stage, "manifest.json"))
+        for directory, _, _ in os.walk(stage, topdown=False):
+            _sync_dir(directory)
+        os.rename(stage, generation)
+        _sync_dir(root)
+    return generation
+
+
+def _atomic_link(dst, target):
+    pending_link = dst + ".next"
+    if os.path.lexists(pending_link):
+        os.unlink(pending_link)
+    os.symlink(target, pending_link)
+    os.replace(pending_link, dst)
+    _sync_dir(os.path.dirname(dst))
+
+
+def _activate_generation(install, generation):
+    _atomic_link(os.path.join(install, _RUNTIME_CURRENT), os.path.relpath(generation, install))
+
+
+def _install_launchers(install, generation):
+    active = _python_entries(os.path.realpath(os.path.join(install, _RUNTIME_CURRENT)))
+    new = _python_entries(generation)
+    for name in sorted(active | new):
+        dst = os.path.join(install, "bin", name)
+        if name in active and name in new and not os.path.islink(dst):
+            _write_file(dst, _RUNTIME_LAUNCHER, 0o755)
+        else:
+            # An added entry is dormant before activation, and a retired one goes
+            # dormant upon activation. The same link resumes working on rollback.
+            target = os.path.join("..", _RUNTIME_CURRENT, "launchers", name)
+            _atomic_link(dst, target)
+
+
+def _publish_metadata(install, generation):
+    with open(os.path.join(generation, "VERSION"), encoding="utf-8") as file:
+        version = file.read()
+    _write_file(os.path.join(install, "VERSION"), version)
+    with open(os.path.join(generation, "manifest.json"), encoding="utf-8") as file:
+        manifest = file.read()
+    _write_file(os.path.join(install, "run", "manifest.json"), manifest)
 
 
 def _read_registry_roles(path):
@@ -53,7 +218,12 @@ def _version_tuple(text):
 
 def installed_version(install):
     try:
-        with open(os.path.join(install, "VERSION")) as f:
+        path = "VERSION"
+        if os.path.isfile(os.path.join(install, "run", _RUNTIME_PENDING)) and os.path.isfile(
+            os.path.join(install, _RUNTIME_CURRENT, "VERSION")
+        ):
+            path = os.path.join(_RUNTIME_CURRENT, "VERSION")
+        with open(os.path.join(install, path)) as f:
             return f.read().strip()
     except OSError:
         return ""
@@ -79,19 +249,64 @@ def refuse_downgrade(install):
 
 
 def materialize(install):
-    """Copy the packaged runtime into a WRITABLE INSTALL_DIR. Idempotent: never overwrite
-    existing daemon code differently, and NEVER clobber live state (board/roster/logs)."""
+    """Install a complete generation under the installer lock, preserving writable state."""
     from . import __version__
 
-    if refuse_downgrade(install):
-        _echo(
-            "[myplow] this build is %s and %s already runs %s — leaving it alone.\n"
-            "[myplow] open the current app, or set MYPEOPLE_ALLOW_DOWNGRADE=1 to force it."
-            % (__version__, install, installed_version(install))
-        )
-        return
-    rt = runtime_dir()
+    install = os.path.abspath(install)
     os.makedirs(install, exist_ok=True)
+    with open(os.path.join(install, ".runtime-install.lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if refuse_downgrade(install):
+            _echo(
+                "[myplow] this build is %s and %s already runs %s — leaving it alone.\n"
+                "[myplow] open the current app, or set MYPEOPLE_ALLOW_DOWNGRADE=1 to force it."
+                % (__version__, install, installed_version(install))
+            )
+            return
+        _materialize_locked(install, runtime_dir(), __version__)
+
+
+def _ignore_code_files(source, tree):
+    patterns = ("__pycache__", "*.pyc")
+    if tree == "bin":
+        patterns += ("*.py", "mp", "board-restore")
+    ignore = shutil.ignore_patterns(*patterns)
+
+    def filter_entries(folder, names):
+        result = ignore(folder, names)
+        if tree == "roles" and folder == source:
+            result.add("registry.json")
+        return result
+
+    return filter_entries
+
+
+def _materialize_locked(install, rt, version):
+    generation = _stage_generation(rt, install, version)
+    rundir = os.path.join(install, "run")
+    os.makedirs(rundir, exist_ok=True)
+    pending = os.path.join(rundir, _RUNTIME_PENDING)
+    _write_file(pending, json.dumps({"target": os.path.basename(generation)}) + "\n")
+    current = os.path.join(install, _RUNTIME_CURRENT)
+    if not os.path.isdir(current):
+        # Keep even an old split install usable while replacing its front launchers.
+        # Never rewrite the old loose lib tree: an older process may still read it.
+        old_mp = os.path.join(install, "bin", "mp")
+        initial = (
+            _stage_generation(install, install, installed_version(install), legacy=True)
+            if os.path.isfile(old_mp)
+            else generation
+        )
+        _activate_generation(install, initial)
+    lib = os.path.join(install, "lib")
+    if not os.path.lexists(lib) and os.path.isdir(os.path.join(generation, "lib")):
+        # Retain a separate loose tree for installers and readers predating generations.
+        # A compatibility link into managed code would let an older installer write through it.
+        with tempfile.TemporaryDirectory(dir=install, prefix=".lib-stage-") as stage:
+            copy = os.path.join(stage, "lib")
+            shutil.copytree(os.path.join(generation, "lib"), copy, copy_function=_replace_file)
+            os.rename(copy, lib)
+            _sync_dir(install)
     # code trees: refresh from the package so upgrades take effect (state dirs excluded below).
     # "roles" carries the versioned role store (personalities + Skills + profiles). mp resolves
     # every --role spawn against INSTALL_DIR/roles and fails closed if it is absent, so omitting
@@ -101,12 +316,13 @@ def materialize(install):
     # the shipped one, silently unregistering every authored role (they stay on disk but become
     # unspawnable). So keep the entries this release does not name; shipped names still move
     # forward to the versions this release carries.
-    kept_roles = _read_registry_roles(os.path.join(install, "roles", "registry.json"))
+    reg_path = os.path.join(install, "roles", "registry.json")
+    kept_roles = _read_registry_roles(reg_path)
     # Bytecode never travels with the code, and none may stay. The app compiles its bundled runtime
     # as unchecked-hash .pyc (5.21.31, so the signed bundle stays sealed), which Python never checks
     # against the source: copied in here, they kept every daemon on the app's mpcommon after 5.22.0
     # replaced mpcommon.py beside them. Imports rebuild a cache from the .py that is actually here.
-    for sub in ("bin", "lib", "plugins", "verify", "config", "roles"):
+    for sub in ("bin", "plugins", "verify", "config", "roles"):
         src = os.path.join(rt, sub)
         if os.path.isdir(src):
             shutil.copytree(
@@ -114,17 +330,18 @@ def materialize(install):
                 os.path.join(install, sub),
                 dirs_exist_ok=True,
                 copy_function=_replace_file,
-                ignore=shutil.ignore_patterns("__pycache__"),
+                ignore=_ignore_code_files(src, sub),
             )
         for root, dirs, _ in os.walk(os.path.join(install, sub)):
             if "__pycache__" in dirs:
                 dirs.remove("__pycache__")
                 shutil.rmtree(os.path.join(root, "__pycache__"), ignore_errors=True)
-    if kept_roles:
-        reg_path = os.path.join(install, "roles", "registry.json")
-        with open(reg_path, encoding="utf-8") as f:
+    shipped_registry = os.path.join(rt, "roles", "registry.json")
+    if os.path.isfile(shipped_registry):
+        with open(shipped_registry, encoding="utf-8") as f:
             reg = json.load(f)
-        mode = stat.S_IMODE(os.stat(reg_path).st_mode)
+        mode_path = reg_path if os.path.isfile(reg_path) else shipped_registry
+        mode = stat.S_IMODE(os.stat(mode_path).st_mode)
         merged = dict(kept_roles)
         merged.update(reg.get("roles") or {})
         # A shipped name this install points at a profile of its OWN (a factory agent's Boss with the
@@ -138,8 +355,9 @@ def materialize(install):
         reg["roles"] = {
             r: ref for r, ref in merged.items() if os.path.isfile(os.path.join(install, "roles", *ref.split("/")))
         }
-        _write_file(reg_path, json.dumps(reg, indent=1) + "\n")
-        os.chmod(reg_path, mode)  # the store is published read-only; keep it that way
+        # Publish only the final registry. A SIGKILL can leave either complete
+        # version on disk, and both preserve existing custom registrations.
+        _write_file(reg_path, json.dumps(reg, indent=1) + "\n", mode)
     # Files a previous version shipped and this one does not. copytree(dirs_exist_ok) only ever
     # adds, so a retired page would survive every upgrade forever as a file the product no longer
     # serves. Removing it here is what makes "removed" true on an upgraded install, not just a
@@ -165,38 +383,35 @@ def materialize(install):
     bc = os.path.join(rt, "mp-boss-doctrine.md")
     if os.path.exists(bc):
         _replace_file(bc, os.path.join(install, "mp-boss-doctrine.md"))
-    # Stamp the version this runtime was materialized from. The daemons run the copies above
-    # under a bare interpreter with no route back to the package, so this file is how they (and
-    # the UI) know which version is serving. Rewritten here so an upgrade cannot leave a stale
-    # number on the pages; a hand-placed VERSION is replaced the same way the code trees are.
-    from . import __version__
-
-    _write_file(os.path.join(install, "VERSION"), __version__ + "\n")
-    # writable state skeletons — create empty, never overwrite existing board/roster/logs
+    _install_launchers(install, generation)
     for sub in ("todos", "run", "status", "logs"):
         os.makedirs(os.path.join(install, sub), exist_ok=True)
-    # Fingerprint every file just installed under that VERSION, so a later hand copy or patch
-    # cannot hide behind it: `mp status` names any file that no longer matches (card 8f490e73e5).
-    # roles/registry.json is merged above and rewritten by role publishing, so it is not code we own.
     files = {}
-    for sub in ("bin", "lib", "plugins", "verify", "config", "roles"):
-        for root, dirs, names in os.walk(os.path.join(rt, sub)):
-            dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules")]
-            for name in names:
-                rel = os.path.relpath(os.path.join(root, name), rt)
-                dst = os.path.join(install, rel)
-                if rel != os.path.join("roles", "registry.json") and os.path.isfile(dst):
-                    with open(dst, "rb") as f:
-                        files[rel] = hashlib.sha256(f.read()).hexdigest()
-    _write_file(
-        os.path.join(install, "run", "manifest.json"),
-        json.dumps({"version": __version__, "files": files}, indent=1, sort_keys=True) + "\n",
+    for rel in _walk_runtime(rt, ("bin", "plugins", "verify", "config", "roles")):
+        dst = os.path.join(install, rel)
+        if rel.startswith("bin" + os.sep) and _is_python_entry(os.path.basename(rel)):
+            dst = os.path.join(generation, "launchers", os.path.basename(rel))
+        if rel != os.path.join("roles", "registry.json") and os.path.isfile(dst):
+            with open(dst, "rb") as file:
+                files[rel] = hashlib.sha256(file.read()).hexdigest()
+    prefix = os.path.relpath(generation, install)
+    files.update(
+        {
+            os.path.join(prefix, rel): digest
+            for rel, digest in _runtime_hashes(generation, ("bin", "lib", "launchers")).items()
+        }
     )
+    manifest = (
+        json.dumps({"version": version, "runtime_generation": prefix, "files": files}, indent=1, sort_keys=True) + "\n"
+    )
+    meta = os.path.join(generation, "manifest.json")
+    if not os.path.isfile(meta):
+        _write_file(meta, manifest)
     # make scripts executable (package-data can lose the bit on some backends)
     bindir = os.path.join(install, "bin")
     for f in os.listdir(bindir):
         p = os.path.join(bindir, f)
-        if f.endswith((".py", ".sh")) or f in ("mp", "board-restore"):
+        if not os.path.islink(p) and (f.endswith((".py", ".sh")) or f in ("mp", "board-restore")):
             try:
                 os.chmod(p, 0o755)
             except OSError:
@@ -208,3 +423,7 @@ def materialize(install):
     vs = os.path.join(install, "verify", "verify.sh")
     if os.path.exists(vs):
         os.chmod(vs, 0o755)
+    _activate_generation(install, generation)
+    _publish_metadata(install, generation)
+    os.unlink(pending)
+    _sync_dir(rundir)

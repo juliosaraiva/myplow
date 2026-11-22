@@ -9,6 +9,9 @@ def live_drift():
     """Installed runtime files that no longer match what materialize stamped under VERSION
     (run/manifest.json): a hand copy or patch that skipped `make live`. [] when none, or no manifest."""
     install = CFG["INSTALL_DIR"]
+    recovery = "run/runtime-install.pending"
+    if os.path.isfile(os.path.join(install, recovery)):
+        return [recovery]
     try:
         with open(os.path.join(install, "run", "manifest.json")) as f:
             files = json.load(f)["files"]
@@ -33,7 +36,10 @@ def version():
     if env and env.strip():
         return env.strip()
     try:
-        with open(os.path.join(CFG["INSTALL_DIR"], "VERSION")) as f:
+        generation = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if os.path.basename(os.path.dirname(generation)) != ".runtime-generations":
+            generation = CFG["INSTALL_DIR"]
+        with open(os.path.join(generation, "VERSION")) as f:
             v = f.read().strip()
         if v:
             return v
