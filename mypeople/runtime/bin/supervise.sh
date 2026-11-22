@@ -35,7 +35,10 @@ ensure(){
   # same script (`plow-chat.py reply`) and a second, labelled bridge (`plow-chat.py serve whatsapp`),
   # and either one made this skip a dead daemon -- the owner's texts went unanswered for 51 min.
   local pat="$1"; shift
-  if pgrep -f "$pat" >/dev/null 2>&1; then return; fi
+  # macOS must use the system process matcher instead of a PATH-shadowing proctools.
+  local pgrep=pgrep
+  if [ "$OS" = Darwin ]; then pgrep=/usr/bin/pgrep; fi
+  if "$pgrep" -f "$pat" >/dev/null 2>&1; then return; fi
   echo "$(date -u +%FT%TZ) starting: $*" >> "$LOG/supervise.log"
   # Detach into its own session. Linux has setsid; macOS/BSD don't — fall back to nohup,
   # which (with the supervisor itself already session-led via start_new_session) is enough
