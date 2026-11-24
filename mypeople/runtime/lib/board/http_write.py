@@ -19,6 +19,8 @@ class _BoardWrite:
             return self._proof_multipart()
         body = self._body()
 
+        if p == "/todo/learning":
+            return self._send(*learning_request(self, ident, body))
         if p == "/todo/supervisor/ack":
             if not supervisor_journal_authorized(self, ident):
                 return self._send(403, {"error": "supervisor_unavailable"})

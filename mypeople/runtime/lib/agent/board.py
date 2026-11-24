@@ -170,3 +170,53 @@ def do_proof(argv):
         return 1
     print("proof attached to %s -> %s" % (tid, (res.get("proof") or {}).get("url", "")))
     return 0
+
+
+def do_learning(argv):
+    """Send typed data to the board with a separately provisioned scoped credential."""
+    if argv:
+        print(USAGE["learning"], file=sys.stderr)
+        return 2
+    import http.client
+    import stat
+
+    try:
+        path = os.environ["MYPEOPLE_LEARNING_TOKEN_FILE"]
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, encoding="ascii") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+                raise ValueError
+            token = source.read(128).strip()
+        if not re.fullmatch(r"[a-f0-9]{64}", token):
+            raise ValueError
+        raw = sys.stdin.read(16_385)
+        if len(raw) > 16_384:
+            raise ValueError
+        payload = json.loads(raw)
+    except (KeyError, ValueError, OSError, RecursionError):
+        print("ERROR: invalid learning input or credential file", file=sys.stderr)
+        return 2
+    # Send credentials to the configured loopback board only, without redirects or proxies.
+    conn = None
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", int(CFG.get("TODO_PORT", "9933")), timeout=12)
+        conn.request(
+            "POST",
+            "/todo/learning",
+            json.dumps(payload),
+            {**HDR, "X-MyPlow-Learning": token, "Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        if response.status != 200:
+            print("ERROR: learning request failed (HTTP %s)" % response.status, file=sys.stderr)
+            return 1
+        result = json.loads(response.read(1_048_576))
+    except (ValueError, OSError, http.client.HTTPException):
+        print("ERROR: learning board response unavailable", file=sys.stderr)
+        return 1
+    finally:
+        if conn:
+            conn.close()
+    print(json.dumps(result, sort_keys=True))
+    return 0
