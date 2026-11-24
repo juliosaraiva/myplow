@@ -29,6 +29,8 @@ class LearningHTTPTests(unittest.TestCase):
                 ("writer", "worker", "o/p"),
                 ("reader", "worker", "o/p"),
                 ("other", "worker", "o/other"),
+                ("other_owner", "owner", "o/other"),
+                ("other_evaluator", "evaluator", "o/other"),
                 ("provider", "provider", "o/p"),
             ),
             1,
@@ -71,7 +73,7 @@ class LearningHTTPTests(unittest.TestCase):
         self.assertEqual(rc, proc.returncode, proc.stderr)
         return json.loads(proc.stdout) if rc == 0 else proc.stderr
 
-    def record(self, incident="1" * 32, actor="owner"):
+    def record(self, incident="1" * 32, actor="owner", **scope):
         return self.call(
             actor,
             "record",
@@ -83,6 +85,7 @@ class LearningHTTPTests(unittest.TestCase):
                 "outcome": "confirmed",
                 "evidence": "a" * 32,
             },
+            **scope,
         )
 
     def proposal(self, lesson="2" * 32, incident="1" * 32, **updates):
@@ -98,14 +101,18 @@ class LearningHTTPTests(unittest.TestCase):
             **updates,
         }
 
-    def propose(self, actor="owner", **updates):
+    def propose(self, actor="owner", repo="o/p", **updates):
         data = self.proposal(**updates)
         data["expires"] = int(self.board.time.time()) + 3600
-        return self.call(actor, "propose", data)
+        return self.call(actor, "propose", data, repo=repo)
 
-    def transition(self, lesson, actor, state, *, rc=0):
+    def transition(self, lesson, actor, state, *, rc=0, **scope):
         return self.call(
-            actor, "transition", {"lesson": lesson["lesson"], "version": lesson["version"], "state": state}, rc=rc
+            actor,
+            "transition",
+            {"lesson": lesson["lesson"], "version": lesson["version"], "digest": lesson["digest"], "state": state},
+            rc=rc,
+            **scope,
         )
 
     def activate(self, lesson):
@@ -157,11 +164,13 @@ class LearningHTTPTests(unittest.TestCase):
         self.assertTrue(self.call("owner", "erase", {"incident": "1" * 32})["erased"])
         self.assertEqual("no_match", self.lookup()["reason"])
         with sqlite3.connect(self.db) as conn:
-            for table in ("episodes", "lessons", "transitions"):
+            for table in ("episodes", "lessons", "transitions", "lineages"):
                 self.assertEqual(0, conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0])
         self.record()
         third = self.propose()
-        self.assertEqual(3, third["version"])
+        self.assertEqual(1, third["version"])
+        self.assertNotEqual(replacement["digest"], third["digest"])
+        self.assertIn("403", self.transition(replacement, "evaluator", "evaluated", rc=1))
         self.tokens["reader"].chmod(0o644)
         self.assertIn("credential", self.lookup(rc=2))
 
@@ -175,3 +184,22 @@ class LearningHTTPTests(unittest.TestCase):
         explicit = self.propose(lesson="4" * 32, action="route_worker")
         self.activate(explicit)
         self.assertEqual("route_worker", self.lookup()["action"])
+
+    def test_equal_ids_across_scopes_and_episode_expiry(self):
+        self.record()
+        self.record(actor="other_owner", repo="o/other")
+        first = self.propose()
+        second = self.propose("other_owner", repo="o/other", action="route_worker")
+        self.assertEqual((1, 1), (first["version"], second["version"]))
+        self.activate(first)
+        for actor, state in (("other_evaluator", "evaluated"), ("other_owner", "shadow"), ("other_owner", "active")):
+            self.transition(second, actor, state, repo="o/other")
+        self.assertEqual("silence", self.lookup()["action"])
+        self.assertEqual("route_worker", self.lookup("other", repo="o/other")["action"])
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE episodes SET expires=0 WHERE repo='o/p'")
+        self.assertEqual("no_match", self.lookup()["reason"])
+        self.assertEqual("route_worker", self.lookup("other", repo="o/other")["action"])
+        with sqlite3.connect(self.db) as conn:
+            for table in ("episodes", "lessons", "transitions", "lineages"):
+                self.assertEqual(0, conn.execute(f"SELECT count(*) FROM {table} WHERE repo='o/p'").fetchone()[0])

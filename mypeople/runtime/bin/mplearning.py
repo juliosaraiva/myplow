@@ -11,6 +11,7 @@ import re
 import sqlite3
 import stat
 import time
+from uuid import uuid4
 
 ACTIONS = {"silence", "notify_owner", "route_worker", "abstain"}
 EVENTS = {"periodic", "merge", "ci_failure", "review", "direct_request"}
@@ -26,29 +27,39 @@ CAPABILITIES = {
     "worker": {"record", "propose", "lookup"},
     "evaluator": {"transition", "lookup"},
 }
+CURRENT = """(SELECT state FROM transitions t WHERE (t.repo,t.role,t.lesson,t.version)
+              =(l.repo,l.role,l.lesson,l.version) ORDER BY sequence DESC LIMIT 1)"""
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS episodes (
-    incident TEXT PRIMARY KEY, repo TEXT NOT NULL, role TEXT NOT NULL, origin TEXT NOT NULL,
-    recorded INTEGER NOT NULL, expires INTEGER NOT NULL, body TEXT NOT NULL
+    incident TEXT NOT NULL, repo TEXT NOT NULL, role TEXT NOT NULL, origin TEXT NOT NULL,
+    recorded INTEGER NOT NULL, expires INTEGER NOT NULL, body TEXT NOT NULL,
+    PRIMARY KEY(repo,role,incident)
 );
 CREATE TABLE IF NOT EXISTS lineages (
-    lesson TEXT PRIMARY KEY, repo TEXT NOT NULL, role TEXT NOT NULL, event TEXT NOT NULL,
-    latest INTEGER NOT NULL
+    lesson TEXT NOT NULL, repo TEXT NOT NULL, role TEXT NOT NULL, event TEXT NOT NULL,
+    latest INTEGER NOT NULL, PRIMARY KEY(repo,role,lesson)
 );
 CREATE TABLE IF NOT EXISTS lessons (
-    lesson TEXT NOT NULL, version INTEGER NOT NULL, incident TEXT NOT NULL REFERENCES episodes(incident)
-        ON DELETE CASCADE, repo TEXT NOT NULL, role TEXT NOT NULL, event TEXT NOT NULL,
+    lesson TEXT NOT NULL, version INTEGER NOT NULL, incident TEXT NOT NULL,
+    repo TEXT NOT NULL, role TEXT NOT NULL, event TEXT NOT NULL,
     origin TEXT NOT NULL, valid_from INTEGER NOT NULL, expires INTEGER NOT NULL,
     digest TEXT NOT NULL, body TEXT NOT NULL,
-    PRIMARY KEY(lesson, version)
+    PRIMARY KEY(repo,role,lesson,version),
+    FOREIGN KEY(repo,role,incident) REFERENCES episodes(repo,role,incident) ON DELETE CASCADE,
+    FOREIGN KEY(repo,role,lesson) REFERENCES lineages(repo,role,lesson)
 );
 CREATE TABLE IF NOT EXISTS transitions (
-    sequence INTEGER PRIMARY KEY, lesson TEXT NOT NULL, version INTEGER NOT NULL,
-    state TEXT NOT NULL, origin TEXT NOT NULL, recorded INTEGER NOT NULL,
-    FOREIGN KEY(lesson,version) REFERENCES lessons(lesson,version) ON DELETE CASCADE
+    sequence INTEGER PRIMARY KEY, repo TEXT NOT NULL, role TEXT NOT NULL,
+    lesson TEXT NOT NULL, version INTEGER NOT NULL, state TEXT NOT NULL, origin TEXT NOT NULL,
+    recorded INTEGER NOT NULL,
+    FOREIGN KEY(repo,role,lesson,version) REFERENCES lessons(repo,role,lesson,version) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS lesson_scope ON lessons(repo,role,event,expires);
-CREATE INDEX IF NOT EXISTS latest_transition ON transitions(lesson,version,sequence DESC);
+CREATE INDEX IF NOT EXISTS latest_transition ON transitions(repo,role,lesson,version,sequence DESC);
+CREATE TRIGGER IF NOT EXISTS drop_empty_lineage AFTER DELETE ON lessons BEGIN
+    DELETE FROM lineages WHERE (repo,role,lesson)=(OLD.repo,OLD.role,OLD.lesson)
+      AND NOT EXISTS (SELECT 1 FROM lessons WHERE (repo,role,lesson)=(OLD.repo,OLD.role,OLD.lesson));
+END;
 """
 
 
@@ -155,7 +166,8 @@ class LearningStore:
             raise Denied()
         at = int(self.clock())
         with self._connect() as conn:
-            conn.execute("DELETE FROM episodes WHERE expires<=?", (at,))
+            conn.execute("DELETE FROM episodes WHERE repo=? AND role=? AND expires<=?", (repo, role, at))
+            conn.execute("DELETE FROM lessons WHERE repo=? AND role=? AND expires<=?", (repo, role, at))
             return getattr(self, "_" + op)(conn, grant.origin, repo, role, data, at)
 
     def _record(self, conn, origin, repo, role, data, at):
@@ -168,9 +180,11 @@ class LearningStore:
         _choice(data["decision"], ACTIONS)
         _choice(data["outcome"], OUTCOMES)
         body = _json(data)
-        prev = conn.execute("SELECT repo,role,origin,body FROM episodes WHERE incident=?", (incident,)).fetchone()
+        prev = conn.execute(
+            "SELECT origin,body FROM episodes WHERE repo=? AND role=? AND incident=?", (repo, role, incident)
+        ).fetchone()
         if prev:
-            if tuple(prev) != (repo, role, origin, body):
+            if tuple(prev) != (origin, body):
                 raise Conflict()
             return {"incident": incident, "duplicate": True}
         lifetime = {"worker": 7, "provider": 30, "owner": 90}[origin] * 86_400
@@ -193,40 +207,43 @@ class LearningStore:
         clean = {**data, "exceptions": sorted({_choice(state, STATES) for state in exceptions})}
         starts = _integer(data["valid_from"], 0, at + 30 * 86_400)
         expires = _integer(data["expires"], max(starts, at) + 1, at + 90 * 86_400)
-        episode = conn.execute("SELECT * FROM episodes WHERE incident=?", (incident,)).fetchone()
-        if (
-            episode is None
-            or (episode["repo"], episode["role"]) != (repo, role)
-            or json.loads(episode["body"])["event"] != event
-        ):
+        episode = conn.execute(
+            "SELECT * FROM episodes WHERE repo=? AND role=? AND incident=?", (repo, role, incident)
+        ).fetchone()
+        if episode is None or json.loads(episode["body"])["event"] != event:
             raise Denied()
-        last = conn.execute("SELECT * FROM lineages WHERE lesson=?", (lesson,)).fetchone()
-        if last and (last["repo"], last["role"], last["event"]) != (repo, role, event):
+        last = conn.execute(
+            "SELECT * FROM lineages WHERE repo=? AND role=? AND lesson=?", (repo, role, lesson)
+        ).fetchone()
+        if last and last["event"] != event:
             raise Conflict()
         version = last["latest"] + 1 if last else 1
         conn.execute(
-            """INSERT INTO lineages VALUES (?,?,?,?,?) ON CONFLICT(lesson) DO UPDATE SET latest=excluded.latest""",
+            """INSERT INTO lineages VALUES (?,?,?,?,?) ON CONFLICT(repo,role,lesson) DO UPDATE SET latest=excluded.latest""",
             (lesson, repo, role, event, version),
         )
-        digest = _digest({"repo": repo, "role": role, "origin": origin, "version": version, **clean})
+        digest = _digest(
+            {"repo": repo, "role": role, "origin": origin, "version": version, "nonce": uuid4().hex, **clean}
+        )
         conn.execute(
             "INSERT INTO lessons VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (lesson, version, incident, repo, role, event, origin, starts, expires, digest, _json(clean)),
         )
-        conn.execute("INSERT INTO transitions VALUES (NULL,?,?,?,?,?)", (lesson, version, "draft", origin, at))
+        conn.execute(
+            "INSERT INTO transitions VALUES (NULL,?,?,?,?,?,?,?)", (repo, role, lesson, version, "draft", origin, at)
+        )
         return {"lesson": lesson, "version": version, "digest": digest}
 
     def _transition(self, conn, origin, repo, role, data, at):
-        _shape(data, ("lesson", "version", "state"))
+        _shape(data, ("lesson", "version", "digest", "state"))
         lesson, version, state = data["lesson"], _integer(data["version"], 1, 2**31 - 1), data["state"]
-        if not _matches(ID, lesson):
-            raise ValueError("opaque ID required")
+        if not (_matches(ID, lesson) and _matches(HEX, data["digest"])):
+            raise ValueError("version identity required")
         _choice(state, {"evaluated", "shadow", "active", "revoked", "rejected"})
         row = conn.execute(
-            """SELECT l.*, (SELECT state FROM transitions t WHERE t.lesson=l.lesson AND t.version=l.version
-                        ORDER BY sequence DESC LIMIT 1) AS state FROM lessons l
-               WHERE repo=? AND role=? AND lesson=? AND version=?""",
-            (repo, role, lesson, version),
+            f"""SELECT l.*, {CURRENT} AS state FROM lessons l
+                WHERE repo=? AND role=? AND lesson=? AND version=? AND digest=?""",
+            (repo, role, lesson, version, data["digest"]),
         ).fetchone()
         if row is None:
             raise Denied()
@@ -245,19 +262,20 @@ class LearningStore:
         if state == "active":
             if not row["valid_from"] <= at < row["expires"]:
                 raise Conflict()
-            latest = conn.execute("SELECT latest FROM lineages WHERE lesson=?", (lesson,)).fetchone()[0]
+            latest = conn.execute(
+                "SELECT latest FROM lineages WHERE repo=? AND role=? AND lesson=?", (repo, role, lesson)
+            ).fetchone()[0]
             if latest != version:
                 raise Conflict()
-            for earlier in conn.execute(
-                """SELECT l.version FROM lessons l WHERE l.lesson=? AND l.version<?
-                   AND (SELECT state FROM transitions t WHERE t.lesson=l.lesson AND t.version=l.version
-                        ORDER BY sequence DESC LIMIT 1)='active'""",
-                (lesson, version),
-            ).fetchall():
-                conn.execute(
-                    "INSERT INTO transitions VALUES (NULL,?,?,?,?,?)", (lesson, earlier[0], "revoked", origin, at)
-                )
-        conn.execute("INSERT INTO transitions VALUES (NULL,?,?,?,?,?)", (lesson, version, state, origin, at))
+            conn.execute(
+                f"""INSERT INTO transitions(repo,role,lesson,version,state,origin,recorded)
+                    SELECT l.repo,l.role,l.lesson,l.version,'revoked',?,? FROM lessons l
+                    WHERE l.repo=? AND l.role=? AND l.lesson=? AND l.version<? AND {CURRENT}='active'""",
+                (origin, at, repo, role, lesson, version),
+            )
+        conn.execute(
+            "INSERT INTO transitions VALUES (NULL,?,?,?,?,?,?,?)", (repo, role, lesson, version, state, origin, at)
+        )
         return {"lesson": lesson, "version": version, "state": state}
 
     def _lookup(self, conn, origin, repo, role, data, at):
@@ -268,11 +286,9 @@ class LearningStore:
         exceptions = {_choice(s, STATES) for s in data["exceptions"]}
         found = []
         for row in conn.execute(
-            """SELECT l.*, e.origin AS label_origin FROM lessons l JOIN episodes e USING(incident)
+            f"""SELECT l.*, e.origin AS label_origin FROM lessons l JOIN episodes e USING(repo,role,incident)
                WHERE l.repo=? AND l.role=? AND l.event=? AND l.valid_from<=? AND l.expires>?
-                 AND (SELECT state FROM transitions t WHERE t.lesson=l.lesson AND t.version=l.version
-                      ORDER BY sequence DESC LIMIT 1)='active'
-               ORDER BY l.lesson,l.version""",
+                 AND {CURRENT}='active' ORDER BY l.lesson,l.version""",
             (repo, role, event, at, at),
         ):
             body = json.loads(row["body"])

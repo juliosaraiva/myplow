@@ -10,7 +10,7 @@ Workers use `mp learning < request.json` through the board's normal machine-auth
 | --- | --- | --- |
 | record | incident, event, observed, decision, outcome, evidence | owner, provider, worker |
 | propose | lesson, incident, event, condition, action, exceptions, valid_from, expires | owner, worker |
-| transition | lesson, version, state | evaluator for evaluation/rejection, owner for shadow/activation/revocation |
+| transition | lesson, version, digest, state | evaluator for evaluation/rejection, owner for shadow/activation/revocation |
 | lookup | event, observed, exceptions | owner, evaluator, worker |
 | erase | incident | owner |
 
@@ -18,4 +18,4 @@ IDs are randomly assigned 32-character lowercase hex identifiers, never hashes o
 
 An evaluator can mark a draft evaluated but cannot activate it. Owner activation retires the previous active version in the same transaction. Lookup applies exact scope, current lifecycle, expiry and exceptions before returning any lesson. An explicit owner proposal backed by an owner record takes precedence. Equal-authority disagreement returns a conflict and no action. Readback includes version and digest references for the caller's provenance. Immediate human preferences continue through the existing policy channel.
 
-Expiry prunes episode records on the next successful ledger operation. Owner erasure removes the episode, its lessons and transition history. Only the opaque lesson lineage counter and scope remain to prevent version reuse. SQLite secure deletion applies within this pilot database. Operators must also apply retention to backups. This feature emits no MLflow data or external requests.
+Expiry prunes episode records on the next successful ledger operation. Owner erasure removes the episode, its lessons and transition history. Erasure and expiry also drop the lineage when no version remains. Numeric versions can restart after full erasure. Each version carries a unique salted digest, and transitions require that exact digest, so an old handle cannot act on a recreated version. SQLite secure deletion applies within this pilot database. Operators must also apply retention to backups. This feature emits no MLflow data or external requests.
