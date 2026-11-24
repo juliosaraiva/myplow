@@ -81,7 +81,7 @@ class OfflineLearningTests(unittest.TestCase):
                 {
                     "incident": data["incident"],
                     "action": "route_worker",
-                    "abstained": False,
+                    "state": {"attempted_roles": ["worker"], "abstained": False},
                     "destinations": [{"role": "worker", "id": "2" * 32}],
                     "critical": ["mandatory_omission"],
                 }
@@ -162,3 +162,61 @@ class OfflineLearningTests(unittest.TestCase):
             row = json.loads(self.command("worker", "C", snapshot, data=case("ci_failure", **changes)).stdout)
             self.assertEqual(matched, bool(row["lessons"]))
             self.assertEqual(matched, bool(row["attempts"]))
+
+    def evaluator_module(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("learning_eval_test", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_parent_preserves_intent_after_worker_crash_and_timeout(self):
+        module = self.evaluator_module()
+        frame = {"kind": "attempt", "data": {"role": "owner", "id": "1" * 32, "result": "simulated"}}
+        for tail, timeout in (("raise SystemExit(3)", 3), ("import time; time.sleep(30)", 0.5)):
+            code = f"print({json.dumps(json.dumps(frame))},flush=True); {tail}"
+            result = module.run_framed([sys.executable, "-c", code], str(self.root), case(), timeout)
+            self.assertEqual([frame["data"]], result["attempts"])
+            self.assertEqual(1, result["attempt_count"])
+            self.assertEqual("worker_failed", result["error"])
+            self.assertEqual(timeout < 1, result["timeout"])
+
+    def test_complete_state_attempt_count_and_full_latency_are_required(self):
+        item = case()
+        trace = json.loads(self.command("worker", "B", data=item).stdout)
+        label = {
+            "incident": item["incident"],
+            "action": trace["action"],
+            "state": trace["state"],
+            "destinations": [{"role": a["role"], "id": a["id"]} for a in trace["attempts"]],
+            "critical": [],
+        }
+        traces, labels = self.root / "observations", self.root / "labels"
+        labels.write_text(json.dumps(label) + "\n")
+        records = []
+        for arm in ("A", "B", "C"):
+            for rep in (1, 2, 3):
+                row = {
+                    **trace,
+                    "incident": item["incident"],
+                    "arm": arm,
+                    "repetition": rep,
+                    "session": f"{len(records):032x}",
+                    "implementation_sha": "1" * 40,
+                    "evaluator_sha": "2" * 40,
+                    "cost": 1,
+                }
+                records.append(row)
+        records[-1]["state"] = {"attempted_roles": ["owner"], "abstained": False}
+        records[-1]["latency_ns"] = None
+        traces.write_text("".join(json.dumps(row) + "\n" for row in records))
+        args = ("score", traces, labels, "--baseline", "B", "--minimum-incidents", "1")
+        result = json.loads(self.command(*args).stdout)
+        self.assertEqual(2, result["arms"]["C"]["correct"])
+        self.assertEqual(2, result["arms"]["C"]["timed_trials"])
+        self.assertIsNone(result["arms"]["C"]["p95_latency_ns"])
+        self.assertEqual("inconclusive", result["result"])
+        records[-1]["attempt_count"] = 100
+        traces.write_text("".join(json.dumps(row) + "\n" for row in records))
+        self.assertNotEqual(0, self.command(*args, check=False).returncode)

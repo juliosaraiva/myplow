@@ -134,7 +134,7 @@ def memory_lookup(case, snapshot):
     )
 
 
-def trial(case, arm, snapshot):
+def trial(case, arm, snapshot, emit=None):
     validate_case(case)
     facts = case["facts"]
     attempts, consulted = [], []
@@ -167,9 +167,10 @@ def trial(case, arm, snapshot):
             if role is None or role in prior:
                 continue
             destination = facts["recipients"][role]
-            attempts.append(
-                {"role": role, "id": destination, "result": "simulated" if destination else "no_destination"}
-            )
+            attempt = {"role": role, "id": destination, "result": "simulated" if destination else "no_destination"}
+            if emit:
+                emit("attempt", attempt)
+            attempts.append(attempt)
             if destination:
                 prior.add(role)
     return {
@@ -190,7 +191,9 @@ def trial(case, arm, snapshot):
         },
         "model": MODEL,
         "cost": None,
-        "prompt_digest": digest({"worker": MODEL, "arm": arm}),
+        "prompt_digest": digest(
+            {"worker": MODEL, "arm": arm, "policy": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+        ),
         "lessons": consulted,
         "lesson_digest": digest(consulted),
         "worker": str(os.getpid()),
@@ -203,6 +206,72 @@ def read_rows(path):
         for line in source:
             require(len(line) <= 65_536)
             yield json.loads(line)
+
+
+def validate_attempt(attempt):
+    keys(attempt, "role id result")
+    require(attempt["role"] in SEND_ROLES.values())
+    require(
+        (opaque(attempt["id"]) and attempt["result"] == "simulated")
+        or (attempt["id"] is None and attempt["result"] == "no_destination")
+    )
+
+
+def run_framed(command, session, case, timeout):
+    """Parent receives attempted delivery intents even if the worker never returns a result."""
+    attempts, result = [], None
+    expired = False
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=session,
+            env={"HOME": session, "TMPDIR": session},
+            input=json.dumps(case),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        raw, failed = proc.stdout, proc.returncode != 0
+    except subprocess.TimeoutExpired as error:
+        raw, failed, expired = (error.stdout or b"").decode(errors="replace"), True, True
+    except OSError:
+        raw, failed = "", True
+    for line in raw.splitlines(keepends=True):
+        if not line.endswith("\n"):
+            failed = True
+            break
+        try:
+            frame = json.loads(line)
+            keys(frame, "kind data")
+            if frame["kind"] == "attempt" and result is None:
+                validate_attempt(frame["data"])
+                attempts.append(frame["data"])
+            elif frame["kind"] == "result" and result is None:
+                result = frame["data"]
+                require(isinstance(result, dict))
+            else:
+                raise ValueError("invalid frame")
+        except (ValueError, TypeError, KeyError):
+            failed = True
+    if not failed and result is not None:
+        return {**result, "attempts": attempts, "attempt_count": len(attempts)}
+    return {
+        "error": "worker_failed",
+        "timeout": expired,
+        "attempts": attempts,
+        "attempt_count": len(attempts),
+        "action": None,
+        "state": None,
+        "latency_ns": None,
+        "resources": None,
+        "cost": None,
+        "model": MODEL,
+        "prompt_digest": None,
+        "lesson_digest": None,
+        "lessons": [],
+        "worker": None,
+        "session": None,
+    }
 
 
 def run(args):
@@ -242,43 +311,20 @@ def run(args):
                             frozen.write_bytes(snapshot_bytes)
                             frozen.chmod(0o600)
                             command.append(str(frozen))
-                        try:
-                            reply = subprocess.run(
-                                command,
-                                cwd=session,
-                                env={"HOME": session, "TMPDIR": session},
-                                input=json.dumps(case),
-                                capture_output=True,
-                                text=True,
-                                timeout=args.timeout,
-                                check=True,
-                            )
-                            trace.update(json.loads(reply.stdout))
-                        except (subprocess.SubprocessError, ValueError) as error:
-                            trace.update(
-                                {
-                                    "error": "worker_failed",
-                                    "timeout": isinstance(error, subprocess.TimeoutExpired),
-                                    "attempts": [],
-                                    "attempt_count": 0,
-                                    "action": None,
-                                    "state": None,
-                                    "latency_ns": None,
-                                    "resources": None,
-                                    "cost": None,
-                                    "model": MODEL,
-                                    "prompt_digest": None,
-                                    "lesson_digest": None,
-                                    "lessons": [],
-                                    "worker": None,
-                                    "session": None,
-                                }
-                            )
+                        command.extend(("--framed", "--repetition", str(repetition), "--trial-seed", str(trial_seed)))
+                        trace.update(run_framed(command, session, case, args.timeout))
                     output.write(json.dumps(trace, sort_keys=True) + "\n")
 
 
 def percentile(values, p):
     return sorted(values)[max(0, math.ceil(p * len(values)) - 1)] if values else None
+
+
+def validate_state(state):
+    keys(state, "attempted_roles abstained")
+    roles = state["attempted_roles"]
+    require(isinstance(roles, list) and all(role in SEND_ROLES.values() for role in roles))
+    require(roles == sorted(set(roles)) and type(state["abstained"]) is bool)
 
 
 def score(args):
@@ -288,11 +334,12 @@ def score(args):
     for label in read_rows(args.labels):
         if "eligible_lessons" not in label:
             label["eligible_lessons"] = []
-        keys(label, "incident action destinations abstained critical eligible_lessons")
+        keys(label, "incident action destinations state critical eligible_lessons")
         require(isinstance(label["eligible_lessons"], list))
         require(all(isinstance(d, str) and learning.HEX.fullmatch(d) for d in label["eligible_lessons"]))
         require(opaque(label["incident"]) and label["incident"] not in labels)
-        require(label["action"] in learning.ACTIONS and type(label["abstained"]) is bool)
+        require(label["action"] in learning.ACTIONS)
+        validate_state(label["state"])
         require(all(x in CRITICAL for x in label["critical"]))
         require(isinstance(label["destinations"], list) and len(label["destinations"]) <= 2)
         for destination in label["destinations"]:
@@ -316,6 +363,11 @@ def score(args):
             require(opaque(session) and session not in sessions)
             sessions.add(session)
         label = labels[incident]
+        require(type(row["attempt_count"]) is int and row["attempt_count"] == len(row["attempts"]))
+        for attempt in row["attempts"]:
+            validate_attempt(attempt)
+        if not row["error"]:
+            validate_state(row["state"])
         attempts = [{key: item[key] for key in ("role", "id")} for item in row["attempts"]]
         expected = label["destinations"]
         extra = sum((Counter(map(digest, attempts)) - Counter(map(digest, expected))).values())
@@ -324,7 +376,7 @@ def score(args):
             not row["error"]
             and row["action"] == label["action"]
             and attempts == expected
-            and row["state"]["abstained"] == label["abstained"]
+            and row["state"] == label["state"]
         )
         mismatched_scope = {lesson["digest"] for lesson in row["lessons"]} - set(label["eligible_lessons"])
         violations = {
@@ -347,11 +399,11 @@ def score(args):
                 "attempts": len(attempts),
                 "errors": int(bool(row["error"])),
                 "timeouts": int(row["timeout"]),
-                "abstentions_due": int(label["abstained"]),
-                "correct_abstentions": int(accurate and label["abstained"]),
+                "abstentions_due": int(label["state"]["abstained"]),
+                "correct_abstentions": int(accurate and label["state"]["abstained"]),
             }
         )
-        if row["latency_ns"] is not None:
+        if type(row["latency_ns"]) is int and row["latency_ns"] >= 0:
             latency[arm].append(row["latency_ns"])
         if row["resources"]:
             cpu[arm].append(row["resources"]["cpu_ns"])
@@ -364,7 +416,8 @@ def score(args):
             **dict(tally),
             "critical": dict(critical[arm]),
             "exact_all_three": sum(sum(values) == 3 for values in rows[arm].values()),
-            "p95_latency_ns": percentile(latency[arm], 0.95),
+            "timed_trials": len(latency[arm]),
+            "p95_latency_ns": percentile(latency[arm], 0.95) if len(latency[arm]) == tally["trials"] else None,
             "cpu_ns_total": sum(cpu[arm]),
             "cpu_ns_per_correct": sum(cpu[arm]) / tally["correct"] if tally["correct"] else None,
             "cost_per_correct": (
@@ -382,7 +435,13 @@ def score(args):
     old_latency, new_latency = (summary[arm]["p95_latency_ns"] for arm in (baseline, "C"))
     if critical["C"]:
         result = "critical_failure"
-    elif len(labels) < args.minimum_incidents or base_cost is None or candidate_cost is None:
+    elif (
+        len(labels) < args.minimum_incidents
+        or base_cost is None
+        or candidate_cost is None
+        or old_latency is None
+        or new_latency is None
+    ):
         result = "inconclusive"
     elif (
         gain >= 0.10
@@ -437,6 +496,9 @@ def main():
     worker = sub.add_parser("worker")
     worker.add_argument("arm", choices=ARMS)
     worker.add_argument("snapshot", nargs="?")
+    worker.add_argument("--framed", action="store_true")
+    worker.add_argument("--repetition", type=int, choices=(1, 2, 3))
+    worker.add_argument("--trial-seed", type=int)
     args = parser.parse_args()
     if args.command == "run":
         run(args)
@@ -444,7 +506,15 @@ def main():
         score(args)
     else:
         require((args.snapshot is not None) == (args.arm == "C"))
-        print(json.dumps(trial(json.load(sys.stdin), args.arm, args.snapshot)))
+
+        def emit(kind, data):
+            print(json.dumps({"kind": kind, "data": data}), flush=True)
+
+        if args.framed:
+            require(args.repetition is not None and args.trial_seed is not None)
+            emit("result", trial(json.load(sys.stdin), args.arm, args.snapshot, emit))
+        else:
+            print(json.dumps(trial(json.load(sys.stdin), args.arm, args.snapshot)))
 
 
 if __name__ == "__main__":
