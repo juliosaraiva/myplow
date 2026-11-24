@@ -177,6 +177,7 @@ def do_learning(argv):
     if argv:
         print(USAGE["learning"], file=sys.stderr)
         return 2
+    import http.client
     import stat
 
     try:
@@ -196,11 +197,26 @@ def do_learning(argv):
     except (KeyError, ValueError, OSError, RecursionError):
         print("ERROR: invalid learning input or credential file", file=sys.stderr)
         return 2
-    code, result = C.http_json(
-        "POST", TODO_URL + "/todo/learning", payload, {**HDR, "X-MyPlow-Learning": token}, timeout=12
-    )
-    if code != 200:
-        print("ERROR: learning request failed (HTTP %s)" % code, file=sys.stderr)
+    # Send credentials to the configured loopback board only, without redirects or proxies.
+    conn = None
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", int(CFG.get("TODO_PORT", "9933")), timeout=12)
+        conn.request(
+            "POST",
+            "/todo/learning",
+            json.dumps(payload),
+            {**HDR, "X-MyPlow-Learning": token, "Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        if response.status != 200:
+            print("ERROR: learning request failed (HTTP %s)" % response.status, file=sys.stderr)
+            return 1
+        result = json.loads(response.read(1_048_576))
+    except (ValueError, OSError, http.client.HTTPException):
+        print("ERROR: learning board response unavailable", file=sys.stderr)
         return 1
+    finally:
+        if conn:
+            conn.close()
     print(json.dumps(result, sort_keys=True))
     return 0

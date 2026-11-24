@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS transitions (
     recorded INTEGER NOT NULL,
     FOREIGN KEY(repo,role,lesson,version) REFERENCES lessons(repo,role,lesson,version) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS episode_expiry ON episodes(expires);
+CREATE INDEX IF NOT EXISTS lesson_expiry ON lessons(expires);
 CREATE INDEX IF NOT EXISTS lesson_scope ON lessons(repo,role,event,expires);
 CREATE INDEX IF NOT EXISTS latest_transition ON transitions(repo,role,lesson,version,sequence DESC);
 CREATE TRIGGER IF NOT EXISTS drop_empty_lineage AFTER DELETE ON lessons BEGIN
@@ -166,8 +168,8 @@ class LearningStore:
             raise Denied()
         at = int(self.clock())
         with self._connect() as conn:
-            conn.execute("DELETE FROM episodes WHERE repo=? AND role=? AND expires<=?", (repo, role, at))
-            conn.execute("DELETE FROM lessons WHERE repo=? AND role=? AND expires<=?", (repo, role, at))
+            conn.execute("DELETE FROM episodes WHERE expires<=?", (at,))
+            conn.execute("DELETE FROM lessons WHERE expires<=?", (at,))
             return getattr(self, "_" + op)(conn, grant.origin, repo, role, data, at)
 
     def _record(self, conn, origin, repo, role, data, at):

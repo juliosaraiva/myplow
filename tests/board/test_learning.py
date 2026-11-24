@@ -198,7 +198,6 @@ class LearningHTTPTests(unittest.TestCase):
         self.assertEqual("route_worker", self.lookup("other", repo="o/other")["action"])
         with sqlite3.connect(self.db) as conn:
             conn.execute("UPDATE episodes SET expires=0 WHERE repo='o/p'")
-        self.assertEqual("no_match", self.lookup()["reason"])
         self.assertEqual("route_worker", self.lookup("other", repo="o/other")["action"])
         with sqlite3.connect(self.db) as conn:
             for table in ("episodes", "lessons", "transitions", "lineages"):
