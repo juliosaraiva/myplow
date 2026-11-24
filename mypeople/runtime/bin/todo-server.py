@@ -19,6 +19,7 @@ def _load_implementation():
         "ping.py",
         "ownership.py",
         "supervisor_journal.py",
+        "learning_api.py",
         "proof.py",
         "http_read.py",
         "http_write.py",

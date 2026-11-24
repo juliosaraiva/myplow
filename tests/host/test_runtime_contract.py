@@ -27,6 +27,7 @@ VERBS = {
     "reconcile",
     "stop-recorders",
     "board",
+    "learning",
     "card",
     "comment",
     "proof",

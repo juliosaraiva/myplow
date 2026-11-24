@@ -170,3 +170,37 @@ def do_proof(argv):
         return 1
     print("proof attached to %s -> %s" % (tid, (res.get("proof") or {}).get("url", "")))
     return 0
+
+
+def do_learning(argv):
+    """Send typed data to the board with a separately provisioned scoped credential."""
+    if argv:
+        print(USAGE["learning"], file=sys.stderr)
+        return 2
+    import stat
+
+    try:
+        path = os.environ["MYPEOPLE_LEARNING_TOKEN_FILE"]
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, encoding="ascii") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+                raise ValueError
+            token = source.read(128).strip()
+        if not re.fullmatch(r"[a-f0-9]{64}", token):
+            raise ValueError
+        raw = sys.stdin.read(16_385)
+        if len(raw) > 16_384:
+            raise ValueError
+        payload = json.loads(raw)
+    except (KeyError, ValueError, OSError, RecursionError):
+        print("ERROR: invalid learning input or credential file", file=sys.stderr)
+        return 2
+    code, result = C.http_json(
+        "POST", TODO_URL + "/todo/learning", payload, {**HDR, "X-MyPlow-Learning": token}, timeout=12
+    )
+    if code != 200:
+        print("ERROR: learning request failed (HTTP %s)" % code, file=sys.stderr)
+        return 1
+    print(json.dumps(result, sort_keys=True))
+    return 0
