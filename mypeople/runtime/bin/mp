@@ -13,6 +13,7 @@ def _load_implementation():
     namespace = globals()
     for name in (
         "support.py",
+        "herdr.py",
         "spawn.py",
         "messaging.py",
         "revive.py",

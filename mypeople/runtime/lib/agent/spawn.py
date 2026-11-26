@@ -53,6 +53,14 @@ def do_spawn(argv, resume_session=None, locked_role_ref=None, expected_role_dige
         print("ERROR: --owner-task and --temporary are mutually exclusive", file=sys.stderr)
         return 2
     # revive/lock pins the exact recorded ref via kwarg OR --role-ref flag
+    pilot_mode = herdr_enabled()
+    if pilot_mode:
+        try:
+            herdr_target(aid)
+            if role != "engineer" or not temporary or any((is_master, record_flag, community, resume_session, owner_task_id)):
+                raise mpherdr.TransportError("Herdr pilot requires a local temporary engineer")
+        except mpherdr.TransportError as error:
+            return herdr_error(error)
     if locked_role_ref is None:
         locked_role_ref = recorded_role_ref
     # --- role/master coupling (§role spec) enforced BEFORE any tmux/roster ---
@@ -198,6 +206,9 @@ def do_spawn(argv, resume_session=None, locked_role_ref=None, expected_role_dige
         community=community,
         effort=effort,
     )
+    if pilot_mode:
+        return herdr_action("spawn", aid, cwd, launch)
+
     # audit spawn_cmd string (model pinned so /agents shows exact per-engineer model)
     parts = ["mp", "spawn", aid, "--backend", backend]
     if boss_id:

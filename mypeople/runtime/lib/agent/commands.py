@@ -57,6 +57,7 @@ USAGE = {
     "[--community]",
     "send": SEND_USAGE,
     "peek": "usage: mp peek <agent_id>",
+    "reconnect": "usage: mp reconnect <agent_id> [--attach]",
     "kill": "usage: mp kill <agent_id> [--reason ...]",
     "answer": "usage: mp answer <agent_id> <N>",
     "revive": "usage: mp revive <agent_id> [--model <id>]   (a retired agent; mp model switches a live one)",
@@ -92,7 +93,10 @@ def main():
     if rest[:1] in (["-h"], ["--help"]) and verb in USAGE:
         print(USAGE[verb])
         return 0
+    if herdr_enabled() and verb not in ("spawn", "send", "peek", "kill", "reconnect"):
+        return herdr_error(mpherdr.TransportError("command unavailable in isolated Herdr mode"))
     return {
+        "reconnect": do_reconnect,
         "status": do_status,
         "spawn": do_spawn,
         "send": do_send,

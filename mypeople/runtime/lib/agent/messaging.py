@@ -7,6 +7,8 @@ def do_send(argv):
     read, and printed "sent". The recipient got the same string every time, which is the
     tell — real truncation varies with the text, operator error repeats verbatim.
     """
+    if herdr_enabled():
+        return do_herdr_send(argv)
     card = ""
     if argv[:1] == ["--card"]:
         card, argv = (argv[1] if len(argv) > 1 else ""), argv[2:]
@@ -109,6 +111,8 @@ def do_peek(argv):
         print(USAGE["peek"], file=sys.stderr)
         return 2
     aid = full_aid(argv[0])
+    if herdr_enabled():
+        return herdr_action("read", aid)
     if not is_local(aid):
         ok, result = remote_task("peek", aid, {}, timeout=30)
         print(result)
@@ -125,6 +129,8 @@ def do_kill(argv):
         print(USAGE["kill"], file=sys.stderr)
         return 2
     aid = full_aid(argv[0])
+    if herdr_enabled():
+        return herdr_action("close", aid)
     reason = ""
     if "--reason" in argv:
         idx = argv.index("--reason")

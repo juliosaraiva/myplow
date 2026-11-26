@@ -19,6 +19,7 @@ VERBS = {
     "spawn",
     "send",
     "peek",
+    "reconnect",
     "kill",
     "answer",
     "revive",
