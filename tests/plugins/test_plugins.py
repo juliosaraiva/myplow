@@ -31,6 +31,7 @@ WAS = {
     "github-prs": ("env:GITHUB_PRS", "python3", "github-prs.py"),
     "instagram-comments": ("env:INSTAGRAM_COMMENTS", "python3", "instagram-comments.py"),
     "plow-chat": ("env:PLOW_CHAT", "python3", "plow-chat.py"),
+    "private-route": ("env:MP_PRIVATE_ROUTE_STATE_DIR", "python3", "private-route.py"),
     "swarm": ("file:state/swarm/config.json", "python3", "swarm.py"),
     "voice": ("file:state/voice/config.json", "python3", "voice.py"),
     "voice-call": ("env:VOICE_CALL", "uv run --script", "voice-call.py"),
