@@ -12,16 +12,6 @@ from pathlib import Path
 from store import Rejected, checked_text, digest, encode, unique_object
 
 
-OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {"type": "string", "enum": ["request-approval", "result"]},
-        "text": {"type": "string"},
-    },
-    "required": ["action", "text"],
-    "additionalProperties": False,
-}
-
 PRIVATE_DOCTRINE = """
 ## Private request role
 
@@ -29,8 +19,10 @@ You are handling one isolated private task. Keep its contents inside this thread
 return stream. Do not use tools, delegate, send notifications, or perform external actions. The
 worker exclusively sends your typed decisions to this task's bound request. On the initial turn,
 retain the task and choose request-approval with a short private approval question. Do not answer
-the task yet. After the worker reports authenticated client approval, answer the task from this
-thread and choose result. Put only the approval question or final answer in the text field.
+the task yet. The authenticated approval reported by the worker is the authorization for this
+private reply. In that turn, answer the existing task from this thread with the result action.
+Approval may only be requested on the initial turn. Put only the approval question or final
+answer in the text field.
 """
 
 
@@ -47,6 +39,19 @@ def executable(path):
     if not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
         raise Rejected(400, "boss_executable_required")
     return path.resolve()
+
+
+def write_output_schema(path, action):
+    schema = {
+        "type": "object",
+        "properties": {"action": {"type": "string", "enum": [action]}, "text": {"type": "string"}},
+        "required": ["action", "text"],
+        "additionalProperties": False,
+    }
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="ascii") as out:
+        out.write(encode(schema))
+    return path
 
 
 def boss_decision(output, request):
@@ -68,11 +73,14 @@ def boss_decision(output, request):
             raise ValueError
         decision = json.loads(messages[0], object_pairs_hook=unique_object)
         expected = "result" if request["thread_id"] else "request-approval"
-        if not isinstance(decision, dict) or set(decision) != {"action", "text"} or decision["action"] != expected:
+        if not isinstance(decision, dict) or set(decision) != {"action", "text"}:
             raise ValueError
-        return thread, expected, checked_text(decision["text"])
+        body = checked_text(decision["text"])
     except (AttributeError, KeyError, TypeError, ValueError, RecursionError, Rejected):
         raise Rejected(502, "boss_output_invalid") from None
+    if decision["action"] != expected:
+        raise Rejected(502, "boss_action_not_allowed")
+    return thread, expected, body
 
 
 class CodexBoss:
@@ -115,12 +123,14 @@ class CodexBoss:
         self.role_digest = role["digest"]
         self.instructions = role_lib["_startup_doc"](role) + PRIVATE_DOCTRINE
         self.binding = digest(encode([self.role_digest, self.instructions, str(self.codex), str(self.codex_home.resolve())]))
-        self.schema = self.home / "output-schema.json"
-        fd = os.open(self.schema, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "w", encoding="ascii") as out:
-            out.write(encode(OUTPUT_SCHEMA))
+        self.schemas = {
+            action: write_output_schema(self.home / f"{action}-schema.json", action)
+            for action in ("request-approval", "result")
+        }
 
     def turn(self, request):
+        thread = request["thread_id"]
+        action = "result" if thread else "request-approval"
         argv = [
             str(self.codex), "--no-daemon", "-a", "never", "-s", "read-only",
             "-c", 'cli_auth_credentials_store="file"', "-c", "project_doc_max_bytes=0",
@@ -128,12 +138,13 @@ class CodexBoss:
             "--disable", "shell_tool", "--disable", "apps", "--disable", "plugins",
             "--disable", "hooks", "--disable", "multi_agent", "--disable", "multi_agent_v2",
             "exec", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "--json",
-            "--output-schema", str(self.schema),
+            "--output-schema", str(self.schemas[action]),
         ]
-        thread = request["thread_id"]
         if thread:
             argv += ["resume", thread]
-            prompt = "The client approved the private task already in this thread. Decide the private result now."
+            prompt = ("The private broker verified the client's approval for the existing task in this thread. "
+                      "This is the result turn. Return action result with the actual answer in text. "
+                      "Recall the original task. No other approval is required.")
         else:
             prompt = "Retain this private task and request approval before answering it. Task data: " + encode(request["task"])
         argv.append("-")
