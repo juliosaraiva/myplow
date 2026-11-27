@@ -15,6 +15,7 @@ TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 KEY = re.compile(r"[A-Za-z0-9_-]{1,64}")
 ID = re.compile(r"[0-9a-f]{32}")
 PAGE_SIZE = 50
+NOTE_LIMIT = 4096
 WORKER_TRANSITIONS = {
     "accept": ("queued", "accepted", "task"),
     "request-approval": ("accepted", "awaiting_approval", "approval_required"),
@@ -35,6 +36,22 @@ def encode(value):
 
 def digest(value):
     return hashlib.sha256(value.encode("ascii")).hexdigest()
+
+
+def unique_object(pairs):
+    obj = dict(pairs)
+    if len(obj) != len(pairs):
+        raise ValueError("duplicate key")
+    return obj
+
+
+def checked_text(text):
+    try:
+        if isinstance(text, str) and text.strip() and len(text.encode("utf-8")) <= NOTE_LIMIT:
+            return text
+    except UnicodeError:
+        pass
+    raise Rejected(400, "invalid_text")
 
 
 class Store:
@@ -71,6 +88,9 @@ class Store:
                 request_id TEXT NOT NULL REFERENCES requests(id), kind TEXT NOT NULL,
                 data TEXT, UNIQUE(request_id, kind))""")
             db.execute("CREATE INDEX IF NOT EXISTS requests_expiry ON requests(expires_at)")
+            db.execute("""CREATE TABLE IF NOT EXISTS boss_threads (
+                request_id TEXT PRIMARY KEY REFERENCES requests(id),
+                binding TEXT NOT NULL, thread_id TEXT UNIQUE)""")
 
     def grant(self, profile, token, ttl, allow_task):
         with self.transaction() as db:
@@ -180,16 +200,73 @@ class Store:
 
     def boss_update(self, action, request_id, data):
         with self.transaction() as db:
-            now = int(time.time())
-            row = self.find_request(db, request_id, now)
-            if row["operation"] != "task":
-                raise Rejected(403, "operation_forbidden")
-            if db.execute(
-                "SELECT 1 FROM credentials WHERE profile = ? AND allow_task = 1 AND expires_at > ?",
-                (row["profile"], now),
-            ).fetchone() is None:
-                raise Rejected(403, "operation_forbidden")
+            row = self.boss_task(db, request_id)
+            if db.execute("SELECT 1 FROM boss_threads WHERE request_id = ?", (request_id,)).fetchone():
+                raise Rejected(409, "autonomous_request")
             return self.transition(db, row, *WORKER_TRANSITIONS[action], data)
+
+    def boss_task(self, db, request_id):
+        now = int(time.time())
+        row = self.find_request(db, request_id, now)
+        authorized = db.execute(
+            "SELECT 1 FROM credentials WHERE profile = ? AND allow_task = 1 AND expires_at > ?",
+            (row["profile"], now),
+        ).fetchone()
+        if row["operation"] != "task" or not authorized:
+            raise Rejected(403, "operation_forbidden")
+        return row
+
+    def next_boss_task(self, binding):
+        with self.transaction() as db:
+            self.require_route(db)
+            row = db.execute(
+                """SELECT requests.*, boss_threads.thread_id FROM requests JOIN credentials USING (profile)
+                LEFT JOIN boss_threads ON boss_threads.request_id = requests.id
+                WHERE operation = 'task' AND requests.expires_at > :now AND payload IS NOT NULL
+                AND credentials.expires_at > :now AND credentials.allow_task = 1
+                AND ((phase = 'queued' AND boss_threads.request_id IS NULL)
+                  OR (phase IN ('accepted', 'approved') AND boss_threads.binding = :binding))
+                ORDER BY requests.rowid LIMIT 1""",
+                {"now": int(time.time()), "binding": binding},
+            ).fetchone()
+            if not row:
+                return None
+            if row["phase"] == "queued":
+                db.execute("INSERT INTO boss_threads VALUES (?, ?, NULL)", (row["id"], binding))
+                self.transition(db, row, *WORKER_TRANSITIONS["accept"], {})
+            return {
+                "request_id": row["id"], "thread_id": row["thread_id"],
+                "task": None if row["thread_id"] else json.loads(row["payload"])["text"],
+            }
+
+    def boss_action(self, binding, request_id, expected_thread, observed_thread, action, text):
+        expected_action = "result" if expected_thread else "request-approval"
+        if action != expected_action or (expected_thread and observed_thread != expected_thread):
+            raise Rejected(409, "invalid_boss_action")
+        with self.transaction() as db:
+            row = self.boss_task(db, request_id)
+            bound = db.execute("SELECT * FROM boss_threads WHERE request_id = ?", (request_id,)).fetchone()
+            if not bound or bound["binding"] != binding or bound["thread_id"] != expected_thread:
+                raise Rejected(409, "invalid_boss_binding")
+            if expected_thread is None:
+                db.execute("UPDATE boss_threads SET thread_id = ? WHERE request_id = ?", (observed_thread, request_id))
+            self.transition(db, row, *WORKER_TRANSITIONS[action], {"text": text, "publisher": "boss"})
+            event = db.execute(
+                "SELECT id, kind FROM events WHERE request_id = ? AND kind = ?",
+                (request_id, WORKER_TRANSITIONS[action][2]),
+            ).fetchone()
+            return {"request_id": request_id, "thread_id": observed_thread, "event_id": event["id"], "action": event["kind"]}
+
+    def boss_evidence(self, request_id):
+        with self.transaction() as db:
+            self.find_request(db, request_id, int(time.time()))
+            bound = db.execute("SELECT thread_id FROM boss_threads WHERE request_id = ?", (request_id,)).fetchone()
+            if not bound:
+                raise Rejected(404, "not_found")
+            rows = db.execute(
+                "SELECT id, kind FROM events WHERE request_id = ? ORDER BY seq", (request_id,)
+            ).fetchall()
+            return {"request_id": request_id, "thread_id": bound["thread_id"], "events": [dict(row) for row in rows]}
 
     def transition(self, db, row, expected_phase, next_phase, kind, data):
         self.require_route(db)

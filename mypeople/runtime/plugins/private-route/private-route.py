@@ -15,15 +15,16 @@ import sqlite3
 import stat
 import sys
 import time
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import cast
 
-from store import ID, KEY, PROFILE, TOKEN, WORKER_TRANSITIONS, Rejected, Store, encode
+from boss import CodexBoss, run_worker
+from store import ID, KEY, NOTE_LIMIT, PROFILE, TOKEN, WORKER_TRANSITIONS, Rejected, Store, checked_text, encode, unique_object
 
 
 BODY_LIMIT = 16 * 1024
-NOTE_LIMIT = 4096
 TIMEOUT = 3
 
 
@@ -72,22 +73,6 @@ def grant(store, args):
     except (OSError, sqlite3.Error):
         args.credential_file.unlink()
         raise
-
-
-def unique_object(pairs):
-    obj = dict(pairs)
-    if len(obj) != len(pairs):
-        raise ValueError("duplicate key")
-    return obj
-
-
-def checked_text(text):
-    try:
-        if isinstance(text, str) and text.strip() and len(text.encode("utf-8")) <= NOTE_LIMIT:
-            return text
-    except UnicodeError:
-        pass
-    raise Rejected(400, "invalid_text")
 
 
 def stdin_text():
@@ -219,12 +204,18 @@ class Server(socketserver.UnixStreamServer):
                 print("private-route: expiry_unavailable", file=sys.stderr)
 
 
-def serve(root, store):
-    with os.fdopen(open_private(root / "serve.lock", os.O_RDWR | os.O_CREAT), "rb") as lock:
+@contextmanager
+def exclusive_lock(path):
+    with os.fdopen(open_private(path, os.O_RDWR | os.O_CREAT), "rb") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise Rejected(409, "already_serving") from None
+        yield
+
+
+def serve(root, store):
+    with exclusive_lock(root / "serve.lock"):
         endpoint = root / "route.sock"
         try:
             check_private(endpoint.lstat(), stat.S_ISSOCK, 0o600)
@@ -305,6 +296,12 @@ def arguments():
     boss = actions.add_parser("boss")
     boss_commands = boss.add_subparsers(dest="command", required=True)
     boss_commands.add_parser("inbox")
+    boss_commands.add_parser("evidence").add_argument("request_id")
+    worker = boss_commands.add_parser("serve", help="consume private tasks with an isolated Codex Boss")
+    worker.add_argument("--codex", required=True, type=Path)
+    worker.add_argument("--codex-home", required=True, type=Path)
+    worker.add_argument("--herdr", type=Path)
+    worker.add_argument("--herdr-socket", type=Path)
     for command in WORKER_TRANSITIONS:
         boss_commands.add_parser(command).add_argument("request_id")
     return parser.parse_args()
@@ -323,14 +320,23 @@ def run_client(root, args):
     return call(root, credential, "/v1/request", {"request_id": args.request_id})
 
 
-def run_boss(store, args):
+def run_boss(root, store, args):
+    if args.command == "serve":
+        with exclusive_lock(root / "boss.lock"):
+            signal.signal(signal.SIGTERM, stop)
+            model_home = state_dir(root / "boss-home")
+            run_worker(store, CodexBoss(model_home, args))
+        return
     if args.command == "inbox":
         result = {"requests": store.boss_pending()}
     else:
         if not ID.fullmatch(args.request_id):
             raise Rejected(400, "invalid_request")
-        data = {} if args.command == "accept" else {"text": stdin_text()}
-        result = store.boss_update(args.command, args.request_id, data)
+        if args.command == "evidence":
+            result = store.boss_evidence(args.request_id)
+        else:
+            data = {} if args.command == "accept" else {"text": stdin_text()}
+            result = store.boss_update(args.command, args.request_id, data)
     print(encode(result))
 
 
@@ -351,7 +357,7 @@ def main():
     elif args.action == "route":
         store.set_route(args.state == "on")
     elif args.action == "boss":
-        run_boss(store, args)
+        run_boss(root, store, args)
     else:
         if not PROFILE.fullmatch(args.profile):
             raise Rejected(400, "invalid_profile")

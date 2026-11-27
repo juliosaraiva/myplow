@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -172,6 +173,172 @@ class PrivateRouteTest(unittest.TestCase):
         proc = self.invoke([self.herdr, *args])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return json.loads(proc.stdout)
+
+    def start_worker(self, codex, codex_home):
+        args = ["boss", "serve", "--codex", codex, "--codex-home", codex_home]
+        if self.herdr:
+            args += ["--herdr", self.herdr, "--herdr-socket", self.env["HC_SOCKET"]]
+        env = {key: value for key, value in self.env.items() if key != "PYTHONPATH"}
+        with (self.root / "worker.log").open("a") as log:
+            self.worker = subprocess.Popen(self.cli(*args), env=env, stdout=log, stderr=log)
+        return self.worker.pid
+
+    def stop_worker(self):
+        worker = getattr(self, "worker", None)
+        if worker is not None and worker.poll() is None:
+            worker.terminate()
+            worker.wait(timeout=10)
+
+    def worker_trace(self):
+        return [json.loads(line) for line in (self.root / "worker.log").read_text().splitlines()]
+
+    def observe(self, cursor, kind):
+        for _ in range(250):
+            if self.worker.poll() is not None:
+                self.fail(f"worker exited ({self.worker.returncode}): {self.worker_trace()}")
+            page = self.client("events", "--cursor", cursor)
+            if any(event["type"] == kind for event in page["events"]):
+                return page
+            time.sleep(0.12)
+        self.fail(f"client did not observe {kind}")
+
+    def autonomous_round_trip(self, codex, codex_home, herdr=None):
+        self.positive_human_control()
+        self.herdr = str(herdr) if herdr else None
+        herdr_pids = []
+        if self.herdr:
+            herdr_pids.append(self.herdr_call("server", "start")["pid"])
+            self.addCleanup(self.herdr_call, "server", "stop")
+            self.assertEqual(self.herdr_call("ls", "--all")["terminals"], [])
+        self.addCleanup(self.stop_worker)
+        broker_pids = [self.service.pid]
+        worker_pids = [self.start_worker(codex, codex_home)]
+
+        self.client("status", "autonomous-status")
+        initial_cursor = self.client("events")["next_cursor"]
+        answer = "PING-" + uuid.uuid4().hex[:16].upper()
+        task = "Answer with exactly this harmless nonce after approval: " + answer
+        receipt = self.client("task", "autonomous-task", note=task)
+        request_id = receipt["request_id"]
+        first = self.observe(initial_cursor, "approval_required")
+        self.assertEqual([event["type"] for event in first["events"]], ["task", "approval_required"])
+        self.assertEqual({event["request_id"] for event in first["events"]}, {request_id})
+        self.assertEqual(first["events"][-1]["data"]["publisher"], "boss")
+        before = self.run_cli("boss", "evidence", request_id)
+        uuid.UUID(before["thread_id"])
+        saved = first["next_cursor"]
+        self.run_cli("route", "off")
+        self.client("approval", request_id, "approve", error="route_unavailable")
+        self.assertEqual(len(self.human_events), 1)
+        self.assertFalse(self.audit.exists())
+
+        self.stop_worker()
+        self.stop_service(crash=True)
+        if self.herdr:
+            herdr_pids.append(self.herdr_call("server", "restart")["pid"])
+            self.assertNotEqual(*herdr_pids)
+            self.assertEqual(self.herdr_call("ls", "--all")["terminals"], [])
+        self.start_service()
+        broker_pids.append(self.service.pid)
+        worker_pids.append(self.start_worker(codex, codex_home))
+        self.assertNotEqual(*broker_pids)
+        self.assertNotEqual(*worker_pids)
+        self.assertEqual(self.client("request", request_id)["phase"], "awaiting_approval")
+        self.assertEqual(self.client("events", "--cursor", saved)["events"], [])
+        self.run_cli("route", "on")
+
+        self.client("approval", request_id, "approve", credential=self.other, error="not_found")
+        self.client("approval", request_id, "approve")
+        page = self.observe(saved, "result")
+        self.assertEqual([event["type"] for event in page["events"]], ["approval", "result"])
+        result = page["events"][-1]
+        self.assertEqual(result["request_id"], request_id)
+        self.assertTrue(result["data"] == {"text": answer, "publisher": "boss"}, "unexpected private result")
+        self.assertEqual(self.client("task", "autonomous-task", note=task)["request_id"], request_id)
+        self.client("task", "autonomous-task", note="Conflicting replay", error="idempotency_conflict")
+        self.client("approval", request_id, "approve")
+        self.assertEqual(self.client("events", "--cursor", saved), page)
+        self.assertEqual(self.client("events", "--cursor", page["next_cursor"])["events"], [])
+        self.client("events", "--cursor", saved, credential=self.other, error="not_found")
+        self.client("request", request_id, credential=self.other, error="not_found")
+        self.assertEqual(self.client("events", credential=self.other)["events"], [])
+        after = self.run_cli("boss", "evidence", request_id)
+        self.assertEqual(after["thread_id"], before["thread_id"])
+        self.assertEqual(after["events"][-1], {"id": result["id"], "kind": "result"})
+        trace = self.worker_trace()
+        ingress = [entry for entry in trace if entry.get("action") == "boss_ingress"]
+        self.assertEqual(ingress, [
+            {"action": "boss_ingress", "request_id": request_id, "thread_id": None},
+            {"action": "boss_ingress", "request_id": request_id, "thread_id": after["thread_id"]},
+        ])
+        approval = [entry for entry in trace if entry.get("action") == "approval_required"]
+        self.assertEqual(approval, [{"action": "approval_required", "request_id": request_id,
+                                     "thread_id": before["thread_id"], "event_id": saved}])
+        published = [entry for entry in trace if entry.get("action") == "result"]
+        self.assertEqual(published, [{"action": "result", "request_id": request_id, "thread_id": after["thread_id"], "event_id": result["id"]}])
+        self.assertEqual(len(self.human_events), 1)
+        self.assertFalse(self.audit.exists())
+        for log in self.root.rglob("*.log"):
+            self.assertFalse(answer.encode("ascii") in log.read_bytes(), "task or result leaked into fixture logs")
+        return {
+            "fixture": str(self.root), "broker_pids": broker_pids, "worker_pids": worker_pids, "herdr_pids": herdr_pids,
+            "request_id": request_id, "thread_id": after["thread_id"], "saved_cursor": saved, "result_event_id": result["id"],
+            "next_cursor": page["next_cursor"], "private_results": 1, "human_positive_control": 1, "human_private_flow": 0,
+            "worker_trace": trace,
+        }
+
+    def offline_model(self, wrong_thread=False):
+        codex_home = self.root / "offline-codex-home"
+        codex_home.mkdir(mode=0o700)
+        (codex_home / "auth.json").touch(mode=0o600)
+        codex = self.root / "offline-codex"
+        codex.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, re, sys, uuid\n"
+            "from pathlib import Path\n"
+            "argv = sys.argv[1:]\n"
+            "prompt = sys.stdin.read()\n"
+            "state = Path(os.environ['CODEX_HOME'])\n"
+            "assert os.environ['HOME'] != str(state) and 'OPENAI_API_KEY' not in os.environ\n"
+            "assert argv[argv.index('--disable') + 1] == 'shell_tool'\n"
+            "schema = json.loads(Path(argv[argv.index('--output-schema') + 1]).read_text())\n"
+            "assert schema['additionalProperties'] is False\n"
+            "if 'resume' in argv:\n"
+            "    thread = argv[argv.index('resume') + 1]\n"
+            "    assert 'PING-' not in prompt and 'approved' in prompt\n"
+            "    action, text = 'result', (state / thread).read_text()\n"
+            f"    if {wrong_thread!r}: thread = str(uuid.uuid4())\n"
+            "else:\n"
+            "    thread = str(uuid.uuid4())\n"
+            "    (state / thread).write_text(re.search(r'PING-[0-9A-F]{16}', prompt)[0])\n"
+            "    action, text = 'request-approval', 'Approve the offline fixture?'\n"
+            "print(json.dumps({'type': 'thread.started', 'thread_id': thread}))\n"
+            "print(json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': json.dumps({'action': action, 'text': text})}}))\n"
+            "print(json.dumps({'type': 'turn.completed'}))\n",
+            encoding="utf-8",
+        )
+        codex.chmod(0o700)
+        return codex, codex_home
+
+    def test_autonomous_worker_with_offline_model(self):
+        codex, codex_home = self.offline_model()
+        self.autonomous_round_trip(codex, codex_home, self.herdr_binary)
+
+    def test_autonomous_rejects_manual_publication_and_wrong_thread(self):
+        codex, codex_home = self.offline_model(wrong_thread=True)
+        self.addCleanup(self.stop_worker)
+        self.start_worker(codex, codex_home)
+        cursor = self.client("status", "before-invalid-boss")
+        page = self.client("events")
+        self.assertEqual(page["events"][0]["request_id"], cursor["request_id"])
+        task = self.client("task", "wrong-thread", note="Answer with this nonce: PING-1234567890ABCDEF")
+        request_id = task["request_id"]
+        checkpoint = self.observe(page["next_cursor"], "approval_required")["next_cursor"]
+        self.client("approval", request_id, "approve")
+        self.assertNotEqual(self.worker.wait(timeout=8), 0)
+        self.assertEqual(self.worker_trace()[-1], {"error": "boss_output_invalid"})
+        self.run_cli("boss", "result", request_id, note="Manual override", error="autonomous_request")
+        self.assertEqual([item["type"] for item in self.client("events", "--cursor", checkpoint)["events"]], ["approval"])
 
     def test_lifecycle_recovers_after_restart(self):
         self.positive_human_control()
